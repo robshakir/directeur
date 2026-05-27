@@ -5,20 +5,31 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"math"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/tormoder/fit"
 )
 
-// Config represents the gear configuration
+// Config represents the gear configuration and data source options
 type Config struct {
-	FrontGears []int `json:"front_gears"`
-	RearGears  []int `json:"rear_gears"`
+	FrontGears     []int            `json:"front_gears"`
+	RearGears      []int            `json:"rear_gears"`
+	LocalDirectory string           `json:"local_directory"`
+	HammerheadAPI  HammerheadConfig `json:"hammerhead_api"`
+}
+
+// HammerheadConfig represents authentication and caching details for Hammerhead Dashboard API integration
+type HammerheadConfig struct {
+	Enabled     bool   `json:"enabled"`
+	AuthToken   string `json:"auth_token"`
+	DownloadDir string `json:"download_dir"`
 }
 
 // RideSummary contains high-level metrics of the ride
@@ -86,6 +97,42 @@ type GearState struct {
 	RearTeeth  uint8
 }
 
+func analyzeFITFile(filePath string, config Config) (RideAnalysis, error) {
+	var analysis RideAnalysis
+	f, err := os.Open(filePath)
+	if err != nil {
+		return analysis, fmt.Errorf("error opening FIT file: %w", err)
+	}
+	defer f.Close()
+
+	fitFile, err := fit.Decode(f)
+	if err != nil {
+		return analysis, fmt.Errorf("error decoding FIT file: %w", err)
+	}
+
+	activity, err := fitFile.Activity()
+	if err != nil {
+		return analysis, fmt.Errorf("error parsing activity from FIT file: %w", err)
+	}
+
+	if len(activity.Records) == 0 {
+		return analysis, fmt.Errorf("no records found in the FIT file")
+	}
+
+	// Process Gears and Shifting Timeline
+	sortEvents(activity.Events)
+	gearTimeline := buildGearTimeline(activity.Records, activity.Events, config)
+
+	// Process Telemetry Records
+	analysis = processRecords(activity.Records, gearTimeline)
+
+	// Select Theme Name based on ride start month
+	analysis.Summary.ThemeName = selectThemeName(analysis.Summary.StartTime)
+	analysis.Schema = "https://raw.githubusercontent.com/robshakir/directeur/main/schema.json"
+
+	return analysis, nil
+}
+
 func main() {
 	inputFile := flag.String("input", "hammerhead-242130259__1779904060 (1).fit", "Path to input .FIT file")
 	configFile := flag.String("config", "config.json", "Path to gear configuration file")
@@ -100,56 +147,94 @@ func main() {
 	config := loadConfig(*configFile)
 	fmt.Printf("Loaded gear configuration: Front rings: %v, Rear cogs: %v\n", config.FrontGears, config.RearGears)
 
-	// 2. Parse FIT file
-	fmt.Printf("Parsing FIT file: %s...\n", *inputFile)
-	f, err := os.Open(*inputFile)
-	if err != nil {
-		fmt.Printf("Error opening FIT file: %v\n", err)
-		os.Exit(1)
+	var resolvedInputFile string
+	var resolvedAnalysis RideAnalysis
+	var resolveErr error
+	var hasData bool
+
+	inputPassed := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "input" {
+			inputPassed = true
+		}
+	})
+
+	if inputPassed {
+		resolvedInputFile = *inputFile
+		hasData = true
+	} else {
+		// Try Hammerhead if enabled
+		if config.HammerheadAPI.Enabled && config.HammerheadAPI.AuthToken != "" {
+			fmt.Println("Hammerhead API enabled, fetching activities...")
+			activities, err := fetchHammerheadActivities(config.HammerheadAPI)
+			if err == nil && len(activities) > 0 {
+				fmt.Printf("Downloading newest Hammerhead activity: %s (%s)...\n", activities[0].Name, activities[0].ID)
+				filePath, err := downloadHammerheadFITFile(config.HammerheadAPI, activities[0].ID)
+				if err == nil {
+					resolvedInputFile = filePath
+					hasData = true
+				} else {
+					fmt.Printf("Error downloading Hammerhead activity: %v\n", err)
+				}
+			} else if err != nil {
+				fmt.Printf("Error fetching Hammerhead activities: %v\n", err)
+			}
+		}
+
+		// Try Local Directory if not resolved yet
+		if !hasData && config.LocalDirectory != "" {
+			fmt.Printf("Scanning local directory: %s...\n", config.LocalDirectory)
+			localRides, err := listLocalRides(config.LocalDirectory)
+			if err == nil && len(localRides) > 0 {
+				resolvedInputFile = filepath.Join(config.LocalDirectory, localRides[0].Filename)
+				hasData = true
+			} else if err != nil {
+				fmt.Printf("Error listing local directory: %v\n", err)
+			}
+		}
+
+		// Fallback to default inputFile if it exists and no other source was resolved/configured
+		if !hasData {
+			if _, err := os.Stat(*inputFile); err == nil {
+				resolvedInputFile = *inputFile
+				hasData = true
+			}
+		}
 	}
-	defer f.Close()
 
-	fitFile, err := fit.Decode(f)
-	if err != nil {
-		fmt.Printf("Error decoding FIT file: %v\n", err)
-		os.Exit(1)
+	if !hasData {
+		fmt.Println("No data found")
+		if !*serveMode {
+			os.Exit(0)
+		}
+	} else {
+		fmt.Printf("Parsing FIT file: %s...\n", resolvedInputFile)
+		resolvedAnalysis, resolveErr = analyzeFITFile(resolvedInputFile, config)
+		if resolveErr != nil {
+			fmt.Printf("Error analyzing FIT file: %v\n", resolveErr)
+			if !*serveMode {
+				os.Exit(1)
+			}
+		}
 	}
 
-	activity, err := fitFile.Activity()
-	if err != nil {
-		fmt.Printf("Error parsing activity from FIT file: %v\n", err)
-		os.Exit(1)
+	// Write JSON Output if parsed successfully
+	if hasData && resolveErr == nil {
+		fmt.Printf("Writing JSON analysis to %s...\n", *outputJSON)
+		writeJSON(*outputJSON, resolvedAnalysis)
+
+		// Generate HTML Dashboard
+		fmt.Printf("Generating HTML dashboard to %s...\n", *outputHTML)
+		writeHTML(*outputHTML, resolvedAnalysis)
+		fmt.Println("Analysis completed successfully!")
+	} else {
+		// Generate blank dashboard to serve as base if in serveMode but no initial data found
+		writeHTML(*outputHTML, RideAnalysis{})
 	}
 
-	if len(activity.Records) == 0 {
-		fmt.Println("No records found in the FIT file.")
-		os.Exit(1)
-	}
-
-	// 3. Process Gears and Shifting Timeline
-	sortEvents(activity.Events)
-	gearTimeline := buildGearTimeline(activity.Records, activity.Events, config)
-
-	// 4. Process Telemetry Records
-	analysis := processRecords(activity.Records, gearTimeline)
-
-	// 5. Select Theme Name based on ride start month
-	analysis.Summary.ThemeName = selectThemeName(analysis.Summary.StartTime)
-	analysis.Schema = "https://raw.githubusercontent.com/robshakir/directeur/main/schema.json"
-
-	// 6. Write JSON Output
-	fmt.Printf("Writing JSON analysis to %s...\n", *outputJSON)
-	writeJSON(*outputJSON, analysis)
-
-	// 7. Generate HTML Dashboard
-	fmt.Printf("Generating HTML dashboard to %s...\n", *outputHTML)
-	writeHTML(*outputHTML, analysis)
-
-	fmt.Println("Analysis completed successfully!")
-
-	// 8. Serve Mode if requested
+	// Serve Mode if requested
 	if *serveMode {
-		serveDashboard(*outputHTML, *port)
+		serveDashboard(*outputHTML, *port, config)
 	}
 }
 
@@ -172,7 +257,202 @@ func loadConfig(path string) Config {
 		fmt.Printf("Warning: Error parsing config %s (%v), using default config.\n", path, err)
 		return defaultConfig
 	}
+	if config.HammerheadAPI.DownloadDir == "" {
+		config.HammerheadAPI.DownloadDir = "./fit_downloads"
+	}
 	return config
+}
+
+// RideFile represents a local FIT file details for list API
+type RideFile struct {
+	Filename  string    `json:"filename"`
+	ModTime   time.Time `json:"mod_time"`
+	SizeBytes int64     `json:"size_bytes"`
+}
+
+// HammerheadActivity represents a ride event fetched from the Hammerhead Dashboard API
+type HammerheadActivity struct {
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	StartTimeString string    `json:"startTime"`
+	StartTime       time.Time `json:"-"`
+	DistanceMeters  float64   `json:"distance"`
+	DurationSeconds float64   `json:"duration"`
+}
+
+// UnmarshalJSON custom unmarshaler to handle flexible API schemas (camelCase / snake_case)
+func (ha *HammerheadActivity) UnmarshalJSON(data []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	// ID mapping
+	if val, ok := raw["id"].(string); ok {
+		ha.ID = val
+	} else if val, ok := raw["_id"].(string); ok {
+		ha.ID = val
+	} else if val, ok := raw["activityId"].(string); ok {
+		ha.ID = val
+	}
+	// Name mapping
+	if val, ok := raw["name"].(string); ok {
+		ha.Name = val
+	} else if val, ok := raw["title"].(string); ok {
+		ha.Name = val
+	}
+	// Distance mapping
+	if val, ok := raw["distance"].(float64); ok {
+		ha.DistanceMeters = val
+	} else if val, ok := raw["distance_meters"].(float64); ok {
+		ha.DistanceMeters = val
+	}
+	// Duration mapping
+	if val, ok := raw["duration"].(float64); ok {
+		ha.DurationSeconds = val
+	} else if val, ok := raw["elapsedTime"].(float64); ok {
+		ha.DurationSeconds = val
+	} else if val, ok := raw["duration_seconds"].(float64); ok {
+		ha.DurationSeconds = val
+	}
+	// StartTime mapping
+	var timeStr string
+	if val, ok := raw["startTime"].(string); ok {
+		timeStr = val
+	} else if val, ok := raw["start_time"].(string); ok {
+		timeStr = val
+	} else if val, ok := raw["timestamp"].(string); ok {
+		timeStr = val
+	}
+	if timeStr != "" {
+		ha.StartTimeString = timeStr
+		if t, err := time.Parse(time.RFC3339, timeStr); err == nil {
+			ha.StartTime = t
+		} else if t, err := time.Parse("2006-01-02T15:04:05.000Z", timeStr); err == nil {
+			ha.StartTime = t
+		} else if t, err := time.Parse("2006-01-02 15:04:05", timeStr); err == nil {
+			ha.StartTime = t
+		}
+	}
+	return nil
+}
+
+// listLocalRides scans the configured local directory for FIT files and returns them sorted by modification time
+func listLocalRides(dir string) ([]RideFile, error) {
+	var rides []RideFile
+	if dir == "" {
+		return rides, nil
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(f.Name()))
+		if ext == ".fit" {
+			info, err := f.Info()
+			if err != nil {
+				continue
+			}
+			rides = append(rides, RideFile{
+				Filename:  f.Name(),
+				ModTime:   info.ModTime(),
+				SizeBytes: info.Size(),
+			})
+		}
+	}
+	// Sort newest first
+	sort.Slice(rides, func(i, j int) bool {
+		return rides[i].ModTime.After(rides[j].ModTime)
+	})
+	return rides, nil
+}
+
+// fetchHammerheadActivities gets the list of recent rides from Hammerhead API
+func fetchHammerheadActivities(cfg HammerheadConfig) ([]HammerheadActivity, error) {
+	var activities []HammerheadActivity
+	if !cfg.Enabled || cfg.AuthToken == "" {
+		return activities, nil
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", "https://api.hammerhead.io/v1/activities", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("hammerhead API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&activities); err != nil {
+		return nil, err
+	}
+
+	// Sort newest first
+	sort.Slice(activities, func(i, j int) bool {
+		return activities[i].StartTime.After(activities[j].StartTime)
+	})
+
+	return activities, nil
+}
+
+// downloadHammerheadFITFile retrieves and caches a FIT file from the Hammerhead activities API
+func downloadHammerheadFITFile(cfg HammerheadConfig, activityID string) (string, error) {
+	if activityID == "" {
+		return "", fmt.Errorf("empty activity ID")
+	}
+
+	if err := os.MkdirAll(cfg.DownloadDir, 0755); err != nil {
+		return "", err
+	}
+
+	filePath := filepath.Join(cfg.DownloadDir, activityID+".fit")
+	if _, err := os.Stat(filePath); err == nil {
+		return filePath, nil
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.hammerhead.io/v1/activities/%s/fit", activityID), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to download FIT (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	out, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return filePath, nil
 }
 
 func sortEvents(events []*fit.EventMsg) {
@@ -647,7 +927,7 @@ func writeHTML(path string, analysis RideAnalysis) {
 	}
 }
 
-func serveDashboard(path string, port int) {
+func serveDashboard(path string, port int, config Config) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		absPath = path
@@ -658,6 +938,68 @@ func serveDashboard(path string, port int) {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, absPath)
+	})
+
+	http.HandleFunc("/api/rides", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		localRides, err := listLocalRides(config.LocalDirectory)
+		if err != nil {
+			fmt.Printf("Error listing local rides: %v\n", err)
+		}
+		hhRides, err := fetchHammerheadActivities(config.HammerheadAPI)
+		if err != nil {
+			fmt.Printf("Error fetching Hammerhead activities: %v\n", err)
+		}
+
+		type RidesResponse struct {
+			Local      []RideFile           `json:"local"`
+			Hammerhead []HammerheadActivity `json:"hammerhead"`
+		}
+
+		resp := RidesResponse{
+			Local:      localRides,
+			Hammerhead: hhRides,
+		}
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	http.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		source := r.URL.Query().Get("source")
+		var filePath string
+		var err error
+
+		if source == "local" {
+			file := r.URL.Query().Get("file")
+			if file == "" {
+				http.Error(w, `{"error": "missing file parameter"}`, http.StatusBadRequest)
+				return
+			}
+			cleanFile := filepath.Base(file)
+			filePath = filepath.Join(config.LocalDirectory, cleanFile)
+		} else if source == "hammerhead" {
+			id := r.URL.Query().Get("id")
+			if id == "" {
+				http.Error(w, `{"error": "missing id parameter"}`, http.StatusBadRequest)
+				return
+			}
+			filePath, err = downloadHammerheadFITFile(config.HammerheadAPI, id)
+			if err != nil {
+				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity: %s"}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			http.Error(w, `{"error": "invalid source parameter"}`, http.StatusBadRequest)
+			return
+		}
+
+		analysis, err := analyzeFITFile(filePath, config)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to analyze FIT file: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(analysis)
 	})
 
 	err = http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
@@ -1090,6 +1432,25 @@ func getDashboardTemplate() string {
             50% { transform: scale(1.08); opacity: 1; }
             100% { transform: scale(1); opacity: 0.8; }
         }
+
+        /* Ride selector and list items styling */
+        .ride-list-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .ride-list-item:hover {
+            border-color: var(--accent) !important;
+            background: var(--accent-glow) !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
     </style>
 </head>
 <body>
@@ -1114,6 +1475,7 @@ func getDashboardTemplate() string {
                 <option value="theme-vuelta">🇪🇸 Vuelta Red</option>
                 <option value="theme-carbon">🚲 Carbon Dark</option>
             </select>
+            <button id="btn-select-ride" class="btn-action" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">📂 Select Ride</button>
             <button id="btn-gemini-coach" class="btn-action" style="background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2)); border-color: #9b59b6; color: #e0aaff; font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">🤖 Ask directeurAI Coach</button>
             <div class="dropdown" id="data-dropdown">
                 <button class="btn-action" id="btn-data-dropdown" style="gap: 0.5rem;">
@@ -1333,6 +1695,57 @@ func getDashboardTemplate() string {
 
     </div>
 
+    <!-- Modal for Select Ride -->
+    <div id="select-ride-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center; padding: 2rem;">
+        <div style="width: 100%; max-width: 700px; height: 75%; display: flex; flex-direction: column; gap: 1rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; padding: 1.5rem; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px var(--accent-glow);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                <div style="font-size: 1.3rem; font-weight: 700; background: linear-gradient(135deg, #ffffff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-family: 'Outfit';">📂 Select Ride Activity</div>
+                <button id="select-ride-close-btn" class="btn-action">Close</button>
+            </div>
+            
+            <!-- Modal Tabs Header -->
+            <div style="display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 0.5rem;">
+                <button id="tab-local" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid var(--accent); background: none; font-size: 0.95rem; font-weight: 600; padding: 0.75rem 1.5rem; color: var(--accent); cursor: pointer;">📂 Local Files</button>
+                <button id="tab-hammerhead" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid transparent; background: none; font-size: 0.95rem; font-weight: 500; padding: 0.75rem 1.5rem; color: var(--text-secondary); cursor: pointer;">🚲 Hammerhead Karoo</button>
+            </div>
+
+            <!-- Modal Content Lists Container -->
+            <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-right: 0.25rem;">
+                
+                <!-- Loading State -->
+                <div id="select-ride-loading" style="display: none; flex-direction: column; justify-content: center; align-items: center; gap: 1rem; padding: 3rem 0;">
+                    <div style="width: 40px; height: 40px; border: 4px solid var(--border-color); border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    <div style="color: var(--text-secondary); font-size: 0.9rem;">Fetching ride list...</div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="select-ride-empty" style="display: none; text-align: center; color: var(--text-secondary); padding: 3rem 0; font-style: italic;">
+                    No activities found.
+                </div>
+
+                <!-- Local Files List -->
+                <div id="list-local-container" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <!-- Filled dynamically -->
+                </div>
+
+                <!-- Hammerhead Activities List -->
+                <div id="list-hammerhead-container" style="display: none; flex-direction: column; gap: 0.75rem;">
+                    <!-- Filled dynamically -->
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Loading Overlay for Ride Analysis -->
+    <div id="analysis-loading-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 12, 0.85); backdrop-filter: blur(10px); z-index: 10000; justify-content: center; align-items: center; flex-direction: column; gap: 1.5rem;">
+        <div style="width: 60px; height: 60px; border: 5px solid var(--border-color); border-top: 5px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; box-shadow: 0 0 15px var(--accent-glow);"></div>
+        <div style="text-align: center;">
+            <h3 style="font-family: 'Outfit'; font-weight: 700; color: #ffffff; margin-bottom: 0.5rem; font-size: 1.4rem;">Analyzing Ride Telemetry</h3>
+            <p style="color: var(--text-secondary); font-size: 0.95rem;">Parsing FIT file records and compiling gear calculations...</p>
+        </div>
+    </div>
+
     <!-- Modal for JSON view -->
     <div id="json-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center; padding: 2rem;">
         <div style="width: 100%; max-width: 800px; height: 80%; display: flex; flex-direction: column; gap: 1rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; padding: 1.5rem; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
@@ -1485,26 +1898,30 @@ func getDashboardTemplate() string {
 
     <!-- Data Injection & Logic -->
     <script>
-        const rideData = {{.JSONStr}};
+        let rideData = {{.JSONStr}};
         const schemaData = {{.SchemaStr}};
         console.log("Loaded Ride Data:", rideData);
 
         // Global Chart and Map references for dynamic updating
         let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline;
+        let leafletMap, startMarker, endMarker;
+        let fullJSONString = "";
+        const fullSchemaString = JSON.stringify(schemaData, null, 2);
 
         // Apply Theme based on Month of the ride or user selection
-        const startDate = new Date(rideData.summary.start_time);
-        const rideMonth = startDate.getMonth() + 1; // 1-12
         let defaultThemeClass = 'theme-carbon';
-
-        if (rideMonth === 3) {
-            defaultThemeClass = 'theme-flandrian';
-        } else if (rideMonth === 4 || rideMonth === 5) {
-            defaultThemeClass = 'theme-giro';
-        } else if (rideMonth === 6 || rideMonth === 7) {
-            defaultThemeClass = 'theme-tour';
-        } else if (rideMonth === 8 || rideMonth === 9) {
-            defaultThemeClass = 'theme-vuelta';
+        if (rideData && rideData.summary) {
+            const startDate = new Date(rideData.summary.start_time);
+            const rideMonth = startDate.getMonth() + 1; // 1-12
+            if (rideMonth === 3) {
+                defaultThemeClass = 'theme-flandrian';
+            } else if (rideMonth === 4 || rideMonth === 5) {
+                defaultThemeClass = 'theme-giro';
+            } else if (rideMonth === 6 || rideMonth === 7) {
+                defaultThemeClass = 'theme-tour';
+            } else if (rideMonth === 8 || rideMonth === 9) {
+                defaultThemeClass = 'theme-vuelta';
+            }
         }
 
         let currentAccentColor = '#00d2ff';
@@ -1571,17 +1988,69 @@ func getDashboardTemplate() string {
             }
         }
 
+        function destroyAllCharts() {
+            if (powerChart) { powerChart.destroy(); powerChart = null; }
+            if (speedAltChart) { speedAltChart.destroy(); speedAltChart = null; }
+            if (hrCadenceChart) { hrCadenceChart.destroy(); hrCadenceChart = null; }
+            if (altGearsChart) { altGearsChart.destroy(); altGearsChart = null; }
+            if (powerCurveChart) { powerCurveChart.destroy(); powerCurveChart = null; }
+            if (chartPZones) { chartPZones.destroy(); chartPZones = null; }
+            if (chartHZones) { chartHZones.destroy(); chartHZones = null; }
+        }
+
         // Initialize theme on load
         window.addEventListener('DOMContentLoaded', () => {
-            applyTheme(defaultThemeClass);
+            if (rideData && rideData.summary) {
+                const startDate = new Date(rideData.summary.start_time);
+                const rideMonth = startDate.getMonth() + 1; // 1-12
+                let defaultThemeClass = 'theme-carbon';
+                if (rideMonth === 3) defaultThemeClass = 'theme-flandrian';
+                else if (rideMonth === 4 || rideMonth === 5) defaultThemeClass = 'theme-giro';
+                else if (rideMonth === 6 || rideMonth === 7) defaultThemeClass = 'theme-tour';
+                else if (rideMonth === 8 || rideMonth === 9) defaultThemeClass = 'theme-vuelta';
+                applyTheme(defaultThemeClass);
+            } else {
+                applyTheme('theme-carbon');
+            }
+
             document.getElementById('theme-selector').addEventListener('change', (e) => {
                 applyTheme(e.target.value);
             });
+
+            // Initial render
+            renderDashboard(rideData);
         });
-        
-        // Format Date
-        const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-        document.getElementById('ride-date-sub').innerText = startDate.toLocaleDateString('en-US', dateOptions);
+
+        // Modular renderDashboard function for dynamic updates
+        function renderDashboard(data) {
+            if (!data || !data.records || data.records.length === 0) {
+                console.log("No ride data to render");
+                document.getElementById('ride-date-sub').innerText = "No Ride Loaded";
+                document.getElementById('theme-badge').innerText = "No Ride Loaded";
+                return;
+            }
+            rideData = data;
+            fullJSONString = JSON.stringify(rideData, null, 2);
+
+            // Populate textarea JSON preview
+            const jsonLines = fullJSONString.split('\n');
+            const jsonPreview = jsonLines.slice(0, 100).join('\n') + 
+                '\n\n... [Telemetry records truncated for performance. Download the full JSON file or copy it below] ...';
+            document.getElementById('json-textarea').value = jsonPreview;
+
+            // Apply Theme based on Month of the ride
+            const startDate = new Date(rideData.summary.start_time);
+            const rideMonth = startDate.getMonth() + 1; // 1-12
+            let themeClass = 'theme-carbon';
+            if (rideMonth === 3) themeClass = 'theme-flandrian';
+            else if (rideMonth === 4 || rideMonth === 5) themeClass = 'theme-giro';
+            else if (rideMonth === 6 || rideMonth === 7) themeClass = 'theme-tour';
+            else if (rideMonth === 8 || rideMonth === 9) themeClass = 'theme-vuelta';
+            applyTheme(themeClass);
+
+            // Format Date
+            const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+            document.getElementById('ride-date-sub').innerText = startDate.toLocaleDateString('en-US', dateOptions);
 
         // Populate Stats
         document.getElementById('val-np').innerHTML = rideData.summary.normalized_power + ' <span class="stat-unit">W</span>';
@@ -1617,6 +2086,23 @@ func getDashboardTemplate() string {
         document.getElementById('val-shifts-rear').innerText = rideData.summary.total_rear_shifts;
         document.getElementById('val-shifts-total').innerText = rideData.summary.total_shifts;
 
+        // Update Gear Combo Usage List
+        const listContainer = document.getElementById('gear-usage-list');
+        listContainer.innerHTML = '';
+        if (rideData.gear_usage && rideData.gear_usage.length > 0) {
+            rideData.gear_usage.forEach(g => {
+                listContainer.innerHTML += '<li class="gear-item">' +
+                    '<div><span class="gear-combo">' + g.combination + '</span></div>' +
+                    '<div class="gear-bar-container">' +
+                    '<div class="gear-bar" style="width: ' + g.percentage + '%;"></div>' +
+                    '</div>' +
+                    '<div class="gear-duration">' + g.percentage.toFixed(1) + '%</div>' +
+                    '</li>';
+            });
+        } else {
+            listContainer.innerHTML = '<li class="gear-item">No gear data found</li>';
+        }
+
         // Initialize Map
         const routeCoords = rideData.records
             .filter(r => r.latitude_deg !== 0 && r.longitude_deg !== 0)
@@ -1624,28 +2110,33 @@ func getDashboardTemplate() string {
 
         const mapContainer = document.getElementById('map');
         if (routeCoords.length > 0) {
-            const map = L.map('map', {
-                zoomControl: true,
-                dragging: true,
-                scrollWheelZoom: false
-            }).setView(routeCoords[0], 13);
+            mapContainer.innerHTML = '';
+            mapContainer.style.display = 'block';
+            if (!leafletMap) {
+                leafletMap = L.map('map', {
+                    zoomControl: true,
+                    dragging: true,
+                    scrollWheelZoom: false
+                });
 
-            // Beautiful dark tile layer
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-                subdomains: 'abcd',
-                maxZoom: 20
-            }).addTo(map);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                    subdomains: 'abcd',
+                    maxZoom: 20
+                }).addTo(leafletMap);
+            } else {
+                if (routePolyline) leafletMap.removeLayer(routePolyline);
+                if (startMarker) leafletMap.removeLayer(startMarker);
+                if (endMarker) leafletMap.removeLayer(endMarker);
+            }
 
-            // Draw route polyline
             routePolyline = L.polyline(routeCoords, {
                 color: currentAccentColor,
                 weight: 4,
                 opacity: 0.85,
                 lineJoin: 'round'
-            }).addTo(map);
+            }).addTo(leafletMap);
 
-            // Custom markers for Start (Green) and End (Red)
             const startDot = L.divIcon({
                 className: 'start-marker',
                 html: '<div style="background-color: #2ecc71; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>',
@@ -1659,18 +2150,26 @@ func getDashboardTemplate() string {
                 iconAnchor: [6, 6]
             });
 
-            L.marker(routeCoords[0], { icon: startDot }).addTo(map);
-            L.marker(routeCoords[routeCoords.length - 1], { icon: endDot }).addTo(map);
+            startMarker = L.marker(routeCoords[0], { icon: startDot }).addTo(leafletMap);
+            endMarker = L.marker(routeCoords[routeCoords.length - 1], { icon: endDot }).addTo(leafletMap);
 
-            // Fit map bounds to show full route
-            map.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
+            leafletMap.invalidateSize();
+            leafletMap.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
         } else {
+            if (leafletMap) {
+                if (routePolyline) leafletMap.removeLayer(routePolyline);
+                if (startMarker) leafletMap.removeLayer(startMarker);
+                if (endMarker) leafletMap.removeLayer(endMarker);
+            }
             mapContainer.style.display = 'flex';
             mapContainer.style.alignItems = 'center';
             mapContainer.style.justifyContent = 'center';
             mapContainer.style.backgroundColor = 'var(--bg-tertiary)';
             mapContainer.innerHTML = '<div style="color: var(--text-secondary); font-size: 1rem; font-weight: 500;">No GPS Route Data Found (Indoor Ride)</div>';
         }
+
+        // Clean up old charts before recreating them
+        destroyAllCharts();
 
         // Shared chart configuration helper
         const timeLabels = rideData.records.map(r => {
@@ -2127,10 +2626,9 @@ func getDashboardTemplate() string {
                 }
             }
         });
+        } // End of renderDashboard function
 
         // Prepare JSON and Schema strings
-        const fullJSONString = JSON.stringify(rideData, null, 2);
-        const fullSchemaString = JSON.stringify(schemaData, null, 2);
 
         // Modal Logic for JSON Viewer
         const jsonModal = document.getElementById('json-modal');
@@ -2827,6 +3325,197 @@ func getDashboardTemplate() string {
         coachRegenerateBtn.addEventListener('click', () => {
             coachReportView.style.display = 'none';
             coachGenerateView.style.display = 'flex';
+        });
+
+        // ==========================================
+        // Select Ride Logic
+        // ==========================================
+        const selectRideModal = document.getElementById('select-ride-modal');
+        const btnSelectRide = document.getElementById('btn-select-ride');
+        const selectRideCloseBtn = document.getElementById('select-ride-close-btn');
+        const tabLocal = document.getElementById('tab-local');
+        const tabHammerhead = document.getElementById('tab-hammerhead');
+        const listLocalContainer = document.getElementById('list-local-container');
+        const listHammerheadContainer = document.getElementById('list-hammerhead-container');
+        const selectRideLoading = document.getElementById('select-ride-loading');
+        const selectRideEmpty = document.getElementById('select-ride-empty');
+        const analysisLoadingOverlay = document.getElementById('analysis-loading-overlay');
+
+        let selectRideActiveTab = 'local';
+
+        const updateTabUI = () => {
+            if (selectRideActiveTab === 'local') {
+                tabLocal.style.color = 'var(--accent)';
+                tabLocal.style.borderBottomColor = 'var(--accent)';
+                tabLocal.style.fontWeight = '600';
+                
+                tabHammerhead.style.color = 'var(--text-secondary)';
+                tabHammerhead.style.borderBottomColor = 'transparent';
+                tabHammerhead.style.fontWeight = '500';
+
+                listLocalContainer.style.display = 'flex';
+                listHammerheadContainer.style.display = 'none';
+            } else {
+                tabHammerhead.style.color = 'var(--accent)';
+                tabHammerhead.style.borderBottomColor = 'var(--accent)';
+                tabHammerhead.style.fontWeight = '600';
+
+                tabLocal.style.color = 'var(--text-secondary)';
+                tabLocal.style.borderBottomColor = 'transparent';
+                tabLocal.style.fontWeight = '500';
+
+                listLocalContainer.style.display = 'none';
+                listHammerheadContainer.style.display = 'flex';
+            }
+        };
+
+        tabLocal.addEventListener('click', () => {
+            selectRideActiveTab = 'local';
+            updateTabUI();
+            checkEmptyState();
+        });
+
+        tabHammerhead.addEventListener('click', () => {
+            selectRideActiveTab = 'hammerhead';
+            updateTabUI();
+            checkEmptyState();
+        });
+
+        const checkEmptyState = () => {
+            const hasLocal = listLocalContainer.children.length > 0;
+            const hasHammerhead = listHammerheadContainer.children.length > 0;
+            if (selectRideActiveTab === 'local') {
+                selectRideEmpty.style.display = hasLocal ? 'none' : 'block';
+            } else {
+                selectRideEmpty.style.display = hasHammerhead ? 'none' : 'block';
+            }
+        };
+
+        const loadRideData = (source, param) => {
+            selectRideModal.style.display = 'none';
+            analysisLoadingOverlay.style.display = 'flex';
+
+            let url = '/api/analyze?source=' + source;
+            if (source === 'local') {
+                url += '&file=' + encodeURIComponent(param);
+            } else {
+                url += '&id=' + encodeURIComponent(param);
+            }
+
+            fetch(url)
+                .then(res => {
+                    if (!res.ok) {
+                        return res.json().then(errData => {
+                            throw new Error(errData.error || ('HTTP error ' + res.status));
+                        });
+                    }
+                    return res.json();
+                })
+                .then(newData => {
+                    renderDashboard(newData);
+                    
+                    forceSetupView = true;
+                    if (document.getElementById('coach-plan-input')) {
+                        document.getElementById('coach-plan-input').value = localStorage.getItem('fit_athlete_training_plan') || '';
+                    }
+                    coachGenerateView.style.display = 'flex';
+                    coachLoadingView.style.display = 'none';
+                    coachReportView.style.display = 'none';
+                    renderHistory();
+                    checkCachedReport(true);
+                })
+                .catch(err => {
+                    console.error("Failed to analyze ride:", err);
+                    alert("Analysis failed: " + err.message);
+                })
+                .finally(() => {
+                    analysisLoadingOverlay.style.display = 'none';
+                });
+        };
+
+        const populateRideLists = () => {
+            selectRideLoading.style.display = 'flex';
+            listLocalContainer.innerHTML = '';
+            listHammerheadContainer.innerHTML = '';
+            selectRideEmpty.style.display = 'none';
+
+            fetch('/api/rides')
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP error ' + res.status);
+                    return res.json();
+                })
+                .then(data => {
+                    selectRideLoading.style.display = 'none';
+
+                    if (data.local && data.local.length > 0) {
+                        data.local.forEach(file => {
+                            const dateStr = new Date(file.mod_time).toLocaleString();
+                            const sizeStr = (file.size_bytes / 1024).toFixed(1) + ' KB';
+                            const item = document.createElement('div');
+                            item.className = 'ride-list-item';
+                            item.innerHTML = '<div>' +
+                                '<div style="font-weight: 600; color: #ffffff; font-size: 0.95rem; margin-bottom: 0.2rem;">' + file.filename + '</div>' +
+                                '<div style="font-size: 0.8rem; color: var(--text-secondary);">Modified: ' + dateStr + '</div>' +
+                                '</div>' +
+                                '<div style="display: flex; align-items: center; gap: 1rem;">' +
+                                '<span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">' + sizeStr + '</span>' +
+                                '<span class="badge" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;">FIT</span>' +
+                                '</div>';
+                            item.addEventListener('click', () => {
+                                loadRideData('local', file.filename);
+                            });
+                            listLocalContainer.appendChild(item);
+                        });
+                    }
+
+                    if (data.hammerhead && data.hammerhead.length > 0) {
+                        data.hammerhead.forEach(act => {
+                            const dateStr = act.startTime ? new Date(act.startTime).toLocaleString() : 'N/A';
+                            const distStr = (act.distance / 1000).toFixed(2) + ' km';
+                            const durStr = formatDuration(act.duration);
+                            const item = document.createElement('div');
+                            item.className = 'ride-list-item';
+                            item.innerHTML = '<div>' +
+                                '<div style="font-weight: 600; color: #ffffff; font-size: 0.95rem; margin-bottom: 0.2rem;">' + (act.name || 'Unnamed Activity') + '</div>' +
+                                '<div style="font-size: 0.8rem; color: var(--text-secondary);">Date: ' + dateStr + '</div>' +
+                                '</div>' +
+                                '<div style="display: flex; align-items: center; gap: 1rem;">' +
+                                '<div style="text-align: right;">' +
+                                '<div style="font-weight: 600; color: var(--accent); font-size: 0.9rem;">' + distStr + '</div>' +
+                                '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + durStr + '</div>' +
+                                '</div>' +
+                                '<span class="badge" style="font-size: 0.7rem; padding: 0.25rem 0.5rem; background: linear-gradient(135deg, rgba(245, 196, 0, 0.2), rgba(230, 126, 34, 0.2)); border-color: #f1c40f; color: #f1c40f;">KAROO</span>' +
+                                '</div>';
+                            item.addEventListener('click', () => {
+                                loadRideData('hammerhead', act.id);
+                            });
+                            listHammerheadContainer.appendChild(item);
+                        });
+                    }
+
+                    checkEmptyState();
+                })
+                .catch(err => {
+                    console.error("Failed to load rides list:", err);
+                    selectRideLoading.style.display = 'none';
+                    selectRideEmpty.innerText = "Error loading activities: " + err.message;
+                    selectRideEmpty.style.display = 'block';
+                });
+        };
+
+        btnSelectRide.addEventListener('click', () => {
+            selectRideModal.style.display = 'flex';
+            populateRideLists();
+        });
+
+        selectRideCloseBtn.addEventListener('click', () => {
+            selectRideModal.style.display = 'none';
+        });
+
+        selectRideModal.addEventListener('click', (e) => {
+            if (e.target === selectRideModal) {
+                selectRideModal.style.display = 'none';
+            }
         });
 
     </script>
