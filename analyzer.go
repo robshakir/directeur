@@ -836,6 +836,57 @@ func getDashboardTemplate() string {
             color: var(--text-primary);
         }
 
+        /* Dropdown menu container */
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 0.5rem);
+            background: rgba(19, 19, 26, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5), 0 0 15px var(--accent-glow);
+            z-index: 1000;
+            min-width: 200px;
+            overflow: hidden;
+            flex-direction: column;
+            padding: 0.5rem 0;
+        }
+
+        .dropdown.active .dropdown-menu {
+            display: flex;
+        }
+
+        .dropdown-item {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            padding: 0.6rem 1.2rem;
+            text-align: left;
+            font-size: 0.85rem;
+            font-family: var(--font-family);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            white-space: nowrap;
+        }
+
+        .dropdown-item:hover {
+            background: var(--accent-glow);
+            color: var(--accent);
+        }
+
         /* Stats Grid */
         .stats-grid {
             display: grid;
@@ -1064,9 +1115,16 @@ func getDashboardTemplate() string {
                 <option value="theme-carbon">🚲 Carbon Dark</option>
             </select>
             <button id="btn-gemini-coach" class="btn-action" style="background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2)); border-color: #9b59b6; color: #e0aaff; font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">🤖 Ask directeurAI Coach</button>
-            <button id="btn-download-json" class="btn-action" style="background: var(--accent-glow); border-color: var(--accent); color: var(--accent);">📥 Download JSON</button>
-            <button id="btn-copy-json" class="btn-action">📋 View JSON Data</button>
-            <button id="btn-view-schema" class="btn-action">📋 View Schema</button>
+            <div class="dropdown" id="data-dropdown">
+                <button class="btn-action" id="btn-data-dropdown" style="gap: 0.5rem;">
+                    📦 Data Options <span style="font-size: 0.6rem; opacity: 0.7; transition: transform 0.2s ease; display: inline-block;" id="dropdown-arrow">▼</span>
+                </button>
+                <div class="dropdown-menu" id="data-dropdown-menu">
+                    <button id="btn-copy-json" class="dropdown-item">📋 View JSON Data</button>
+                    <button id="btn-view-schema" class="dropdown-item">📋 View Schema</button>
+                    <button id="btn-download-json" class="dropdown-item">📥 Download JSON</button>
+                </div>
+            </div>
             <div id="theme-badge" class="badge">Theme loading...</div>
         </div>
     </header>
@@ -2192,6 +2250,38 @@ func getDashboardTemplate() string {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        });
+
+        // Dropdown Toggle Logic
+        const dataDropdown = document.getElementById('data-dropdown');
+        const btnDataDropdown = document.getElementById('btn-data-dropdown');
+        const dropdownArrow = document.getElementById('dropdown-arrow');
+
+        btnDataDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dataDropdown.classList.toggle('active');
+            if (dataDropdown.classList.contains('active')) {
+                dropdownArrow.style.transform = 'rotate(180deg)';
+            } else {
+                dropdownArrow.style.transform = 'rotate(0deg)';
+            }
+        });
+
+        // Close dropdown when clicking an option
+        const dropdownItems = dataDropdown.querySelectorAll('.dropdown-item');
+        dropdownItems.forEach(item => {
+            item.addEventListener('click', () => {
+                dataDropdown.classList.remove('active');
+                dropdownArrow.style.transform = 'rotate(0deg)';
+            });
+        });
+
+        // Close dropdown when clicking outside
+        window.addEventListener('click', (e) => {
+            if (!dataDropdown.contains(e.target)) {
+                dataDropdown.classList.remove('active');
+                dropdownArrow.style.transform = 'rotate(0deg)';
+            }
         });
 
         // ==========================================
