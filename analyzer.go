@@ -946,21 +946,28 @@ func serveDashboard(path string, port int, config Config) {
 		if err != nil {
 			fmt.Printf("Error listing local rides: %v\n", err)
 		}
-		hhRides, err := fetchHammerheadActivities(config.HammerheadAPI)
-		if err != nil {
-			fmt.Printf("Error fetching Hammerhead activities: %v\n", err)
+		hhRides, hhErr := fetchHammerheadActivities(config.HammerheadAPI)
+		if hhErr != nil {
+			fmt.Printf("Error fetching Hammerhead activities: %v\n", hhErr)
 		}
 
 		type RidesResponse struct {
 			Local                []RideFile           `json:"local"`
 			Hammerhead           []HammerheadActivity `json:"hammerhead"`
 			HammerheadConfigured bool                 `json:"hammerhead_configured"`
+			HammerheadError      string               `json:"hammerhead_error,omitempty"`
+		}
+
+		var hhErrStr string
+		if hhErr != nil {
+			hhErrStr = hhErr.Error()
 		}
 
 		resp := RidesResponse{
 			Local:                localRides,
 			Hammerhead:           hhRides,
 			HammerheadConfigured: config.HammerheadAPI.Enabled && config.HammerheadAPI.AuthToken != "",
+			HammerheadError:      hhErrStr,
 		}
 		json.NewEncoder(w).Encode(resp)
 	})
@@ -3496,6 +3503,37 @@ func getDashboardTemplate() string {
                             '<li>Paste it into <code>config.json</code> under <code>"hammerhead_api"</code> &rarr; <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
                             '</ol>';
                         listHammerheadContainer.appendChild(promptCard);
+                    } else if (data.hammerhead_error) {
+                        const errorCard = document.createElement('div');
+                        errorCard.style.background = 'rgba(231, 76, 60, 0.05)';
+                        errorCard.style.border = '1px solid #e74c3c';
+                        errorCard.style.borderRadius = '16px';
+                        errorCard.style.padding = '1.5rem';
+                        errorCard.style.color = 'var(--text-secondary)';
+                        errorCard.style.lineHeight = '1.6';
+                        errorCard.style.fontSize = '0.9rem';
+                        errorCard.style.boxShadow = '0 4px 20px rgba(231, 76, 60, 0.1)';
+                        
+                        errorCard.innerHTML = '<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; color: #e74c3c; font-weight: 700; font-family: \'Outfit\'; font-size: 1.05rem;">' +
+                            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>' +
+                            'Failed to Fetch Hammerhead Activities' +
+                            '</div>' +
+                            '<p style="margin: 0 0 1rem 0; font-size: 0.85rem; color: #ffffff;">The Hammerhead API returned an error. This usually indicates that your authentication key is invalid or has expired.</p>' +
+                            '<div style="background: rgba(0, 0, 0, 0.3); padding: 0.75rem 1rem; border-radius: 8px; font-family: monospace; font-size: 0.8rem; color: #e74c3c; word-break: break-all; margin-bottom: 1.25rem; border: 1px solid rgba(231, 76, 60, 0.2);">' +
+                            data.hammerhead_error +
+                            '</div>' +
+                            '<p style="margin: 0 0 1rem 0; font-size: 0.85rem; color: #ffffff;">Please follow the setup instructions below to retrieve a fresh token:</p>' +
+                            '<ol style="margin: 0; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.6rem; color: var(--text-secondary);">' +
+                            '<li>Log in to the <a href="https://dashboard.hammerhead.io/" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: 600; border-bottom: 1px dotted var(--accent); transition: color 0.2s;">Hammerhead Dashboard</a>.</li>' +
+                            '<li>Open Developer Tools (press <kbd style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 0.75rem; color: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.4);">F12</kbd> or <kbd style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 0.75rem; color: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.4);">Cmd+Opt+I</kbd>).</li>' +
+                            '<li>Switch to the <strong>Network</strong> tab.</li>' +
+                            '<li>Refresh the page or click "Activities" on the dashboard.</li>' +
+                            '<li>Filter/search requests by <code>activities</code>.</li>' +
+                            '<li>Select the request and find the <strong>Request Headers</strong>.</li>' +
+                            '<li>Copy the token string after <code>Bearer </code> in the <code>Authorization</code> header.</li>' +
+                            '<li>Paste it into <code>config.json</code> under <code>"hammerhead_api"</code> &rarr; <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
+                            '</ol>';
+                        listHammerheadContainer.appendChild(errorCard);
                     } else {
                         if (data.hammerhead && data.hammerhead.length > 0) {
                             data.hammerhead.forEach(act => {
