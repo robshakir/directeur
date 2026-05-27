@@ -1520,6 +1520,16 @@
         }
 
         
+        if (leafletMap) {
+            try {
+                leafletMap.remove();
+            } catch (e) {
+                console.error("Error removing map instance:", e);
+            }
+            leafletMap = null;
+        }
+
+        
         const routeCoords = rideData.records
             .filter(r => r.latitude_deg !== 0 && r.longitude_deg !== 0)
             .map(r => [r.latitude_deg, r.longitude_deg]);
@@ -1528,23 +1538,17 @@
         if (routeCoords.length > 0) {
             mapContainer.innerHTML = '';
             mapContainer.style.display = 'block';
-            if (!leafletMap) {
-                leafletMap = L.map('map', {
-                    zoomControl: true,
-                    dragging: true,
-                    scrollWheelZoom: false
-                });
+            leafletMap = L.map('map', {
+                zoomControl: true,
+                dragging: true,
+                scrollWheelZoom: false
+            });
 
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-                    subdomains: 'abcd',
-                    maxZoom: 20
-                }).addTo(leafletMap);
-            } else {
-                if (routePolyline) leafletMap.removeLayer(routePolyline);
-                if (startMarker) leafletMap.removeLayer(startMarker);
-                if (endMarker) leafletMap.removeLayer(endMarker);
-            }
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 20
+            }).addTo(leafletMap);
 
             routePolyline = L.polyline(routeCoords, {
                 color: currentAccentColor,
@@ -1572,11 +1576,6 @@
             leafletMap.invalidateSize();
             leafletMap.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
         } else {
-            if (leafletMap) {
-                if (routePolyline) leafletMap.removeLayer(routePolyline);
-                if (startMarker) leafletMap.removeLayer(startMarker);
-                if (endMarker) leafletMap.removeLayer(endMarker);
-            }
             mapContainer.style.display = 'flex';
             mapContainer.style.alignItems = 'center';
             mapContainer.style.justifyContent = 'center';
