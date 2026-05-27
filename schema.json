@@ -1,0 +1,229 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RideAnalysis",
+  "description": "Garmin FIT file cycling telemetry analysis output containing summary, gear usage breakdown, and time-series records.",
+  "type": "object",
+  "required": [
+    "summary",
+    "gear_usage",
+    "records"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL link to this schema definition."
+    },
+    "summary": {
+      "type": "object",
+      "description": "Aggregated overall ride summary metrics.",
+      "required": [
+        "start_time",
+        "duration_seconds",
+        "distance_meters",
+        "average_power",
+        "max_power",
+        "normalized_power",
+        "average_heart_rate",
+        "max_heart_rate",
+        "average_cadence",
+        "max_cadence",
+        "total_elevation_gain_meters",
+        "max_altitude_meters",
+        "min_altitude_meters",
+        "total_front_shifts",
+        "total_rear_shifts",
+        "total_shifts",
+        "theme_name",
+        "power_curve"
+      ],
+      "properties": {
+        "start_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC timestamp of the start of the ride."
+        },
+        "duration_seconds": {
+          "type": "number",
+          "description": "Total elapsed time in seconds."
+        },
+        "distance_meters": {
+          "type": "number",
+          "description": "Total ride distance in meters."
+        },
+        "average_power": {
+          "type": "number",
+          "description": "Average power in watts (excluding dropouts/invalid readings)."
+        },
+        "max_power": {
+          "type": "integer",
+          "description": "Maximum recorded power in watts."
+        },
+        "normalized_power": {
+          "type": "integer",
+          "description": "Normalized Power (NP) in watts. Calculated as the 4th root of the average of the 30-second rolling power values raised to the 4th power."
+        },
+        "average_heart_rate": {
+          "type": "number",
+          "description": "Average heart rate in beats per minute (bpm)."
+        },
+        "max_heart_rate": {
+          "type": "integer",
+          "description": "Maximum heart rate in beats per minute (bpm)."
+        },
+        "average_cadence": {
+          "type": "number",
+          "description": "Average cadence in revolutions per minute (rpm) (excluding invalid readings)."
+        },
+        "max_cadence": {
+          "type": "integer",
+          "description": "Maximum cadence in revolutions per minute (rpm)."
+        },
+        "total_elevation_gain_meters": {
+          "type": "number",
+          "description": "Total accumulated elevation gain in meters."
+        },
+        "max_altitude_meters": {
+          "type": "number",
+          "description": "Maximum altitude reached in meters."
+        },
+        "min_altitude_meters": {
+          "type": "number",
+          "description": "Minimum altitude reached in meters."
+        },
+        "total_front_shifts": {
+          "type": "integer",
+          "description": "Total number of front chainring shifts."
+        },
+        "total_rear_shifts": {
+          "type": "integer",
+          "description": "Total number of rear cassette shifts."
+        },
+        "total_shifts": {
+          "type": "integer",
+          "description": "Sum of total front and rear shifts."
+        },
+        "theme_name": {
+          "type": "string",
+          "description": "Dynamic visual theme selected for the dashboard, corresponding to the month of the ride (e.g. Classics Flandrian, Giro Pink, Tour Yellow, Vuelta Red, Carbon Dark)."
+        },
+        "power_curve": {
+          "type": "object",
+          "description": "Mean Maximal Power (MMP) values representing the peak average power sustained for specific durations (e.g., '1s', '30s', '5m').",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "gear_usage": {
+      "type": "array",
+      "description": "List of gear combinations and their usage durations ordered by most used.",
+      "items": {
+        "type": "object",
+        "required": [
+          "combination",
+          "seconds",
+          "percentage"
+        ],
+        "properties": {
+          "combination": {
+            "type": "string",
+            "description": "The gear combination string represented as 'FrontTeeth x RearTeeth' (e.g., '46x19')."
+          },
+          "seconds": {
+            "type": "integer",
+            "description": "Total duration spent in this gear combination in seconds."
+          },
+          "percentage": {
+            "type": "number",
+            "description": "Percentage of total ride time spent in this gear combination."
+          }
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "description": "Chronological array of telemetry records recorded typically at 1Hz.",
+      "items": {
+        "type": "object",
+        "required": [
+          "timestamp",
+          "elapsed_time_seconds",
+          "power",
+          "power_30s",
+          "heart_rate",
+          "cadence",
+          "altitude_meters",
+          "speed_kmh",
+          "distance_meters",
+          "latitude_deg",
+          "longitude_deg",
+          "front_gear_num",
+          "front_gear_teeth",
+          "rear_gear_num",
+          "rear_gear_teeth",
+          "gear_ratio"
+        ],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC timestamp of this data point."
+          },
+          "elapsed_time_seconds": {
+            "type": "number",
+            "description": "Elapsed time since start of ride in seconds."
+          },
+          "power": {
+            "type": "integer",
+            "description": "Instantaneous power in watts. (Invalid value 65535 is mapped to 0)."
+          },
+          "power_30s": {
+            "type": "integer",
+            "description": "30-second rolling average power in watts."
+          },
+          "heart_rate": {
+            "type": "integer",
+            "description": "Heart rate in beats per minute (bpm). (Invalid value 255 is mapped to 0)."
+          },
+          "cadence": {
+            "type": "integer",
+            "description": "Cadence in revolutions per minute (rpm). (Invalid value 255 is mapped to 0)."
+          },
+          "altitude_meters": {
+            "type": "number",
+            "description": "Current altitude in meters."
+          },
+          "speed_kmh": {
+            "type": "number",
+            "description": "Current speed in kilometers per hour (km/h)."
+          },
+          "distance_meters": {
+            "type": "number",
+            "description": "Accumulated distance since start of ride in meters."
+          },
+          "front_gear_num": {
+            "type": "integer",
+            "description": "1-based index of the front gear (e.g. 1 = inner chainring, 2 = outer chainring)."
+          },
+          "front_gear_teeth": {
+            "type": "integer",
+            "description": "Teeth count of the front gear (e.g. 33 or 46)."
+          },
+          "rear_gear_num": {
+            "type": "integer",
+            "description": "1-based index of the rear gear (e.g. 1 = easiest/largest cog, 12 = hardest/smallest cog)."
+          },
+          "rear_gear_teeth": {
+            "type": "integer",
+            "description": "Teeth count of the rear gear (e.g. 10 or 36)."
+          },
+          "gear_ratio": {
+            "type": "number",
+            "description": "Gear ratio calculated as FrontTeeth / RearTeeth. Represents wheel revolutions per pedal revolution."
+          }
+        }
+      }
+    }
+  }
+}
