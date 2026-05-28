@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -370,6 +371,44 @@ func listLocalRides(dir string) ([]RideFile, error) {
 	return rides, nil
 }
 
+// extractUserIDFromJWT decodes the JWT token payload and returns the "sub" field
+func extractUserIDFromJWT(token string) (string, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid token format")
+	}
+
+	payloadSegment := parts[1]
+	// Add base64 padding if needed
+	switch len(payloadSegment) % 4 {
+	case 2:
+		payloadSegment += "=="
+	case 3:
+		payloadSegment += "="
+	}
+
+	decoded, err := base64.URLEncoding.DecodeString(payloadSegment)
+	if err != nil {
+		// Try standard base64 decoding if URLEncoding fails
+		decoded, err = base64.StdEncoding.DecodeString(payloadSegment)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode payload: %w", err)
+		}
+	}
+
+	var claims map[string]interface{}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return "", fmt.Errorf("failed to unmarshal claims: %w", err)
+	}
+
+	sub, ok := claims["sub"].(string)
+	if !ok || sub == "" {
+		return "", fmt.Errorf("sub claim not found or empty")
+	}
+
+	return sub, nil
+}
+
 // fetchHammerheadActivities gets the list of recent rides from Hammerhead API
 func fetchHammerheadActivities(cfg HammerheadConfig) ([]HammerheadActivity, error) {
 	var activities []HammerheadActivity
@@ -377,8 +416,14 @@ func fetchHammerheadActivities(cfg HammerheadConfig) ([]HammerheadActivity, erro
 		return activities, nil
 	}
 
+	userID, err := extractUserIDFromJWT(cfg.AuthToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract user ID from auth token: %w", err)
+	}
+
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", "https://api.hammerhead.io/v1/activities", nil)
+	url := fmt.Sprintf("https://api.hammerhead.io/v1/users/%s/activities", userID)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -396,9 +441,13 @@ func fetchHammerheadActivities(cfg HammerheadConfig) ([]HammerheadActivity, erro
 		return nil, fmt.Errorf("hammerhead API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&activities); err != nil {
+	var envelope struct {
+		Data []HammerheadActivity `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		return nil, err
 	}
+	activities = envelope.Data
 
 	// Sort newest first
 	sort.Slice(activities, func(i, j int) bool {
@@ -423,8 +472,14 @@ func downloadHammerheadFITFile(cfg HammerheadConfig, activityID string) (string,
 		return filePath, nil
 	}
 
+	userID, err := extractUserIDFromJWT(cfg.AuthToken)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract user ID from auth token: %w", err)
+	}
+
 	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.hammerhead.io/v1/activities/%s/fit", activityID), nil)
+	url := fmt.Sprintf("https://api.hammerhead.io/v1/users/%s/activities/%s/fit", userID, activityID)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
 	}
