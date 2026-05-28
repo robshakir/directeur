@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,9 +29,12 @@ type Config struct {
 
 // HammerheadConfig represents authentication and caching details for Hammerhead Dashboard API integration
 type HammerheadConfig struct {
-	Enabled     bool   `json:"enabled"`
-	AuthToken   string `json:"auth_token"`
-	DownloadDir string `json:"download_dir"`
+	Enabled      bool   `json:"enabled"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	AuthToken    string `json:"auth_token"`
+	RefreshToken string `json:"refresh_token"`
+	DownloadDir  string `json:"download_dir"`
 }
 
 // RideSummary contains high-level metrics of the ride
@@ -165,12 +169,12 @@ func main() {
 		hasData = true
 	} else {
 		// Try Hammerhead if enabled
-		if config.HammerheadAPI.Enabled && config.HammerheadAPI.AuthToken != "" {
+		if config.HammerheadAPI.Enabled && (config.HammerheadAPI.AuthToken != "" || config.HammerheadAPI.RefreshToken != "") {
 			fmt.Println("Hammerhead API enabled, fetching activities...")
-			activities, err := fetchHammerheadActivities(config.HammerheadAPI)
+			activities, err := fetchHammerheadActivities(config.HammerheadAPI, *configFile)
 			if err == nil && len(activities) > 0 {
 				fmt.Printf("Downloading newest Hammerhead activity: %s (%s)...\n", activities[0].Name, activities[0].ID)
-				filePath, err := downloadHammerheadFITFile(config.HammerheadAPI, activities[0].ID)
+				filePath, err := downloadHammerheadFITFile(config.HammerheadAPI, *configFile, activities[0].ID)
 				if err == nil {
 					resolvedInputFile = filePath
 					hasData = true
@@ -235,7 +239,7 @@ func main() {
 
 	// Serve Mode if requested
 	if *serveMode {
-		serveDashboard(*outputHTML, *port, config)
+		serveDashboard(*outputHTML, *port, config, *configFile)
 	}
 }
 
@@ -262,6 +266,14 @@ func loadConfig(path string) Config {
 		config.HammerheadAPI.DownloadDir = "./fit_downloads"
 	}
 	return config
+}
+
+func saveConfig(path string, config Config) error {
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 // RideFile represents a local FIT file details for list API
@@ -371,6 +383,65 @@ func listLocalRides(dir string) ([]RideFile, error) {
 	return rides, nil
 }
 
+type HammerheadTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
+}
+
+func exchangeHammerheadCode(clientID, clientSecret, code, redirectURI string) (*HammerheadTokenResponse, error) {
+	u := "https://api.hammerhead.io/v1/auth/oauth/token"
+	data := url.Values{}
+	data.Set("grant_type", "authorization_code")
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+	data.Set("code", code)
+	data.Set("redirect_uri", redirectURI)
+
+	resp, err := http.PostForm(u, data)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("token exchange failed (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var tokenResp HammerheadTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, err
+	}
+	return &tokenResp, nil
+}
+
+func refreshHammerheadToken(clientID, clientSecret, refreshToken string) (*HammerheadTokenResponse, error) {
+	u := "https://api.hammerhead.io/v1/auth/oauth/token"
+	data := url.Values{}
+	data.Set("grant_type", "refresh_token")
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+	data.Set("refresh_token", refreshToken)
+
+	resp, err := http.PostForm(u, data)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("token refresh failed (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var tokenResp HammerheadTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, err
+	}
+	return &tokenResp, nil
+}
+
 // extractUserIDFromJWT decodes the JWT token payload and returns the "sub" field
 func extractUserIDFromJWT(token string) (string, error) {
 	parts := strings.Split(token, ".")
@@ -410,55 +481,88 @@ func extractUserIDFromJWT(token string) (string, error) {
 }
 
 // fetchHammerheadActivities gets the list of recent rides from Hammerhead API
-func fetchHammerheadActivities(cfg HammerheadConfig) ([]HammerheadActivity, error) {
+func fetchHammerheadActivities(cfg HammerheadConfig, configPath string) ([]HammerheadActivity, error) {
 	var activities []HammerheadActivity
-	if !cfg.Enabled || cfg.AuthToken == "" {
+	if !cfg.Enabled {
 		return activities, nil
 	}
 
-	userID, err := extractUserIDFromJWT(cfg.AuthToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract user ID from auth token: %w", err)
+	makeRequest := func(token string) ([]HammerheadActivity, int, error) {
+		userID, err := extractUserIDFromJWT(token)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to extract user ID from auth token: %w", err)
+		}
+
+		client := &http.Client{Timeout: 10 * time.Second}
+		url := fmt.Sprintf("https://api.hammerhead.io/v1/users/%s/activities", userID)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, 0, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return nil, resp.StatusCode, fmt.Errorf("hammerhead API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var envelope struct {
+			Data []HammerheadActivity `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+			return nil, resp.StatusCode, err
+		}
+		return envelope.Data, resp.StatusCode, nil
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	url := fmt.Sprintf("https://api.hammerhead.io/v1/users/%s/activities", userID)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
-	req.Header.Set("Accept", "application/json")
+	var tokenToUse = cfg.AuthToken
+	var err error
+	var statusCode int
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("hammerhead API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	if tokenToUse != "" {
+		activities, statusCode, err = makeRequest(tokenToUse)
+		if err == nil {
+			return activities, nil
+		}
 	}
 
-	var envelope struct {
-		Data []HammerheadActivity `json:"data"`
+	// Try refresh if token was missing, or if we got a 401 Unauthorized
+	if (tokenToUse == "" || statusCode == http.StatusUnauthorized) && cfg.RefreshToken != "" && cfg.ClientID != "" && cfg.ClientSecret != "" {
+		fmt.Println("Hammerhead access token expired or missing, attempting token refresh...")
+		tokenResp, refreshErr := refreshHammerheadToken(cfg.ClientID, cfg.ClientSecret, cfg.RefreshToken)
+		if refreshErr == nil {
+			// Save updated config
+			currentConfig := loadConfig(configPath)
+			currentConfig.HammerheadAPI.AuthToken = tokenResp.AccessToken
+			if tokenResp.RefreshToken != "" {
+				currentConfig.HammerheadAPI.RefreshToken = tokenResp.RefreshToken
+			}
+			if saveErr := saveConfig(configPath, currentConfig); saveErr == nil {
+				// Retry the request with new token
+				activities, _, err = makeRequest(tokenResp.AccessToken)
+				if err == nil {
+					return activities, nil
+				}
+			} else {
+				fmt.Printf("Error saving config after refresh: %v\n", saveErr)
+			}
+		} else {
+			return nil, fmt.Errorf("token refresh failed: %w (original request error: %v)", refreshErr, err)
+		}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		return nil, err
-	}
-	activities = envelope.Data
 
-	// Sort newest first
-	sort.Slice(activities, func(i, j int) bool {
-		return activities[i].StartTime.After(activities[j].StartTime)
-	})
-
-	return activities, nil
+	return nil, err
 }
 
 // downloadHammerheadFITFile retrieves and caches a FIT file from the Hammerhead activities API
-func downloadHammerheadFITFile(cfg HammerheadConfig, activityID string) (string, error) {
+func downloadHammerheadFITFile(cfg HammerheadConfig, configPath string, activityID string) (string, error) {
 	if activityID == "" {
 		return "", fmt.Errorf("empty activity ID")
 	}
@@ -472,42 +576,82 @@ func downloadHammerheadFITFile(cfg HammerheadConfig, activityID string) (string,
 		return filePath, nil
 	}
 
-	userID, err := extractUserIDFromJWT(cfg.AuthToken)
-	if err != nil {
-		return "", fmt.Errorf("failed to extract user ID from auth token: %w", err)
+	makeRequest := func(token string) (int, error) {
+		userID, err := extractUserIDFromJWT(token)
+		if err != nil {
+			return 0, fmt.Errorf("failed to extract user ID from auth token: %w", err)
+		}
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		url := fmt.Sprintf("https://api.hammerhead.io/v1/users/%s/activities/%s/fit", userID, activityID)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return resp.StatusCode, fmt.Errorf("failed to download FIT (status %d): %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		out, err := os.Create(filePath)
+		if err != nil {
+			return resp.StatusCode, err
+		}
+		defer out.Close()
+
+		_, err = io.Copy(out, resp.Body)
+		if err != nil {
+			return resp.StatusCode, err
+		}
+
+		return resp.StatusCode, nil
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	url := fmt.Sprintf("https://api.hammerhead.io/v1/users/%s/activities/%s/fit", userID, activityID)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
+	var tokenToUse = cfg.AuthToken
+	var err error
+	var statusCode int
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("failed to download FIT (status %d): %s", resp.StatusCode, string(bodyBytes))
+	if tokenToUse != "" {
+		statusCode, err = makeRequest(tokenToUse)
+		if err == nil {
+			return filePath, nil
+		}
 	}
 
-	out, err := os.Create(filePath)
-	if err != nil {
-		return "", err
+	// Try refresh if token was missing, or if we got a 401 Unauthorized
+	if (tokenToUse == "" || statusCode == http.StatusUnauthorized) && cfg.RefreshToken != "" && cfg.ClientID != "" && cfg.ClientSecret != "" {
+		fmt.Println("Hammerhead access token expired or missing, attempting token refresh...")
+		tokenResp, refreshErr := refreshHammerheadToken(cfg.ClientID, cfg.ClientSecret, cfg.RefreshToken)
+		if refreshErr == nil {
+			// Save updated config
+			currentConfig := loadConfig(configPath)
+			currentConfig.HammerheadAPI.AuthToken = tokenResp.AccessToken
+			if tokenResp.RefreshToken != "" {
+				currentConfig.HammerheadAPI.RefreshToken = tokenResp.RefreshToken
+			}
+			if saveErr := saveConfig(configPath, currentConfig); saveErr == nil {
+				// Retry the request with new token
+				_, err = makeRequest(tokenResp.AccessToken)
+				if err == nil {
+					return filePath, nil
+				}
+			} else {
+				fmt.Printf("Error saving config after refresh: %v\n", saveErr)
+			}
+		} else {
+			return "", fmt.Errorf("token refresh failed: %w (original download error: %v)", refreshErr, err)
+		}
 	}
-	defer out.Close()
 
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return filePath, nil
+	return "", err
 }
 
 func sortEvents(events []*fit.EventMsg) {
@@ -982,7 +1126,7 @@ func writeHTML(path string, analysis RideAnalysis) {
 	}
 }
 
-func serveDashboard(path string, port int, config Config) {
+func serveDashboard(path string, port int, config Config, configPath string) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		absPath = path
@@ -995,13 +1139,104 @@ func serveDashboard(path string, port int, config Config) {
 		http.ServeFile(w, r, absPath)
 	})
 
+	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Error(w, "Missing authorization code", http.StatusBadRequest)
+			return
+		}
+
+		// Load fresh config
+		cfg := loadConfig(configPath)
+		if cfg.HammerheadAPI.ClientID == "" || cfg.HammerheadAPI.ClientSecret == "" {
+			http.Error(w, "Client credentials not configured in config.json", http.StatusInternalServerError)
+			return
+		}
+
+		tokenResp, err := exchangeHammerheadCode(
+			cfg.HammerheadAPI.ClientID,
+			cfg.HammerheadAPI.ClientSecret,
+			code,
+			"http://localhost:8080/callback",
+		)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Token exchange failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Update and save config
+		cfg.HammerheadAPI.AuthToken = tokenResp.AccessToken
+		cfg.HammerheadAPI.RefreshToken = tokenResp.RefreshToken
+		cfg.HammerheadAPI.Enabled = true
+		if err := saveConfig(configPath, cfg); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Redirect user back to the main dashboard page
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Link Successful</title>
+    <style>
+        body {
+            background-color: #0a0a0c;
+            color: #ffffff;
+            font-family: 'Outfit', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid #27273a;
+            padding: 3rem;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            max-width: 400px;
+        }
+        h2 { color: #E45C86; margin-bottom: 1rem; }
+        p { color: #94a3b8; font-size: 0.95rem; margin-bottom: 2rem; }
+        .btn {
+            background: #E45C86;
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 10px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Connection Successful!</h2>
+        <p>Your Hammerhead Account has been successfully linked to directeurAI. You can close this window now or return to the dashboard.</p>
+        <a class="btn" href="/">Return to Dashboard</a>
+    </div>
+    <script>
+        // Auto-redirect back to dashboard after 3 seconds
+        setTimeout(function() {
+            window.location.href = "/";
+        }, 3000);
+    </script>
+</body>
+</html>`))
+	})
+
 	http.HandleFunc("/api/rides", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		localRides, err := listLocalRides(config.LocalDirectory)
+		cfg := loadConfig(configPath)
+		localRides, err := listLocalRides(cfg.LocalDirectory)
 		if err != nil {
 			fmt.Printf("Error listing local rides: %v\n", err)
 		}
-		hhRides, hhErr := fetchHammerheadActivities(config.HammerheadAPI)
+		hhRides, hhErr := fetchHammerheadActivities(cfg.HammerheadAPI, configPath)
 		if hhErr != nil {
 			fmt.Printf("Error fetching Hammerhead activities: %v\n", hhErr)
 		}
@@ -1010,7 +1245,9 @@ func serveDashboard(path string, port int, config Config) {
 			Local                []RideFile           `json:"local"`
 			Hammerhead           []HammerheadActivity `json:"hammerhead"`
 			HammerheadConfigured bool                 `json:"hammerhead_configured"`
+			HammerheadLinked     bool                 `json:"hammerhead_linked"`
 			HammerheadError      string               `json:"hammerhead_error,omitempty"`
+			ClientID             string               `json:"client_id,omitempty"`
 		}
 
 		var hhErrStr string
@@ -1021,14 +1258,17 @@ func serveDashboard(path string, port int, config Config) {
 		resp := RidesResponse{
 			Local:                localRides,
 			Hammerhead:           hhRides,
-			HammerheadConfigured: config.HammerheadAPI.Enabled && config.HammerheadAPI.AuthToken != "",
+			HammerheadConfigured: cfg.HammerheadAPI.ClientID != "" && cfg.HammerheadAPI.ClientSecret != "",
+			HammerheadLinked:     cfg.HammerheadAPI.Enabled && (cfg.HammerheadAPI.AuthToken != "" || cfg.HammerheadAPI.RefreshToken != ""),
 			HammerheadError:      hhErrStr,
+			ClientID:             cfg.HammerheadAPI.ClientID,
 		}
 		json.NewEncoder(w).Encode(resp)
 	})
 
 	http.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		cfg := loadConfig(configPath)
 		source := r.URL.Query().Get("source")
 		var filePath string
 		var err error
@@ -1040,14 +1280,14 @@ func serveDashboard(path string, port int, config Config) {
 				return
 			}
 			cleanFile := filepath.Base(file)
-			filePath = filepath.Join(config.LocalDirectory, cleanFile)
+			filePath = filepath.Join(cfg.LocalDirectory, cleanFile)
 		} else if source == "hammerhead" {
 			id := r.URL.Query().Get("id")
 			if id == "" {
 				http.Error(w, `{"error": "missing id parameter"}`, http.StatusBadRequest)
 				return
 			}
-			filePath, err = downloadHammerheadFITFile(config.HammerheadAPI, id)
+			filePath, err = downloadHammerheadFITFile(cfg.HammerheadAPI, configPath, id)
 			if err != nil {
 				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity: %s"}`, err.Error()), http.StatusInternalServerError)
 				return
@@ -1057,7 +1297,7 @@ func serveDashboard(path string, port int, config Config) {
 			return
 		}
 
-		analysis, err := analyzeFITFile(filePath, config)
+		analysis, err := analyzeFITFile(filePath, cfg)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error": "failed to analyze FIT file: %s"}`, err.Error()), http.StatusInternalServerError)
 			return
@@ -3531,7 +3771,7 @@ func getDashboardTemplate() string {
                         });
                     }
 
-                    if (!data.hammerhead_configured) {
+                    if (!data.hammerhead_configured && !data.hammerhead_linked) {
                         const promptCard = document.createElement('div');
                         promptCard.style.background = 'rgba(255, 255, 255, 0.02)';
                         promptCard.style.border = '1px solid var(--border-color)';
@@ -3546,18 +3786,46 @@ func getDashboardTemplate() string {
                             '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' +
                             'Hammerhead API Not Configured' +
                             '</div>' +
-                            '<p style="margin: 0 0 1rem 0; font-size: 0.85rem; color: #ffffff;">To pull activities directly from your Hammerhead Account, add your authentication key to <code>config.json</code>:</p>' +
-                            '<ol style="margin: 0; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.6rem; color: var(--text-secondary);">' +
-                            '<li>Log in to the <a href="https://dashboard.hammerhead.io/" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: 600; border-bottom: 1px dotted var(--accent); transition: color 0.2s;">Hammerhead Dashboard</a>.</li>' +
-                            '<li>Open Developer Tools (press <kbd style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 0.75rem; color: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.4);">F12</kbd> or <kbd style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 0.75rem; color: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.4);">Cmd+Opt+I</kbd>).</li>' +
-                            '<li>Switch to the <strong>Network</strong> tab.</li>' +
-                            '<li>Refresh the page or click "Activities" on the dashboard.</li>' +
-                            '<li>Filter/search requests by <code>activities</code>.</li>' +
-                            '<li>Select the request and find the <strong>Request Headers</strong>.</li>' +
-                            '<li>Copy the token string after <code>Bearer </code> in the <code>Authorization</code> header.</li>' +
-                            '<li>Paste it into <code>config.json</code> under <code>"hammerhead_api"</code> &rarr; <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
+                            '<p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #ffffff; font-weight: 600;">Method A: OAuth Connection (Recommended & Auto-Refreshing)</p>' +
+                            '<ol style="margin: 0 1.25rem 1.25rem 1.25rem; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.4rem; color: var(--text-secondary);">' +
+                            '<li>Log in to the <a href="https://dashboard.hammerhead.io/" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: 600; border-bottom: 1px dotted var(--accent);">Hammerhead Dashboard</a>.</li>' +
+                            '<li>Navigate to settings and register a developer application.</li>' +
+                            '<li>Add <code>http://localhost:8080/callback</code> as a callback URL.</li>' +
+                            '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>config.json</code> under <code>"hammerhead_api"</code> and restart the server.</li>' +
+                            '</ol>' +
+                            '<p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #ffffff; font-weight: 600;">Method B: Manual Session Token (Expires after 1 hour)</p>' +
+                            '<ol style="margin: 0; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.4rem; color: var(--text-secondary);">' +
+                            '<li>Log in to the <a href="https://dashboard.hammerhead.io/" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: 600; border-bottom: 1px dotted var(--accent);">Hammerhead Dashboard</a>.</li>' +
+                            '<li>Open Developer Tools (press <kbd style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 0.75rem; color: #ffffff;">F12</kbd>).</li>' +
+                            '<li>Switch to the <strong>Network</strong> tab, refresh, and filter requests by <code>activities</code>.</li>' +
+                            '<li>Select the request, copy the token string after <code>Bearer </code> in the <code>Authorization</code> header.</li>' +
+                            '<li>Paste it into <code>config.json</code> under <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
                             '</ol>';
                         listHammerheadContainer.appendChild(promptCard);
+                    } else if (data.hammerhead_configured && !data.hammerhead_linked) {
+                        const linkCard = document.createElement('div');
+                        linkCard.style.background = 'rgba(255, 255, 255, 0.02)';
+                        linkCard.style.border = '1px solid var(--border-color)';
+                        linkCard.style.borderRadius = '16px';
+                        linkCard.style.padding = '2.5rem 1.5rem';
+                        linkCard.style.color = 'var(--text-secondary)';
+                        linkCard.style.lineHeight = '1.6';
+                        linkCard.style.fontSize = '0.9rem';
+                        linkCard.style.textAlign = 'center';
+                        linkCard.style.display = 'flex';
+                        linkCard.style.flexDirection = 'column';
+                        linkCard.style.alignItems = 'center';
+                        linkCard.style.gap = '1rem';
+                        linkCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
+                        
+                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=user-all&state=directeur';
+                        
+                        linkCard.innerHTML = '<div style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">Link Hammerhead Account</div>' +
+                            '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); max-width: 400px;">Connect your Hammerhead account to directeurAI to view your Karoo activities and download telemetry logs automatically.</p>' +
+                            '<a href="' + authUrl + '" class="btn-action" style="margin-top: 0.5rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.75rem 2rem; background: linear-gradient(135deg, var(--accent), #f1c40f); border: none; color: #ffffff; border-radius: 12px; box-shadow: 0 4px 15px var(--accent-glow); transition: transform 0.2s;">' +
+                            '🔗 Authorize directeurAI' +
+                            '</a>';
+                        listHammerheadContainer.appendChild(linkCard);
                     } else if (data.hammerhead_error) {
                         const errorCard = document.createElement('div');
                         errorCard.style.background = 'rgba(231, 76, 60, 0.05)';
@@ -3568,6 +3836,16 @@ func getDashboardTemplate() string {
                         errorCard.style.lineHeight = '1.6';
                         errorCard.style.fontSize = '0.9rem';
                         errorCard.style.boxShadow = '0 4px 20px rgba(231, 76, 60, 0.1)';
+                        
+                        let reAuthHtml = '';
+                        if (data.hammerhead_configured) {
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=user-all&state=directeur';
+                            reAuthHtml = '<div style="margin-top: 1.25rem; border-top: 1px solid rgba(231, 76, 60, 0.15); padding-top: 1.25rem; text-align: center;">' +
+                                '<a href="' + authUrl + '" class="btn-action" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.6rem 1.5rem; background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #ffffff; border-radius: 10px; font-size: 0.8rem; transition: background 0.2s;">' +
+                                '🔗 Re-authorize Account' +
+                                '</a>' +
+                                '</div>';
+                        }
                         
                         errorCard.innerHTML = '<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; color: #e74c3c; font-weight: 700; font-family: \'Outfit\'; font-size: 1.05rem;">' +
                             '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>' +
@@ -3587,7 +3865,8 @@ func getDashboardTemplate() string {
                             '<li>Select the request and find the <strong>Request Headers</strong>.</li>' +
                             '<li>Copy the token string after <code>Bearer </code> in the <code>Authorization</code> header.</li>' +
                             '<li>Paste it into <code>config.json</code> under <code>"hammerhead_api"</code> &rarr; <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
-                            '</ol>';
+                            '</ol>' +
+                            reAuthHtml;
                         listHammerheadContainer.appendChild(errorCard);
                     } else {
                         if (data.hammerhead && data.hammerhead.length > 0) {
