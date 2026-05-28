@@ -333,6 +333,10 @@ func (ha *HammerheadActivity) UnmarshalJSON(data []byte) error {
 		timeStr = val
 	} else if val, ok := raw["start_time"].(string); ok {
 		timeStr = val
+	} else if val, ok := raw["createdAt"].(string); ok {
+		timeStr = val
+	} else if val, ok := raw["created_at"].(string); ok {
+		timeStr = val
 	} else if val, ok := raw["timestamp"].(string); ok {
 		timeStr = val
 	}
@@ -488,13 +492,8 @@ func fetchHammerheadActivities(cfg HammerheadConfig, configPath string) ([]Hamme
 	}
 
 	makeRequest := func(token string) ([]HammerheadActivity, int, error) {
-		userID, err := extractUserIDFromJWT(token)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to extract user ID from auth token: %w", err)
-		}
-
 		client := &http.Client{Timeout: 10 * time.Second}
-		url := fmt.Sprintf("https://api.hammerhead.io/v1/users/%s/activities", userID)
+		url := "https://api.hammerhead.io/v1/api/activities"
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, 0, err
@@ -577,13 +576,8 @@ func downloadHammerheadFITFile(cfg HammerheadConfig, configPath string, activity
 	}
 
 	makeRequest := func(token string) (int, error) {
-		userID, err := extractUserIDFromJWT(token)
-		if err != nil {
-			return 0, fmt.Errorf("failed to extract user ID from auth token: %w", err)
-		}
-
 		client := &http.Client{Timeout: 30 * time.Second}
-		url := fmt.Sprintf("https://api.hammerhead.io/v1/users/%s/activities/%s/fit", userID, activityID)
+		url := fmt.Sprintf("https://api.hammerhead.io/v1/api/activities/%s/file", activityID)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return 0, err
