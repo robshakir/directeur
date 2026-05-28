@@ -2930,7 +2930,7 @@
                         linkCard.style.gap = '1rem';
                         linkCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
                         
-                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=user-all&state=directeur';
+                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=activities&state=directeur';
                         
                         linkCard.innerHTML = '<div style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">Link Hammerhead Account</div>' +
                             '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); max-width: 400px;">Connect your Hammerhead account to directeurAI to view your Karoo activities and download telemetry logs automatically.</p>' +
@@ -2951,7 +2951,7 @@
                         
                         let reAuthHtml = '';
                         if (data.hammerhead_configured) {
-                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=user-all&state=directeur';
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=activities&state=directeur';
                             reAuthHtml = '<div style="margin-top: 1.25rem; border-top: 1px solid rgba(231, 76, 60, 0.15); padding-top: 1.25rem; text-align: center;">' +
                                 '<a href="' + authUrl + '" class="btn-action" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.6rem 1.5rem; background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #ffffff; border-radius: 10px; font-size: 0.8rem; transition: background 0.2s;">' +
                                 '🔗 Re-authorize Account' +
