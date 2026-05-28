@@ -139,7 +139,7 @@ func analyzeFITFile(filePath string, config Config) (RideAnalysis, error) {
 }
 
 func main() {
-	inputFile := flag.String("input", "hammerhead-242130259__1779904060 (1).fit", "Path to input .FIT file")
+	inputFile := flag.String("input", "example.fit", "Path to input .FIT file")
 	configFile := flag.String("config", "config.json", "Path to gear configuration file")
 	outputJSON := flag.String("output-json", "ride_analysis.json", "Path to output JSON file")
 	outputHTML := flag.String("output-html", "ride_dashboard.html", "Path to output HTML dashboard file")
