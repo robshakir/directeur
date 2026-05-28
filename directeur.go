@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -171,7 +172,7 @@ func main() {
 		// Try Hammerhead if enabled
 		if config.HammerheadAPI.Enabled && (config.HammerheadAPI.AuthToken != "" || config.HammerheadAPI.RefreshToken != "") {
 			fmt.Println("Hammerhead API enabled, fetching activities...")
-			activities, err := fetchHammerheadActivities(config.HammerheadAPI, *configFile)
+			activities, _, _, err := fetchHammerheadActivities(config.HammerheadAPI, *configFile, 1)
 			if err == nil && len(activities) > 0 {
 				fmt.Printf("Downloading newest Hammerhead activity: %s (%s)...\n", activities[0].Name, activities[0].ID)
 				filePath, err := downloadHammerheadFITFile(config.HammerheadAPI, *configFile, activities[0].ID)
@@ -485,50 +486,53 @@ func extractUserIDFromJWT(token string) (string, error) {
 }
 
 // fetchHammerheadActivities gets the list of recent rides from Hammerhead API
-func fetchHammerheadActivities(cfg HammerheadConfig, configPath string) ([]HammerheadActivity, error) {
-	var activities []HammerheadActivity
+func fetchHammerheadActivities(cfg HammerheadConfig, configPath string, page int) ([]HammerheadActivity, int, int, error) {
 	if !cfg.Enabled {
-		return activities, nil
+		return nil, 0, 0, nil
 	}
 
-	makeRequest := func(token string) ([]HammerheadActivity, int, error) {
+	makeRequest := func(token string) ([]HammerheadActivity, int, int, int, error) {
 		client := &http.Client{Timeout: 10 * time.Second}
-		url := "https://api.hammerhead.io/v1/api/activities"
+		url := fmt.Sprintf("https://api.hammerhead.io/v1/api/activities?page=%d&perPage=10", page)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, 0, err
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/json")
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, 0, err
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			bodyBytes, _ := io.ReadAll(resp.Body)
-			return nil, resp.StatusCode, fmt.Errorf("hammerhead API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+			return nil, 0, 0, resp.StatusCode, fmt.Errorf("hammerhead API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 		}
 
 		var envelope struct {
-			Data []HammerheadActivity `json:"data"`
+			Data        []HammerheadActivity `json:"data"`
+			CurrentPage int                  `json:"currentPage"`
+			TotalPages  int                  `json:"totalPages"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-			return nil, resp.StatusCode, err
+			return nil, 0, 0, resp.StatusCode, err
 		}
-		return envelope.Data, resp.StatusCode, nil
+		return envelope.Data, envelope.CurrentPage, envelope.TotalPages, resp.StatusCode, nil
 	}
 
 	var tokenToUse = cfg.AuthToken
 	var err error
 	var statusCode int
+	var activities []HammerheadActivity
+	var currentPage, totalPages int
 
 	if tokenToUse != "" {
-		activities, statusCode, err = makeRequest(tokenToUse)
+		activities, currentPage, totalPages, statusCode, err = makeRequest(tokenToUse)
 		if err == nil {
-			return activities, nil
+			return activities, currentPage, totalPages, nil
 		}
 	}
 
@@ -545,19 +549,19 @@ func fetchHammerheadActivities(cfg HammerheadConfig, configPath string) ([]Hamme
 			}
 			if saveErr := saveConfig(configPath, currentConfig); saveErr == nil {
 				// Retry the request with new token
-				activities, _, err = makeRequest(tokenResp.AccessToken)
+				activities, currentPage, totalPages, _, err = makeRequest(tokenResp.AccessToken)
 				if err == nil {
-					return activities, nil
+					return activities, currentPage, totalPages, nil
 				}
 			} else {
 				fmt.Printf("Error saving config after refresh: %v\n", saveErr)
 			}
 		} else {
-			return nil, fmt.Errorf("token refresh failed: %w (original request error: %v)", refreshErr, err)
+			return nil, 0, 0, fmt.Errorf("token refresh failed: %w (original request error: %v)", refreshErr, err)
 		}
 	}
 
-	return nil, err
+	return nil, 0, 0, err
 }
 
 // downloadHammerheadFITFile retrieves and caches a FIT file from the Hammerhead activities API
@@ -1230,7 +1234,16 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		if err != nil {
 			fmt.Printf("Error listing local rides: %v\n", err)
 		}
-		hhRides, hhErr := fetchHammerheadActivities(cfg.HammerheadAPI, configPath)
+
+		pageStr := r.URL.Query().Get("page")
+		page := 1
+		if pageStr != "" {
+			if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+				page = p
+			}
+		}
+
+		hhRides, currentPage, totalPages, hhErr := fetchHammerheadActivities(cfg.HammerheadAPI, configPath, page)
 		if hhErr != nil {
 			fmt.Printf("Error fetching Hammerhead activities: %v\n", hhErr)
 		}
@@ -1242,6 +1255,8 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			HammerheadLinked     bool                 `json:"hammerhead_linked"`
 			HammerheadError      string               `json:"hammerhead_error,omitempty"`
 			ClientID             string               `json:"client_id,omitempty"`
+			CurrentPage          int                  `json:"current_page"`
+			TotalPages           int                  `json:"total_pages"`
 		}
 
 		var hhErrStr string
@@ -1256,6 +1271,8 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			HammerheadLinked:     cfg.HammerheadAPI.Enabled && (cfg.HammerheadAPI.AuthToken != "" || cfg.HammerheadAPI.RefreshToken != ""),
 			HammerheadError:      hhErrStr,
 			ClientID:             cfg.HammerheadAPI.ClientID,
+			CurrentPage:          currentPage,
+			TotalPages:           totalPages,
 		}
 		json.NewEncoder(w).Encode(resp)
 	})
@@ -3730,13 +3747,13 @@ func getDashboardTemplate() string {
                 });
         };
 
-        const populateRideLists = () => {
+        const populateRideLists = (page = 1) => {
             selectRideLoading.style.display = 'flex';
             listLocalContainer.innerHTML = '';
             listHammerheadContainer.innerHTML = '';
             selectRideEmpty.style.display = 'none';
 
-            fetch('/api/rides')
+            fetch('/api/rides?page=' + page)
                 .then(res => {
                     if (!res.ok) throw new Error('HTTP error ' + res.status);
                     return res.json();
@@ -3886,6 +3903,63 @@ func getDashboardTemplate() string {
                                 });
                                 listHammerheadContainer.appendChild(item);
                             });
+
+                            if (data.total_pages > 1) {
+                                const paginationDiv = document.createElement('div');
+                                paginationDiv.style.display = 'flex';
+                                paginationDiv.style.justifyContent = 'center';
+                                paginationDiv.style.alignItems = 'center';
+                                paginationDiv.style.gap = '1rem';
+                                paginationDiv.style.marginTop = '1rem';
+                                paginationDiv.style.padding = '0.75rem 0 0 0';
+                                paginationDiv.style.borderTop = '1px solid var(--border-color)';
+                                paginationDiv.style.width = '100%';
+                                
+                                const prevBtn = document.createElement('button');
+                                prevBtn.innerText = '◀ Prev';
+                                prevBtn.className = 'btn-action';
+                                prevBtn.style.padding = '0.35rem 0.8rem';
+                                prevBtn.style.fontSize = '0.78rem';
+                                prevBtn.style.borderRadius = '6px';
+                                prevBtn.disabled = data.current_page <= 1;
+                                if (prevBtn.disabled) {
+                                    prevBtn.style.opacity = '0.3';
+                                    prevBtn.style.cursor = 'not-allowed';
+                                } else {
+                                    prevBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation();
+                                        populateRideLists(data.current_page - 1);
+                                    });
+                                }
+                                
+                                const pageInfo = document.createElement('span');
+                                pageInfo.innerText = 'Page ' + data.current_page + ' / ' + data.total_pages;
+                                pageInfo.style.fontSize = '0.8rem';
+                                pageInfo.style.color = 'var(--text-secondary)';
+                                pageInfo.style.fontWeight = '500';
+                                
+                                const nextBtn = document.createElement('button');
+                                nextBtn.innerText = 'Next ▶';
+                                nextBtn.className = 'btn-action';
+                                nextBtn.style.padding = '0.35rem 0.8rem';
+                                nextBtn.style.fontSize = '0.78rem';
+                                nextBtn.style.borderRadius = '6px';
+                                nextBtn.disabled = data.current_page >= data.total_pages;
+                                if (nextBtn.disabled) {
+                                    nextBtn.style.opacity = '0.3';
+                                    nextBtn.style.cursor = 'not-allowed';
+                                } else {
+                                    nextBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation();
+                                        populateRideLists(data.current_page + 1);
+                                    });
+                                }
+                                
+                                paginationDiv.appendChild(prevBtn);
+                                paginationDiv.appendChild(pageInfo);
+                                paginationDiv.appendChild(nextBtn);
+                                listHammerheadContainer.appendChild(paginationDiv);
+                            }
                         } else {
                             const emptyItem = document.createElement('div');
                             emptyItem.style.textAlign = 'center';
