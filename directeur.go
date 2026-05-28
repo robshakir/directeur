@@ -145,7 +145,13 @@ func main() {
 	outputJSON := flag.String("output-json", "ride_analysis.json", "Path to output JSON file")
 	outputHTML := flag.String("output-html", "ride_dashboard.html", "Path to output HTML dashboard file")
 	serveMode := flag.Bool("serve", false, "Start a local web server to display the dashboard")
-	port := flag.Int("port", 8080, "Port for the local web server")
+	defaultPort := 8080
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		if p, err := strconv.Atoi(envPort); err == nil {
+			defaultPort = p
+		}
+	}
+	port := flag.Int("port", defaultPort, "Port for the local web server")
 
 	flag.Parse()
 
@@ -1169,11 +1175,19 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			return
 		}
 
+		scheme := "http"
+		if r.Header.Get("X-Forwarded-Proto") != "" {
+			scheme = r.Header.Get("X-Forwarded-Proto")
+		} else if r.TLS != nil {
+			scheme = "https"
+		}
+		redirectURI := fmt.Sprintf("%s://%s/callback", scheme, r.Host)
+
 		tokenResp, err := exchangeHammerheadCode(
 			cfg.HammerheadAPI.ClientID,
 			cfg.HammerheadAPI.ClientSecret,
 			code,
-			"http://localhost:8080/callback",
+			redirectURI,
 		)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Token exchange failed: %v", err), http.StatusInternalServerError)
@@ -3819,7 +3833,7 @@ func getDashboardTemplate() string {
                             '<ol style="margin: 0 1.25rem 1.25rem 1.25rem; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.4rem; color: var(--text-secondary);">' +
                             '<li>Log in to the <a href="https://dashboard.hammerhead.io/" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: 600; border-bottom: 1px dotted var(--accent);">Hammerhead Dashboard</a>.</li>' +
                             '<li>Navigate to settings and register a developer application.</li>' +
-                            '<li>Add <code>http://localhost:8080/callback</code> as a callback URL.</li>' +
+                            '<li>Add <code>' + window.location.origin + '/callback</code> as a callback URL.</li>' +
                             '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>config.json</code> under <code>"hammerhead_api"</code> and restart the server.</li>' +
                             '</ol>' +
                             '<p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #ffffff; font-weight: 600;">Method B: Manual Session Token (Expires after 1 hour)</p>' +
@@ -3847,7 +3861,7 @@ func getDashboardTemplate() string {
                         linkCard.style.gap = '1rem';
                         linkCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
                         
-                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
                         
                         linkCard.innerHTML = '<div style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">Link Hammerhead Account</div>' +
                             '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); max-width: 400px;">Connect your Hammerhead account to directeurAI to view your Karoo activities and download telemetry logs automatically.</p>' +
@@ -3868,7 +3882,7 @@ func getDashboardTemplate() string {
                         
                         let reAuthHtml = '';
                         if (data.hammerhead_configured) {
-                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
                             reAuthHtml = '<div style="margin-top: 1.25rem; border-top: 1px solid rgba(231, 76, 60, 0.15); padding-top: 1.25rem; text-align: center;">' +
                                 '<a href="' + authUrl + '" class="btn-action" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.6rem 1.5rem; background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #ffffff; border-radius: 10px; font-size: 0.8rem; transition: background 0.2s;">' +
                                 '🔗 Re-authorize Account' +
