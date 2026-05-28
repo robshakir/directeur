@@ -1,6 +1,6 @@
 # directeurAI 🚴‍♂️🤖
 
-**directeurAI** is a premium, local-first analytics dashboard and AI cycling coach that parses `.FIT` telemetry files, calculates advanced cycling metrics, and lets you chat with an AI coach about your ride performance.
+**directeurAI** is a local-first analytics dashboard and AI cycling coach that parses `.FIT` telemetry files, calculates advanced cycling metrics, and lets you ask an AI coach about your ride performance.
 
 ![directeurAI Dashboard](./img/main.png)
 

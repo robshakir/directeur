@@ -894,6 +894,7 @@
             <div style="display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 0.5rem;">
                 <button id="tab-local" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid var(--accent); background: none; font-size: 0.95rem; font-weight: 600; padding: 0.75rem 1.5rem; color: var(--accent); cursor: pointer;">📂 Local Files</button>
                 <button id="tab-hammerhead" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid transparent; background: none; font-size: 0.95rem; font-weight: 500; padding: 0.75rem 1.5rem; color: var(--text-secondary); cursor: pointer;">🚲 Hammerhead Karoo</button>
+                <button id="tab-wahoo" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid transparent; background: none; font-size: 0.95rem; font-weight: 500; padding: 0.75rem 1.5rem; color: var(--text-secondary); cursor: pointer;">⚡ Wahoo Fitness</button>
             </div>
 
             
@@ -917,6 +918,11 @@
 
                 
                 <div id="list-hammerhead-container" style="display: none; flex-direction: column; gap: 0.75rem;">
+                    
+                </div>
+
+                
+                <div id="list-wahoo-container" style="display: none; flex-direction: column; gap: 0.75rem;">
                     
                 </div>
 
@@ -2750,8 +2756,10 @@
         const selectRideCloseBtn = document.getElementById('select-ride-close-btn');
         const tabLocal = document.getElementById('tab-local');
         const tabHammerhead = document.getElementById('tab-hammerhead');
+        const tabWahoo = document.getElementById('tab-wahoo');
         const listLocalContainer = document.getElementById('list-local-container');
         const listHammerheadContainer = document.getElementById('list-hammerhead-container');
+        const listWahooContainer = document.getElementById('list-wahoo-container');
         const selectRideLoading = document.getElementById('select-ride-loading');
         const selectRideEmpty = document.getElementById('select-ride-empty');
         const analysisLoadingOverlay = document.getElementById('analysis-loading-overlay');
@@ -2759,28 +2767,38 @@
         let selectRideActiveTab = 'local';
 
         const updateTabUI = () => {
+            
+            tabLocal.style.color = 'var(--text-secondary)';
+            tabLocal.style.borderBottomColor = 'transparent';
+            tabLocal.style.fontWeight = '500';
+
+            tabHammerhead.style.color = 'var(--text-secondary)';
+            tabHammerhead.style.borderBottomColor = 'transparent';
+            tabHammerhead.style.fontWeight = '500';
+
+            tabWahoo.style.color = 'var(--text-secondary)';
+            tabWahoo.style.borderBottomColor = 'transparent';
+            tabWahoo.style.fontWeight = '500';
+
+            listLocalContainer.style.display = 'none';
+            listHammerheadContainer.style.display = 'none';
+            listWahooContainer.style.display = 'none';
+
             if (selectRideActiveTab === 'local') {
                 tabLocal.style.color = 'var(--accent)';
                 tabLocal.style.borderBottomColor = 'var(--accent)';
                 tabLocal.style.fontWeight = '600';
-                
-                tabHammerhead.style.color = 'var(--text-secondary)';
-                tabHammerhead.style.borderBottomColor = 'transparent';
-                tabHammerhead.style.fontWeight = '500';
-
                 listLocalContainer.style.display = 'flex';
-                listHammerheadContainer.style.display = 'none';
-            } else {
+            } else if (selectRideActiveTab === 'hammerhead') {
                 tabHammerhead.style.color = 'var(--accent)';
                 tabHammerhead.style.borderBottomColor = 'var(--accent)';
                 tabHammerhead.style.fontWeight = '600';
-
-                tabLocal.style.color = 'var(--text-secondary)';
-                tabLocal.style.borderBottomColor = 'transparent';
-                tabLocal.style.fontWeight = '500';
-
-                listLocalContainer.style.display = 'none';
                 listHammerheadContainer.style.display = 'flex';
+            } else if (selectRideActiveTab === 'wahoo') {
+                tabWahoo.style.color = 'var(--accent)';
+                tabWahoo.style.borderBottomColor = 'var(--accent)';
+                tabWahoo.style.fontWeight = '600';
+                listWahooContainer.style.display = 'flex';
             }
         };
 
@@ -2796,25 +2814,36 @@
             checkEmptyState();
         });
 
+        tabWahoo.addEventListener('click', () => {
+            selectRideActiveTab = 'wahoo';
+            updateTabUI();
+            checkEmptyState();
+        });
+
         const checkEmptyState = () => {
             const hasLocal = listLocalContainer.children.length > 0;
             const hasHammerhead = listHammerheadContainer.children.length > 0;
+            const hasWahoo = listWahooContainer.children.length > 0;
             if (selectRideActiveTab === 'local') {
                 selectRideEmpty.style.display = hasLocal ? 'none' : 'block';
-            } else {
+            } else if (selectRideActiveTab === 'hammerhead') {
                 selectRideEmpty.style.display = hasHammerhead ? 'none' : 'block';
+            } else if (selectRideActiveTab === 'wahoo') {
+                selectRideEmpty.style.display = hasWahoo ? 'none' : 'block';
             }
         };
 
-        const loadRideData = (source, param) => {
+        const loadRideData = (source, param, param2) => {
             selectRideModal.style.display = 'none';
             analysisLoadingOverlay.style.display = 'flex';
 
             let url = '/api/analyze?source=' + source;
             if (source === 'local') {
                 url += '&file=' + encodeURIComponent(param);
-            } else {
+            } else if (source === 'hammerhead') {
                 url += '&id=' + encodeURIComponent(param);
+            } else if (source === 'wahoo') {
+                url += '&id=' + encodeURIComponent(param) + '&url=' + encodeURIComponent(param2);
             }
 
             fetch(url)
@@ -2848,13 +2877,14 @@
                 });
         };
 
-        const populateRideLists = (page = 1) => {
+        const populateRideLists = (hhPage = 1, wahooPage = 1) => {
             selectRideLoading.style.display = 'flex';
             listLocalContainer.innerHTML = '';
             listHammerheadContainer.innerHTML = '';
+            listWahooContainer.innerHTML = '';
             selectRideEmpty.style.display = 'none';
 
-            fetch('/api/rides?page=' + page)
+            fetch('/api/rides?hh_page=' + hhPage + '&wahoo_page=' + wahooPage)
                 .then(res => {
                     if (!res.ok) throw new Error('HTTP error ' + res.status);
                     return res.json();
@@ -2883,6 +2913,9 @@
                         });
                     }
 
+                    
+                    
+                    
                     if (!data.hammerhead_configured && !data.hammerhead_linked) {
                         const promptCard = document.createElement('div');
                         promptCard.style.background = 'rgba(255, 255, 255, 0.02)';
@@ -2902,7 +2935,7 @@
                             '<ol style="margin: 0 1.25rem 1.25rem 1.25rem; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.4rem; color: var(--text-secondary);">' +
                             '<li>Log in to the <a href="https://dashboard.hammerhead.io/" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: 600; border-bottom: 1px dotted var(--accent);">Hammerhead Dashboard</a>.</li>' +
                             '<li>Navigate to settings and register a developer application.</li>' +
-                            '<li>Add <code>http://localhost:8080/callback</code> as a callback URL.</li>' +
+                            '<li>Add <code>' + window.location.origin + '/callback</code> as a callback URL.</li>' +
                             '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>config.json</code> under <code>"hammerhead_api"</code> and restart the server.</li>' +
                             '</ol>' +
                             '<p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #ffffff; font-weight: 600;">Method B: Manual Session Token (Expires after 1 hour)</p>' +
@@ -2930,7 +2963,7 @@
                         linkCard.style.gap = '1rem';
                         linkCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
                         
-                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
                         
                         linkCard.innerHTML = '<div style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">Link Hammerhead Account</div>' +
                             '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); max-width: 400px;">Connect your Hammerhead account to directeurAI to view your Karoo activities and download telemetry logs automatically.</p>' +
@@ -2951,7 +2984,7 @@
                         
                         let reAuthHtml = '';
                         if (data.hammerhead_configured) {
-                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent('http://localhost:8080/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
                             reAuthHtml = '<div style="margin-top: 1.25rem; border-top: 1px solid rgba(231, 76, 60, 0.15); padding-top: 1.25rem; text-align: center;">' +
                                 '<a href="' + authUrl + '" class="btn-action" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.6rem 1.5rem; background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #ffffff; border-radius: 10px; font-size: 0.8rem; transition: background 0.2s;">' +
                                 '🔗 Re-authorize Account' +
@@ -3029,7 +3062,7 @@
                                 } else {
                                     prevBtn.addEventListener('click', (e) => {
                                         e.stopPropagation();
-                                        populateRideLists(data.current_page - 1);
+                                        populateRideLists(data.current_page - 1, wahooPage);
                                     });
                                 }
                                 
@@ -3052,7 +3085,7 @@
                                 } else {
                                     nextBtn.addEventListener('click', (e) => {
                                         e.stopPropagation();
-                                        populateRideLists(data.current_page + 1);
+                                        populateRideLists(data.current_page + 1, wahooPage);
                                     });
                                 }
                                 
@@ -3070,6 +3103,180 @@
                             emptyItem.style.fontSize = '0.9rem';
                             emptyItem.innerText = 'No Hammerhead activities found.';
                             listHammerheadContainer.appendChild(emptyItem);
+                        }
+                    }
+
+                    
+                    
+                    
+                    if (!data.wahoo_configured && !data.wahoo_linked) {
+                        const promptCard = document.createElement('div');
+                        promptCard.style.background = 'rgba(255, 255, 255, 0.02)';
+                        promptCard.style.border = '1px solid var(--border-color)';
+                        promptCard.style.borderRadius = '16px';
+                        promptCard.style.padding = '1.5rem';
+                        promptCard.style.color = 'var(--text-secondary)';
+                        promptCard.style.lineHeight = '1.6';
+                        promptCard.style.fontSize = '0.9rem';
+                        promptCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
+                        
+                        promptCard.innerHTML = '<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; color: #9b59b6; font-weight: 700; font-family: \'Outfit\'; font-size: 1.05rem;">' +
+                            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' +
+                            'Wahoo API Not Configured' +
+                            '</div>' +
+                            '<p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #ffffff; font-weight: 600;">How to Connect Wahoo Fitness API:</p>' +
+                            '<ol style="margin: 0; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.4rem; color: var(--text-secondary);">' +
+                            '<li>Log in to the <a href="https://developers.wahooligan.com/" target="_blank" style="color: #9b59b6; text-decoration: none; font-weight: 600; border-bottom: 1px dotted #9b59b6;">Wahoo Developer Portal</a>.</li>' +
+                            '<li>Register a developer application.</li>' +
+                            '<li>Add <code>' + window.location.origin + '/wahoo-callback</code> as a callback URL.</li>' +
+                            '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>config.json</code> under <code>"wahoo_api"</code> and restart the server.</li>' +
+                            '</ol>';
+                        listWahooContainer.appendChild(promptCard);
+                    } else if (data.wahoo_configured && !data.wahoo_linked) {
+                        const linkCard = document.createElement('div');
+                        linkCard.style.background = 'rgba(255, 255, 255, 0.02)';
+                        linkCard.style.border = '1px solid var(--border-color)';
+                        linkCard.style.borderRadius = '16px';
+                        linkCard.style.padding = '2.5rem 1.5rem';
+                        linkCard.style.color = 'var(--text-secondary)';
+                        linkCard.style.lineHeight = '1.6';
+                        linkCard.style.fontSize = '0.9rem';
+                        linkCard.style.textAlign = 'center';
+                        linkCard.style.display = 'flex';
+                        linkCard.style.flexDirection = 'column';
+                        linkCard.style.alignItems = 'center';
+                        linkCard.style.gap = '1rem';
+                        linkCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
+                        
+                        const authUrl = 'https://api.wahooligan.com/oauth/authorize?client_id=' + encodeURIComponent(data.wahoo_client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/wahoo-callback') + '&response_type=code&scope=workouts_read&state=directeur';
+                        
+                        linkCard.innerHTML = '<div style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">Link Wahoo Account</div>' +
+                            '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); max-width: 400px;">Connect your Wahoo Fitness account to directeurAI to view and import your activities automatically.</p>' +
+                            '<a href="' + authUrl + '" class="btn-action" style="margin-top: 0.5rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.75rem 2rem; background: linear-gradient(135deg, #9b59b6, #3498db); border: none; color: #ffffff; border-radius: 12px; box-shadow: 0 4px 15px rgba(155, 89, 182, 0.4); transition: transform 0.2s;">' +
+                            '🔗 Authorize Wahoo Fitness' +
+                            '</a>';
+                        listWahooContainer.appendChild(linkCard);
+                    } else if (data.wahoo_error) {
+                        const errorCard = document.createElement('div');
+                        errorCard.style.background = 'rgba(231, 76, 60, 0.05)';
+                        errorCard.style.border = '1px solid #e74c3c';
+                        errorCard.style.borderRadius = '16px';
+                        errorCard.style.padding = '1.5rem';
+                        errorCard.style.color = 'var(--text-secondary)';
+                        errorCard.style.lineHeight = '1.6';
+                        errorCard.style.fontSize = '0.9rem';
+                        errorCard.style.boxShadow = '0 4px 20px rgba(231, 76, 60, 0.1)';
+                        
+                        let reAuthHtml = '';
+                        if (data.wahoo_configured) {
+                            const authUrl = 'https://api.wahooligan.com/oauth/authorize?client_id=' + encodeURIComponent(data.wahoo_client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/wahoo-callback') + '&response_type=code&scope=workouts_read&state=directeur';
+                            reAuthHtml = '<div style="margin-top: 1.25rem; border-top: 1px solid rgba(231, 76, 60, 0.15); padding-top: 1.25rem; text-align: center;">' +
+                                '<a href="' + authUrl + '" class="btn-action" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.6rem 1.5rem; background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #ffffff; border-radius: 10px; font-size: 0.8rem; transition: background 0.2s;">' +
+                                '🔗 Re-authorize Account' +
+                                '</a>' +
+                                '</div>';
+                        }
+                        
+                        errorCard.innerHTML = '<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; color: #e74c3c; font-weight: 700; font-family: \'Outfit\'; font-size: 1.05rem;">' +
+                            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>' +
+                            'Failed to Fetch Wahoo Workouts' +
+                            '</div>' +
+                            '<p style="margin: 0 0 1rem 0; font-size: 0.85rem; color: #ffffff;">The Wahoo API returned an error. This usually indicates that your authentication key is invalid or has expired.</p>' +
+                            '<div style="background: rgba(0, 0, 0, 0.3); padding: 0.75rem 1rem; border-radius: 8px; font-family: monospace; font-size: 0.8rem; color: #e74c3c; word-break: break-all; margin-bottom: 1.25rem; border: 1px solid rgba(231, 76, 60, 0.2);">' +
+                            data.wahoo_error +
+                            '</div>' +
+                            reAuthHtml;
+                        listWahooContainer.appendChild(errorCard);
+                    } else {
+                        if (data.wahoo && data.wahoo.length > 0) {
+                            data.wahoo.forEach(act => {
+                                const dateStr = act.starts ? new Date(act.starts).toLocaleString() : 'N/A';
+                                const distStr = (act.distance / 1000).toFixed(2) + ' km';
+                                const durStr = formatDuration(act.duration_active);
+                                const item = document.createElement('div');
+                                item.className = 'ride-list-item';
+                                item.innerHTML = '<div>' +
+                                    '<div style="font-weight: 600; color: #ffffff; font-size: 0.95rem; margin-bottom: 0.2rem;">' + (act.name || 'Unnamed Activity') + '</div>' +
+                                    '<div style="font-size: 0.8rem; color: var(--text-secondary);">Date: ' + dateStr + '</div>' +
+                                    '</div>' +
+                                    '<div style="display: flex; align-items: center; gap: 1rem;">' +
+                                    '<div style="text-align: right;">' +
+                                    '<div style="font-weight: 600; color: var(--accent); font-size: 0.9rem;">' + distStr + '</div>' +
+                                    '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + durStr + '</div>' +
+                                    '</div>' +
+                                    '<span class="badge" style="font-size: 0.7rem; padding: 0.25rem 0.5rem; background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2)); border-color: #9b59b6; color: #e0aaff;">WAHOO</span>' +
+                                    '</div>';
+                                item.addEventListener('click', () => {
+                                    loadRideData('wahoo', act.id, act.file.url);
+                                });
+                                listWahooContainer.appendChild(item);
+                            });
+
+                            if (data.wahoo_total_pages > 1) {
+                                const paginationDiv = document.createElement('div');
+                                paginationDiv.style.display = 'flex';
+                                paginationDiv.style.justifyContent = 'center';
+                                paginationDiv.style.alignItems = 'center';
+                                paginationDiv.style.gap = '1rem';
+                                paginationDiv.style.marginTop = '1rem';
+                                paginationDiv.style.padding = '0.75rem 0 0 0';
+                                paginationDiv.style.borderTop = '1px solid var(--border-color)';
+                                paginationDiv.style.width = '100%';
+                                
+                                const prevBtn = document.createElement('button');
+                                prevBtn.innerText = '◀ Prev';
+                                prevBtn.className = 'btn-action';
+                                prevBtn.style.padding = '0.35rem 0.8rem';
+                                prevBtn.style.fontSize = '0.78rem';
+                                prevBtn.style.borderRadius = '6px';
+                                prevBtn.disabled = data.wahoo_current_page <= 1;
+                                if (prevBtn.disabled) {
+                                    prevBtn.style.opacity = '0.3';
+                                    prevBtn.style.cursor = 'not-allowed';
+                                } else {
+                                    prevBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation();
+                                        populateRideLists(hhPage, data.wahoo_current_page - 1);
+                                    });
+                                }
+                                
+                                const pageInfo = document.createElement('span');
+                                pageInfo.innerText = 'Page ' + data.wahoo_current_page + ' / ' + data.wahoo_total_pages;
+                                pageInfo.style.fontSize = '0.8rem';
+                                pageInfo.style.color = 'var(--text-secondary)';
+                                pageInfo.style.fontWeight = '500';
+                                
+                                const nextBtn = document.createElement('button');
+                                nextBtn.innerText = 'Next ▶';
+                                nextBtn.className = 'btn-action';
+                                nextBtn.style.padding = '0.35rem 0.8rem';
+                                nextBtn.style.fontSize = '0.78rem';
+                                nextBtn.style.borderRadius = '6px';
+                                nextBtn.disabled = data.wahoo_current_page >= data.wahoo_total_pages;
+                                if (nextBtn.disabled) {
+                                    nextBtn.style.opacity = '0.3';
+                                    nextBtn.style.cursor = 'not-allowed';
+                                } else {
+                                    nextBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation();
+                                        populateRideLists(hhPage, data.wahoo_current_page + 1);
+                                    });
+                                }
+                                
+                                paginationDiv.appendChild(prevBtn);
+                                paginationDiv.appendChild(pageInfo);
+                                paginationDiv.appendChild(nextBtn);
+                                listWahooContainer.appendChild(paginationDiv);
+                            }
+                        } else {
+                            const emptyItem = document.createElement('div');
+                            emptyItem.style.textAlign = 'center';
+                            emptyItem.style.color = 'var(--text-secondary)';
+                            emptyItem.style.padding = '3rem 0';
+                            emptyItem.style.fontStyle = 'italic';
+                            emptyItem.style.fontSize = '0.9rem';
+                            emptyItem.innerText = 'No Wahoo activities found.';
+                            listWahooContainer.appendChild(emptyItem);
                         }
                     }
 

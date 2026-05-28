@@ -9,5 +9,13 @@
     "auth_token": "",
     "refresh_token": "",
     "download_dir": "/path/to/local/cache/folder"
+  },
+  "wahoo_api": {
+    "enabled": false,
+    "client_id": "your-wahoo-client-id",
+    "client_secret": "your-wahoo-client-secret",
+    "auth_token": "",
+    "refresh_token": "",
+    "download_dir": "/path/to/local/wahoo/cache/folder"
   }
 }

@@ -26,10 +26,21 @@ type Config struct {
 	RearGears      []int            `json:"rear_gears"`
 	LocalDirectory string           `json:"local_directory"`
 	HammerheadAPI  HammerheadConfig `json:"hammerhead_api"`
+	WahooAPI       WahooConfig      `json:"wahoo_api"`
 }
 
 // HammerheadConfig represents authentication and caching details for Hammerhead Dashboard API integration
 type HammerheadConfig struct {
+	Enabled      bool   `json:"enabled"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	AuthToken    string `json:"auth_token"`
+	RefreshToken string `json:"refresh_token"`
+	DownloadDir  string `json:"download_dir"`
+}
+
+// WahooConfig represents authentication and caching details for Wahoo Fitness Cloud API integration
+type WahooConfig struct {
 	Enabled      bool   `json:"enabled"`
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
@@ -211,6 +222,24 @@ func main() {
 			}
 		}
 
+		// Try Wahoo if enabled and not resolved yet
+		if !hasData && config.WahooAPI.Enabled && (config.WahooAPI.AuthToken != "" || config.WahooAPI.RefreshToken != "") {
+			fmt.Println("Wahoo API enabled, fetching workouts...")
+			workouts, _, _, err := fetchWahooWorkouts(config.WahooAPI, resolvedConfigPath, 1)
+			if err == nil && len(workouts) > 0 {
+				fmt.Printf("Downloading newest Wahoo activity: %s (%d)...\n", workouts[0].Name, workouts[0].ID)
+				filePath, err := downloadWahooFITFile(config.WahooAPI, workouts[0].File.URL, workouts[0].ID)
+				if err == nil {
+					resolvedInputFile = filePath
+					hasData = true
+				} else {
+					fmt.Printf("Error downloading Wahoo activity: %v\n", err)
+				}
+			} else if err != nil {
+				fmt.Printf("Error fetching Wahoo workouts: %v\n", err)
+			}
+		}
+
 		// Try Local Directory if not resolved yet
 		if !hasData && config.LocalDirectory != "" {
 			fmt.Printf("Scanning local directory: %s...\n", config.LocalDirectory)
@@ -289,6 +318,9 @@ func loadConfig(path string) Config {
 	}
 	if config.HammerheadAPI.DownloadDir == "" {
 		config.HammerheadAPI.DownloadDir = "./fit_downloads"
+	}
+	if config.WahooAPI.DownloadDir == "" {
+		config.WahooAPI.DownloadDir = "./wahoo_downloads"
 	}
 	return config
 }
@@ -674,6 +706,195 @@ func downloadHammerheadFITFile(cfg HammerheadConfig, configPath string, activity
 	}
 
 	return "", err
+}
+
+type WahooTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
+}
+
+type WahooWorkout struct {
+	ID             int64     `json:"id"`
+	Name           string    `json:"name"`
+	Starts         string    `json:"starts"`
+	Distance       float64   `json:"distance"`
+	DurationActive float64   `json:"duration_active"`
+	File           WahooFile `json:"file"`
+}
+
+type WahooFile struct {
+	URL string `json:"url"`
+}
+
+type WahooWorkoutsEnvelope struct {
+	Workouts    []WahooWorkout `json:"workouts"`
+	CurrentPage int            `json:"current_page"`
+	TotalPages  int            `json:"total_pages"`
+}
+
+func exchangeWahooCode(clientID, clientSecret, code, redirectURI string) (*WahooTokenResponse, error) {
+	u := "https://api.wahooligan.com/oauth/token"
+	data := url.Values{}
+	data.Set("grant_type", "authorization_code")
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+	data.Set("code", code)
+	data.Set("redirect_uri", redirectURI)
+
+	resp, err := http.PostForm(u, data)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Wahoo token exchange failed (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var tokenResp WahooTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, err
+	}
+	return &tokenResp, nil
+}
+
+func refreshWahooToken(clientID, clientSecret, refreshToken string) (*WahooTokenResponse, error) {
+	u := "https://api.wahooligan.com/oauth/token"
+	data := url.Values{}
+	data.Set("grant_type", "refresh_token")
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+	data.Set("refresh_token", refreshToken)
+
+	resp, err := http.PostForm(u, data)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Wahoo token refresh failed (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var tokenResp WahooTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, err
+	}
+	return &tokenResp, nil
+}
+
+func fetchWahooWorkouts(cfg WahooConfig, configPath string, page int) ([]WahooWorkout, int, int, error) {
+	if !cfg.Enabled {
+		return nil, 0, 0, nil
+	}
+
+	makeRequest := func(token string) ([]WahooWorkout, int, int, int, error) {
+		client := &http.Client{Timeout: 10 * time.Second}
+		u := fmt.Sprintf("https://api.wahooligan.com/v1/workouts?page=%d&per_page=10", page)
+		req, err := http.NewRequest("GET", u, nil)
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return nil, 0, 0, resp.StatusCode, fmt.Errorf("Wahoo API error (status %d): %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var envelope WahooWorkoutsEnvelope
+		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+			return nil, 0, 0, resp.StatusCode, err
+		}
+		return envelope.Workouts, envelope.CurrentPage, envelope.TotalPages, resp.StatusCode, nil
+	}
+
+	var tokenToUse = cfg.AuthToken
+	var err error
+	var statusCode int
+	var workouts []WahooWorkout
+	var currentPage, totalPages int
+
+	if tokenToUse != "" {
+		workouts, currentPage, totalPages, statusCode, err = makeRequest(tokenToUse)
+		if err == nil {
+			return workouts, currentPage, totalPages, nil
+		}
+	}
+
+	if (tokenToUse == "" || statusCode == http.StatusUnauthorized) && cfg.RefreshToken != "" && cfg.ClientID != "" && cfg.ClientSecret != "" {
+		fmt.Println("Wahoo access token expired or missing, attempting token refresh...")
+		tokenResp, refreshErr := refreshWahooToken(cfg.ClientID, cfg.ClientSecret, cfg.RefreshToken)
+		if refreshErr == nil {
+			currentConfig := loadConfig(configPath)
+			currentConfig.WahooAPI.AuthToken = tokenResp.AccessToken
+			if tokenResp.RefreshToken != "" {
+				currentConfig.WahooAPI.RefreshToken = tokenResp.RefreshToken
+			}
+			if saveErr := saveConfig(configPath, currentConfig); saveErr == nil {
+				workouts, currentPage, totalPages, _, err = makeRequest(tokenResp.AccessToken)
+				if err == nil {
+					return workouts, currentPage, totalPages, nil
+				}
+			} else {
+				fmt.Printf("Error saving config after Wahoo refresh: %v\n", saveErr)
+			}
+		} else {
+			return nil, 0, 0, fmt.Errorf("Wahoo token refresh failed: %w (original request error: %v)", refreshErr, err)
+		}
+	}
+
+	return nil, 0, 0, err
+}
+
+func downloadWahooFITFile(cfg WahooConfig, cdnURL string, workoutID int64) (string, error) {
+	if cdnURL == "" {
+		return "", fmt.Errorf("empty CDN URL")
+	}
+
+	if err := os.MkdirAll(cfg.DownloadDir, 0755); err != nil {
+		return "", err
+	}
+
+	filePath := filepath.Join(cfg.DownloadDir, fmt.Sprintf("%d.fit", workoutID))
+	if _, err := os.Stat(filePath); err == nil {
+		return filePath, nil
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(cdnURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to download Wahoo FIT from CDN (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	out, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return filePath, nil
 }
 
 func sortEvents(events []*fit.EventMsg) {
@@ -1259,6 +1480,104 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 </html>`))
 	})
 
+	http.HandleFunc("/wahoo-callback", func(w http.ResponseWriter, r *http.Request) {
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Error(w, "Missing authorization code", http.StatusBadRequest)
+			return
+		}
+
+		// Load fresh config
+		cfg := loadConfig(configPath)
+		if cfg.WahooAPI.ClientID == "" || cfg.WahooAPI.ClientSecret == "" {
+			http.Error(w, "Wahoo client credentials not configured in config.json", http.StatusInternalServerError)
+			return
+		}
+
+		scheme := "http"
+		if r.Header.Get("X-Forwarded-Proto") != "" {
+			scheme = r.Header.Get("X-Forwarded-Proto")
+		} else if r.TLS != nil {
+			scheme = "https"
+		}
+		redirectURI := fmt.Sprintf("%s://%s/wahoo-callback", scheme, r.Host)
+
+		tokenResp, err := exchangeWahooCode(
+			cfg.WahooAPI.ClientID,
+			cfg.WahooAPI.ClientSecret,
+			code,
+			redirectURI,
+		)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Wahoo token exchange failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Update and save config
+		cfg.WahooAPI.AuthToken = tokenResp.AccessToken
+		cfg.WahooAPI.RefreshToken = tokenResp.RefreshToken
+		cfg.WahooAPI.Enabled = true
+		if err := saveConfig(configPath, cfg); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Redirect user back to the main dashboard page
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Link Successful</title>
+    <style>
+        body {
+            background-color: #0a0a0c;
+            color: #ffffff;
+            font-family: 'Outfit', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid #27273a;
+            padding: 3rem;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            max-width: 400px;
+        }
+        h2 { color: #9b59b6; margin-bottom: 1rem; }
+        p { color: #94a3b8; font-size: 0.95rem; margin-bottom: 2rem; }
+        .btn {
+            background: #9b59b6;
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 10px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Connection Successful!</h2>
+        <p>Your Wahoo Account has been successfully linked to directeurAI. You can close this window now or return to the dashboard.</p>
+        <a class="btn" href="/">Return to Dashboard</a>
+    </div>
+    <script>
+        // Auto-redirect back to dashboard after 3 seconds
+        setTimeout(function() {
+            window.location.href = "/";
+        }, 3000);
+    </script>
+</body>
+</html>`))
+	})
+
 	http.HandleFunc("/api/rides", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		cfg := loadConfig(configPath)
@@ -1267,17 +1586,42 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			fmt.Printf("Error listing local rides: %v\n", err)
 		}
 
-		pageStr := r.URL.Query().Get("page")
-		page := 1
-		if pageStr != "" {
-			if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-				page = p
+		// Hammerhead Page parsing
+		hhPageStr := r.URL.Query().Get("hh_page")
+		hhPage := 1
+		if hhPageStr != "" {
+			if p, err := strconv.Atoi(hhPageStr); err == nil && p > 0 {
+				hhPage = p
+			}
+		} else {
+			// shared fallback
+			if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
+				hhPage = p
 			}
 		}
 
-		hhRides, currentPage, totalPages, hhErr := fetchHammerheadActivities(cfg.HammerheadAPI, configPath, page)
+		// Wahoo Page parsing
+		wahooPageStr := r.URL.Query().Get("wahoo_page")
+		wahooPage := 1
+		if wahooPageStr != "" {
+			if p, err := strconv.Atoi(wahooPageStr); err == nil && p > 0 {
+				wahooPage = p
+			}
+		} else {
+			// shared fallback
+			if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
+				wahooPage = p
+			}
+		}
+
+		hhRides, currentPage, totalPages, hhErr := fetchHammerheadActivities(cfg.HammerheadAPI, configPath, hhPage)
 		if hhErr != nil {
 			fmt.Printf("Error fetching Hammerhead activities: %v\n", hhErr)
+		}
+
+		wahooRides, wahooCurrentPage, wahooTotalPages, wahooErr := fetchWahooWorkouts(cfg.WahooAPI, configPath, wahooPage)
+		if wahooErr != nil {
+			fmt.Printf("Error fetching Wahoo workouts: %v\n", wahooErr)
 		}
 
 		type RidesResponse struct {
@@ -1289,11 +1633,24 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			ClientID             string               `json:"client_id,omitempty"`
 			CurrentPage          int                  `json:"current_page"`
 			TotalPages           int                  `json:"total_pages"`
+
+			Wahoo                []WahooWorkout       `json:"wahoo"`
+			WahooConfigured      bool                 `json:"wahoo_configured"`
+			WahooLinked          bool                 `json:"wahoo_linked"`
+			WahooError           string               `json:"wahoo_error,omitempty"`
+			WahooClientID        string               `json:"wahoo_client_id,omitempty"`
+			WahooCurrentPage     int                  `json:"wahoo_current_page"`
+			WahooTotalPages      int                  `json:"wahoo_total_pages"`
 		}
 
 		var hhErrStr string
 		if hhErr != nil {
 			hhErrStr = hhErr.Error()
+		}
+
+		var wahooErrStr string
+		if wahooErr != nil {
+			wahooErrStr = wahooErr.Error()
 		}
 
 		resp := RidesResponse{
@@ -1305,6 +1662,14 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			ClientID:             cfg.HammerheadAPI.ClientID,
 			CurrentPage:          currentPage,
 			TotalPages:           totalPages,
+
+			Wahoo:                wahooRides,
+			WahooConfigured:      cfg.WahooAPI.ClientID != "" && cfg.WahooAPI.ClientSecret != "",
+			WahooLinked:          cfg.WahooAPI.Enabled && (cfg.WahooAPI.AuthToken != "" || cfg.WahooAPI.RefreshToken != ""),
+			WahooError:           wahooErrStr,
+			WahooClientID:        cfg.WahooAPI.ClientID,
+			WahooCurrentPage:     wahooCurrentPage,
+			WahooTotalPages:      wahooTotalPages,
 		}
 		json.NewEncoder(w).Encode(resp)
 	})
@@ -1333,6 +1698,23 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			filePath, err = downloadHammerheadFITFile(cfg.HammerheadAPI, configPath, id)
 			if err != nil {
 				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity: %s"}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+		} else if source == "wahoo" {
+			idStr := r.URL.Query().Get("id")
+			cdnURL := r.URL.Query().Get("url")
+			if idStr == "" || cdnURL == "" {
+				http.Error(w, `{"error": "missing id or url parameter"}`, http.StatusBadRequest)
+				return
+			}
+			id, parseErr := strconv.ParseInt(idStr, 10, 64)
+			if parseErr != nil {
+				http.Error(w, `{"error": "invalid id parameter"}`, http.StatusBadRequest)
+				return
+			}
+			filePath, err = downloadWahooFITFile(cfg.WahooAPI, cdnURL, id)
+			if err != nil {
+				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity from Wahoo: %s"}`, err.Error()), http.StatusInternalServerError)
 				return
 			}
 		} else {
@@ -2054,6 +2436,7 @@ func getDashboardTemplate() string {
             <div style="display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 0.5rem;">
                 <button id="tab-local" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid var(--accent); background: none; font-size: 0.95rem; font-weight: 600; padding: 0.75rem 1.5rem; color: var(--accent); cursor: pointer;">📂 Local Files</button>
                 <button id="tab-hammerhead" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid transparent; background: none; font-size: 0.95rem; font-weight: 500; padding: 0.75rem 1.5rem; color: var(--text-secondary); cursor: pointer;">🚲 Hammerhead Karoo</button>
+                <button id="tab-wahoo" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid transparent; background: none; font-size: 0.95rem; font-weight: 500; padding: 0.75rem 1.5rem; color: var(--text-secondary); cursor: pointer;">⚡ Wahoo Fitness</button>
             </div>
 
             <!-- Modal Content Lists Container -->
@@ -2077,6 +2460,11 @@ func getDashboardTemplate() string {
 
                 <!-- Hammerhead Activities List -->
                 <div id="list-hammerhead-container" style="display: none; flex-direction: column; gap: 0.75rem;">
+                    <!-- Filled dynamically -->
+                </div>
+
+                <!-- Wahoo Activities List -->
+                <div id="list-wahoo-container" style="display: none; flex-direction: column; gap: 0.75rem;">
                     <!-- Filled dynamically -->
                 </div>
 
@@ -3681,8 +4069,10 @@ func getDashboardTemplate() string {
         const selectRideCloseBtn = document.getElementById('select-ride-close-btn');
         const tabLocal = document.getElementById('tab-local');
         const tabHammerhead = document.getElementById('tab-hammerhead');
+        const tabWahoo = document.getElementById('tab-wahoo');
         const listLocalContainer = document.getElementById('list-local-container');
         const listHammerheadContainer = document.getElementById('list-hammerhead-container');
+        const listWahooContainer = document.getElementById('list-wahoo-container');
         const selectRideLoading = document.getElementById('select-ride-loading');
         const selectRideEmpty = document.getElementById('select-ride-empty');
         const analysisLoadingOverlay = document.getElementById('analysis-loading-overlay');
@@ -3690,28 +4080,38 @@ func getDashboardTemplate() string {
         let selectRideActiveTab = 'local';
 
         const updateTabUI = () => {
+            // Reset all tabs
+            tabLocal.style.color = 'var(--text-secondary)';
+            tabLocal.style.borderBottomColor = 'transparent';
+            tabLocal.style.fontWeight = '500';
+
+            tabHammerhead.style.color = 'var(--text-secondary)';
+            tabHammerhead.style.borderBottomColor = 'transparent';
+            tabHammerhead.style.fontWeight = '500';
+
+            tabWahoo.style.color = 'var(--text-secondary)';
+            tabWahoo.style.borderBottomColor = 'transparent';
+            tabWahoo.style.fontWeight = '500';
+
+            listLocalContainer.style.display = 'none';
+            listHammerheadContainer.style.display = 'none';
+            listWahooContainer.style.display = 'none';
+
             if (selectRideActiveTab === 'local') {
                 tabLocal.style.color = 'var(--accent)';
                 tabLocal.style.borderBottomColor = 'var(--accent)';
                 tabLocal.style.fontWeight = '600';
-                
-                tabHammerhead.style.color = 'var(--text-secondary)';
-                tabHammerhead.style.borderBottomColor = 'transparent';
-                tabHammerhead.style.fontWeight = '500';
-
                 listLocalContainer.style.display = 'flex';
-                listHammerheadContainer.style.display = 'none';
-            } else {
+            } else if (selectRideActiveTab === 'hammerhead') {
                 tabHammerhead.style.color = 'var(--accent)';
                 tabHammerhead.style.borderBottomColor = 'var(--accent)';
                 tabHammerhead.style.fontWeight = '600';
-
-                tabLocal.style.color = 'var(--text-secondary)';
-                tabLocal.style.borderBottomColor = 'transparent';
-                tabLocal.style.fontWeight = '500';
-
-                listLocalContainer.style.display = 'none';
                 listHammerheadContainer.style.display = 'flex';
+            } else if (selectRideActiveTab === 'wahoo') {
+                tabWahoo.style.color = 'var(--accent)';
+                tabWahoo.style.borderBottomColor = 'var(--accent)';
+                tabWahoo.style.fontWeight = '600';
+                listWahooContainer.style.display = 'flex';
             }
         };
 
@@ -3727,25 +4127,36 @@ func getDashboardTemplate() string {
             checkEmptyState();
         });
 
+        tabWahoo.addEventListener('click', () => {
+            selectRideActiveTab = 'wahoo';
+            updateTabUI();
+            checkEmptyState();
+        });
+
         const checkEmptyState = () => {
             const hasLocal = listLocalContainer.children.length > 0;
             const hasHammerhead = listHammerheadContainer.children.length > 0;
+            const hasWahoo = listWahooContainer.children.length > 0;
             if (selectRideActiveTab === 'local') {
                 selectRideEmpty.style.display = hasLocal ? 'none' : 'block';
-            } else {
+            } else if (selectRideActiveTab === 'hammerhead') {
                 selectRideEmpty.style.display = hasHammerhead ? 'none' : 'block';
+            } else if (selectRideActiveTab === 'wahoo') {
+                selectRideEmpty.style.display = hasWahoo ? 'none' : 'block';
             }
         };
 
-        const loadRideData = (source, param) => {
+        const loadRideData = (source, param, param2) => {
             selectRideModal.style.display = 'none';
             analysisLoadingOverlay.style.display = 'flex';
 
             let url = '/api/analyze?source=' + source;
             if (source === 'local') {
                 url += '&file=' + encodeURIComponent(param);
-            } else {
+            } else if (source === 'hammerhead') {
                 url += '&id=' + encodeURIComponent(param);
+            } else if (source === 'wahoo') {
+                url += '&id=' + encodeURIComponent(param) + '&url=' + encodeURIComponent(param2);
             }
 
             fetch(url)
@@ -3779,13 +4190,14 @@ func getDashboardTemplate() string {
                 });
         };
 
-        const populateRideLists = (page = 1) => {
+        const populateRideLists = (hhPage = 1, wahooPage = 1) => {
             selectRideLoading.style.display = 'flex';
             listLocalContainer.innerHTML = '';
             listHammerheadContainer.innerHTML = '';
+            listWahooContainer.innerHTML = '';
             selectRideEmpty.style.display = 'none';
 
-            fetch('/api/rides?page=' + page)
+            fetch('/api/rides?hh_page=' + hhPage + '&wahoo_page=' + wahooPage)
                 .then(res => {
                     if (!res.ok) throw new Error('HTTP error ' + res.status);
                     return res.json();
@@ -3814,6 +4226,9 @@ func getDashboardTemplate() string {
                         });
                     }
 
+                    // ==========================================
+                    // Hammerhead List Rendering
+                    // ==========================================
                     if (!data.hammerhead_configured && !data.hammerhead_linked) {
                         const promptCard = document.createElement('div');
                         promptCard.style.background = 'rgba(255, 255, 255, 0.02)';
@@ -3960,7 +4375,7 @@ func getDashboardTemplate() string {
                                 } else {
                                     prevBtn.addEventListener('click', (e) => {
                                         e.stopPropagation();
-                                        populateRideLists(data.current_page - 1);
+                                        populateRideLists(data.current_page - 1, wahooPage);
                                     });
                                 }
                                 
@@ -3983,7 +4398,7 @@ func getDashboardTemplate() string {
                                 } else {
                                     nextBtn.addEventListener('click', (e) => {
                                         e.stopPropagation();
-                                        populateRideLists(data.current_page + 1);
+                                        populateRideLists(data.current_page + 1, wahooPage);
                                     });
                                 }
                                 
@@ -4001,6 +4416,180 @@ func getDashboardTemplate() string {
                             emptyItem.style.fontSize = '0.9rem';
                             emptyItem.innerText = 'No Hammerhead activities found.';
                             listHammerheadContainer.appendChild(emptyItem);
+                        }
+                    }
+
+                    // ==========================================
+                    // Wahoo List Rendering
+                    // ==========================================
+                    if (!data.wahoo_configured && !data.wahoo_linked) {
+                        const promptCard = document.createElement('div');
+                        promptCard.style.background = 'rgba(255, 255, 255, 0.02)';
+                        promptCard.style.border = '1px solid var(--border-color)';
+                        promptCard.style.borderRadius = '16px';
+                        promptCard.style.padding = '1.5rem';
+                        promptCard.style.color = 'var(--text-secondary)';
+                        promptCard.style.lineHeight = '1.6';
+                        promptCard.style.fontSize = '0.9rem';
+                        promptCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
+                        
+                        promptCard.innerHTML = '<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; color: #9b59b6; font-weight: 700; font-family: \'Outfit\'; font-size: 1.05rem;">' +
+                            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' +
+                            'Wahoo API Not Configured' +
+                            '</div>' +
+                            '<p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #ffffff; font-weight: 600;">How to Connect Wahoo Fitness API:</p>' +
+                            '<ol style="margin: 0; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.4rem; color: var(--text-secondary);">' +
+                            '<li>Log in to the <a href="https://developers.wahooligan.com/" target="_blank" style="color: #9b59b6; text-decoration: none; font-weight: 600; border-bottom: 1px dotted #9b59b6;">Wahoo Developer Portal</a>.</li>' +
+                            '<li>Register a developer application.</li>' +
+                            '<li>Add <code>' + window.location.origin + '/wahoo-callback</code> as a callback URL.</li>' +
+                            '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>config.json</code> under <code>"wahoo_api"</code> and restart the server.</li>' +
+                            '</ol>';
+                        listWahooContainer.appendChild(promptCard);
+                    } else if (data.wahoo_configured && !data.wahoo_linked) {
+                        const linkCard = document.createElement('div');
+                        linkCard.style.background = 'rgba(255, 255, 255, 0.02)';
+                        linkCard.style.border = '1px solid var(--border-color)';
+                        linkCard.style.borderRadius = '16px';
+                        linkCard.style.padding = '2.5rem 1.5rem';
+                        linkCard.style.color = 'var(--text-secondary)';
+                        linkCard.style.lineHeight = '1.6';
+                        linkCard.style.fontSize = '0.9rem';
+                        linkCard.style.textAlign = 'center';
+                        linkCard.style.display = 'flex';
+                        linkCard.style.flexDirection = 'column';
+                        linkCard.style.alignItems = 'center';
+                        linkCard.style.gap = '1rem';
+                        linkCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
+                        
+                        const authUrl = 'https://api.wahooligan.com/oauth/authorize?client_id=' + encodeURIComponent(data.wahoo_client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/wahoo-callback') + '&response_type=code&scope=workouts_read&state=directeur';
+                        
+                        linkCard.innerHTML = '<div style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">Link Wahoo Account</div>' +
+                            '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); max-width: 400px;">Connect your Wahoo Fitness account to directeurAI to view and import your activities automatically.</p>' +
+                            '<a href="' + authUrl + '" class="btn-action" style="margin-top: 0.5rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.75rem 2rem; background: linear-gradient(135deg, #9b59b6, #3498db); border: none; color: #ffffff; border-radius: 12px; box-shadow: 0 4px 15px rgba(155, 89, 182, 0.4); transition: transform 0.2s;">' +
+                            '🔗 Authorize Wahoo Fitness' +
+                            '</a>';
+                        listWahooContainer.appendChild(linkCard);
+                    } else if (data.wahoo_error) {
+                        const errorCard = document.createElement('div');
+                        errorCard.style.background = 'rgba(231, 76, 60, 0.05)';
+                        errorCard.style.border = '1px solid #e74c3c';
+                        errorCard.style.borderRadius = '16px';
+                        errorCard.style.padding = '1.5rem';
+                        errorCard.style.color = 'var(--text-secondary)';
+                        errorCard.style.lineHeight = '1.6';
+                        errorCard.style.fontSize = '0.9rem';
+                        errorCard.style.boxShadow = '0 4px 20px rgba(231, 76, 60, 0.1)';
+                        
+                        let reAuthHtml = '';
+                        if (data.wahoo_configured) {
+                            const authUrl = 'https://api.wahooligan.com/oauth/authorize?client_id=' + encodeURIComponent(data.wahoo_client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/wahoo-callback') + '&response_type=code&scope=workouts_read&state=directeur';
+                            reAuthHtml = '<div style="margin-top: 1.25rem; border-top: 1px solid rgba(231, 76, 60, 0.15); padding-top: 1.25rem; text-align: center;">' +
+                                '<a href="' + authUrl + '" class="btn-action" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.6rem 1.5rem; background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #ffffff; border-radius: 10px; font-size: 0.8rem; transition: background 0.2s;">' +
+                                '🔗 Re-authorize Account' +
+                                '</a>' +
+                                '</div>';
+                        }
+                        
+                        errorCard.innerHTML = '<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; color: #e74c3c; font-weight: 700; font-family: \'Outfit\'; font-size: 1.05rem;">' +
+                            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>' +
+                            'Failed to Fetch Wahoo Workouts' +
+                            '</div>' +
+                            '<p style="margin: 0 0 1rem 0; font-size: 0.85rem; color: #ffffff;">The Wahoo API returned an error. This usually indicates that your authentication key is invalid or has expired.</p>' +
+                            '<div style="background: rgba(0, 0, 0, 0.3); padding: 0.75rem 1rem; border-radius: 8px; font-family: monospace; font-size: 0.8rem; color: #e74c3c; word-break: break-all; margin-bottom: 1.25rem; border: 1px solid rgba(231, 76, 60, 0.2);">' +
+                            data.wahoo_error +
+                            '</div>' +
+                            reAuthHtml;
+                        listWahooContainer.appendChild(errorCard);
+                    } else {
+                        if (data.wahoo && data.wahoo.length > 0) {
+                            data.wahoo.forEach(act => {
+                                const dateStr = act.starts ? new Date(act.starts).toLocaleString() : 'N/A';
+                                const distStr = (act.distance / 1000).toFixed(2) + ' km';
+                                const durStr = formatDuration(act.duration_active);
+                                const item = document.createElement('div');
+                                item.className = 'ride-list-item';
+                                item.innerHTML = '<div>' +
+                                    '<div style="font-weight: 600; color: #ffffff; font-size: 0.95rem; margin-bottom: 0.2rem;">' + (act.name || 'Unnamed Activity') + '</div>' +
+                                    '<div style="font-size: 0.8rem; color: var(--text-secondary);">Date: ' + dateStr + '</div>' +
+                                    '</div>' +
+                                    '<div style="display: flex; align-items: center; gap: 1rem;">' +
+                                    '<div style="text-align: right;">' +
+                                    '<div style="font-weight: 600; color: var(--accent); font-size: 0.9rem;">' + distStr + '</div>' +
+                                    '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + durStr + '</div>' +
+                                    '</div>' +
+                                    '<span class="badge" style="font-size: 0.7rem; padding: 0.25rem 0.5rem; background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2)); border-color: #9b59b6; color: #e0aaff;">WAHOO</span>' +
+                                    '</div>';
+                                item.addEventListener('click', () => {
+                                    loadRideData('wahoo', act.id, act.file.url);
+                                });
+                                listWahooContainer.appendChild(item);
+                            });
+
+                            if (data.wahoo_total_pages > 1) {
+                                const paginationDiv = document.createElement('div');
+                                paginationDiv.style.display = 'flex';
+                                paginationDiv.style.justifyContent = 'center';
+                                paginationDiv.style.alignItems = 'center';
+                                paginationDiv.style.gap = '1rem';
+                                paginationDiv.style.marginTop = '1rem';
+                                paginationDiv.style.padding = '0.75rem 0 0 0';
+                                paginationDiv.style.borderTop = '1px solid var(--border-color)';
+                                paginationDiv.style.width = '100%';
+                                
+                                const prevBtn = document.createElement('button');
+                                prevBtn.innerText = '◀ Prev';
+                                prevBtn.className = 'btn-action';
+                                prevBtn.style.padding = '0.35rem 0.8rem';
+                                prevBtn.style.fontSize = '0.78rem';
+                                prevBtn.style.borderRadius = '6px';
+                                prevBtn.disabled = data.wahoo_current_page <= 1;
+                                if (prevBtn.disabled) {
+                                    prevBtn.style.opacity = '0.3';
+                                    prevBtn.style.cursor = 'not-allowed';
+                                } else {
+                                    prevBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation();
+                                        populateRideLists(hhPage, data.wahoo_current_page - 1);
+                                    });
+                                }
+                                
+                                const pageInfo = document.createElement('span');
+                                pageInfo.innerText = 'Page ' + data.wahoo_current_page + ' / ' + data.wahoo_total_pages;
+                                pageInfo.style.fontSize = '0.8rem';
+                                pageInfo.style.color = 'var(--text-secondary)';
+                                pageInfo.style.fontWeight = '500';
+                                
+                                const nextBtn = document.createElement('button');
+                                nextBtn.innerText = 'Next ▶';
+                                nextBtn.className = 'btn-action';
+                                nextBtn.style.padding = '0.35rem 0.8rem';
+                                nextBtn.style.fontSize = '0.78rem';
+                                nextBtn.style.borderRadius = '6px';
+                                nextBtn.disabled = data.wahoo_current_page >= data.wahoo_total_pages;
+                                if (nextBtn.disabled) {
+                                    nextBtn.style.opacity = '0.3';
+                                    nextBtn.style.cursor = 'not-allowed';
+                                } else {
+                                    nextBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation();
+                                        populateRideLists(hhPage, data.wahoo_current_page + 1);
+                                    });
+                                }
+                                
+                                paginationDiv.appendChild(prevBtn);
+                                paginationDiv.appendChild(pageInfo);
+                                paginationDiv.appendChild(nextBtn);
+                                listWahooContainer.appendChild(paginationDiv);
+                            }
+                        } else {
+                            const emptyItem = document.createElement('div');
+                            emptyItem.style.textAlign = 'center';
+                            emptyItem.style.color = 'var(--text-secondary)';
+                            emptyItem.style.padding = '3rem 0';
+                            emptyItem.style.fontStyle = 'italic';
+                            emptyItem.style.fontSize = '0.9rem';
+                            emptyItem.innerText = 'No Wahoo activities found.';
+                            listWahooContainer.appendChild(emptyItem);
                         }
                     }
 
