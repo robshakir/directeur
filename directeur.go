@@ -150,7 +150,25 @@ func main() {
 	flag.Parse()
 
 	// 1. Load config
-	config := loadConfig(*configFile)
+	resolvedConfigPath := *configFile
+	configPassed := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "config" {
+			configPassed = true
+		}
+	})
+
+	if !configPassed {
+		homeDir, _ := os.UserHomeDir()
+		if homeDir != "" {
+			homeConfig := filepath.Join(homeDir, ".directeur.config.json")
+			if _, err := os.Stat(homeConfig); err == nil {
+				resolvedConfigPath = homeConfig
+			}
+		}
+	}
+
+	config := loadConfig(resolvedConfigPath)
 	fmt.Printf("Loaded gear configuration: Front rings: %v, Rear cogs: %v\n", config.FrontGears, config.RearGears)
 
 	var resolvedInputFile string
@@ -172,10 +190,10 @@ func main() {
 		// Try Hammerhead if enabled
 		if config.HammerheadAPI.Enabled && (config.HammerheadAPI.AuthToken != "" || config.HammerheadAPI.RefreshToken != "") {
 			fmt.Println("Hammerhead API enabled, fetching activities...")
-			activities, _, _, err := fetchHammerheadActivities(config.HammerheadAPI, *configFile, 1)
+			activities, _, _, err := fetchHammerheadActivities(config.HammerheadAPI, resolvedConfigPath, 1)
 			if err == nil && len(activities) > 0 {
 				fmt.Printf("Downloading newest Hammerhead activity: %s (%s)...\n", activities[0].Name, activities[0].ID)
-				filePath, err := downloadHammerheadFITFile(config.HammerheadAPI, *configFile, activities[0].ID)
+				filePath, err := downloadHammerheadFITFile(config.HammerheadAPI, resolvedConfigPath, activities[0].ID)
 				if err == nil {
 					resolvedInputFile = filePath
 					hasData = true
@@ -240,7 +258,7 @@ func main() {
 
 	// Serve Mode if requested
 	if *serveMode {
-		serveDashboard(*outputHTML, *port, config, *configFile)
+		serveDashboard(*outputHTML, *port, config, resolvedConfigPath)
 	}
 }
 
