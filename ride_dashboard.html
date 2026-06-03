@@ -461,6 +461,9 @@
             <p id="ride-date-sub">Cycling Analysis Dashboard</p>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
+            <select id="bike-selector" class="btn-action" style="display: none;">
+                <option value="">⚙️ Default Gears</option>
+            </select>
             <select id="theme-selector" class="btn-action">
                 <option value="theme-giro">🇮🇹 Giro Pink</option>
                 <option value="theme-flandrian">🇧🇪 Classics Flandrian</option>
@@ -1198,7 +1201,20 @@
 ;
         console.log("Loaded Ride Data:", rideData);
 
-        
+        let currentRideSource = 'local';
+        let currentRideParam = rideData ? (rideData.source_file || '') : '';
+        let currentRideParam2 = '';
+
+        // Bind bike selector change listener
+        const bikeSelector = document.getElementById('bike-selector');
+        if (bikeSelector) {
+            bikeSelector.addEventListener('change', () => {
+                if (currentRideParam) {
+                    loadRideData(currentRideSource, currentRideParam, currentRideParam2);
+                }
+            });
+        }
+
         let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline;
         let leafletMap, startMarker, endMarker;
         let fullJSONString = "";
@@ -2835,6 +2851,11 @@
             selectRideModal.style.display = 'none';
             analysisLoadingOverlay.style.display = 'flex';
 
+            currentRideSource = source;
+            currentRideParam = param;
+            currentRideParam2 = param2;
+
+            const selectedBike = bikeSelector ? bikeSelector.value : '';
             let url = '/api/analyze?source=' + source;
             if (source === 'local') {
                 url += '&file=' + encodeURIComponent(param);
@@ -2842,6 +2863,9 @@
                 url += '&id=' + encodeURIComponent(param);
             } else if (source === 'wahoo') {
                 url += '&id=' + encodeURIComponent(param) + '&url=' + encodeURIComponent(param2);
+            }
+            if (selectedBike) {
+                url += '&bike=' + encodeURIComponent(selectedBike);
             }
 
             fetch(url)
@@ -3275,6 +3299,25 @@
                             emptyItem.style.fontSize = '0.9rem';
                             emptyItem.innerText = 'No Wahoo activities found.';
                             listWahooContainer.appendChild(emptyItem);
+                        }
+                    }
+
+                    if (data.bikes && data.bikes.length > 0) {
+                        const bikeSelector = document.getElementById('bike-selector');
+                        if (bikeSelector) {
+                            const currentVal = bikeSelector.value;
+                            bikeSelector.innerHTML = '<option value="">⚙️ Default Gears</option>';
+                            data.bikes.forEach(bike => {
+                                const opt = document.createElement('option');
+                                opt.value = bike.name;
+                                opt.textContent = '🚲 ' + bike.name;
+                                bikeSelector.appendChild(opt);
+                            });
+                            bikeSelector.value = currentVal;
+                            if (bikeSelector.value !== currentVal) {
+                                bikeSelector.value = '';
+                            }
+                            bikeSelector.style.display = 'block';
                         }
                     }
 

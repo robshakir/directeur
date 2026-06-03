@@ -20,10 +20,18 @@ import (
 	"github.com/tormoder/fit"
 )
 
+// BikeProfile represents a specific bicycle's gear configuration
+type BikeProfile struct {
+	Name       string `json:"name"`
+	FrontGears []int  `json:"front_gears"`
+	RearGears  []int  `json:"rear_gears"`
+}
+
 // Config represents the gear configuration and data source options
 type Config struct {
 	FrontGears     []int            `json:"front_gears"`
 	RearGears      []int            `json:"rear_gears"`
+	Bikes          []BikeProfile    `json:"bikes"`
 	LocalDirectory string           `json:"local_directory"`
 	HammerheadAPI  HammerheadConfig `json:"hammerhead_api"`
 	WahooAPI       WahooConfig      `json:"wahoo_api"`
@@ -100,10 +108,11 @@ type GearStats struct {
 
 // RideAnalysis is the full JSON output model
 type RideAnalysis struct {
-	Schema    string            `json:"$schema"`
-	Summary   RideSummary       `json:"summary"`
-	GearUsage []GearStats       `json:"gear_usage"`
-	Records   []TelemetryRecord `json:"records"`
+	Schema     string            `json:"$schema"`
+	SourceFile string            `json:"source_file,omitempty"`
+	Summary    RideSummary       `json:"summary"`
+	GearUsage  []GearStats       `json:"gear_usage"`
+	Records    []TelemetryRecord `json:"records"`
 }
 
 // GearState tracks shifting status
@@ -146,6 +155,7 @@ func analyzeFITFile(filePath string, config Config) (RideAnalysis, error) {
 	// Select Theme Name based on ride start month
 	analysis.Summary.ThemeName = selectThemeName(analysis.Summary.StartTime)
 	analysis.Schema = "https://raw.githubusercontent.com/robshakir/directeur/main/schema.json"
+	analysis.SourceFile = filepath.Base(filePath)
 
 	return analysis, nil
 }
@@ -162,6 +172,7 @@ func main() {
 			defaultPort = p
 		}
 	}
+	bikeName := flag.String("bike", "", "Name of the bike profile from the config to use for analysis")
 	port := flag.Int("port", defaultPort, "Port for the local web server")
 
 	flag.Parse()
@@ -186,7 +197,25 @@ func main() {
 	}
 
 	config := loadConfig(resolvedConfigPath)
-	fmt.Printf("Loaded gear configuration: Front rings: %v, Rear cogs: %v\n", config.FrontGears, config.RearGears)
+
+	if *bikeName != "" {
+		found := false
+		for _, b := range config.Bikes {
+			if b.Name == *bikeName {
+				config.FrontGears = b.FrontGears
+				config.RearGears = b.RearGears
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Printf("Error: Bike profile '%s' not found in configuration\n", *bikeName)
+			os.Exit(1)
+		}
+		fmt.Printf("Selected bike profile: %s. Front rings: %v, Rear cogs: %v\n", *bikeName, config.FrontGears, config.RearGears)
+	} else {
+		fmt.Printf("Loaded gear configuration: Front rings: %v, Rear cogs: %v\n", config.FrontGears, config.RearGears)
+	}
 
 	var resolvedInputFile string
 	var resolvedAnalysis RideAnalysis
@@ -1641,6 +1670,8 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			WahooClientID        string               `json:"wahoo_client_id,omitempty"`
 			WahooCurrentPage     int                  `json:"wahoo_current_page"`
 			WahooTotalPages      int                  `json:"wahoo_total_pages"`
+
+			Bikes                []BikeProfile        `json:"bikes"`
 		}
 
 		var hhErrStr string
@@ -1670,6 +1701,8 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			WahooClientID:        cfg.WahooAPI.ClientID,
 			WahooCurrentPage:     wahooCurrentPage,
 			WahooTotalPages:      wahooTotalPages,
+
+			Bikes:                cfg.Bikes,
 		}
 		json.NewEncoder(w).Encode(resp)
 	})
@@ -1720,6 +1753,23 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		} else {
 			http.Error(w, `{"error": "invalid source parameter"}`, http.StatusBadRequest)
 			return
+		}
+
+		bikeName := r.URL.Query().Get("bike")
+		if bikeName != "" {
+			found := false
+			for _, b := range cfg.Bikes {
+				if b.Name == bikeName {
+					cfg.FrontGears = b.FrontGears
+					cfg.RearGears = b.RearGears
+					found = true
+					break
+				}
+			}
+			if !found {
+				http.Error(w, fmt.Sprintf(`{"error": "bike profile '%s' not found"}`, bikeName), http.StatusBadRequest)
+				return
+			}
 		}
 
 		analysis, err := analyzeFITFile(filePath, cfg)
@@ -2201,6 +2251,9 @@ func getDashboardTemplate() string {
             <p id="ride-date-sub">Cycling Analysis Dashboard</p>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
+            <select id="bike-selector" class="btn-action" style="display: none;">
+                <option value="">⚙️ Default Gears</option>
+            </select>
             <select id="theme-selector" class="btn-action">
                 <option value="theme-giro">🇮🇹 Giro Pink</option>
                 <option value="theme-flandrian">🇧🇪 Classics Flandrian</option>
