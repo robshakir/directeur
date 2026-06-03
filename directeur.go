@@ -3543,11 +3543,11 @@ func getDashboardTemplate() string {
         const coachModelUsed = document.getElementById('coach-model-used');
         const coachLoadingStatus = document.getElementById('coach-loading-status');
 
-        // Helpers
         const formatDuration = (secs) => {
-            const h = Math.floor(secs / 3600);
-            const m = Math.floor((secs % 3600) / 60);
-            const s = secs % 60;
+            const roundedSecs = Math.round(secs);
+            const h = Math.floor(roundedSecs / 3600);
+            const m = Math.floor((roundedSecs % 3600) / 60);
+            const s = roundedSecs % 60;
             return h + 'h ' + m + 'm ' + s + 's';
         };
 
