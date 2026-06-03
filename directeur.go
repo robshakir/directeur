@@ -3552,20 +3552,117 @@ func getDashboardTemplate() string {
         };
 
         const formatMarkdown = (text) => {
-            let html = text
+            let codeBlocks = [];
+            // Extract code blocks to avoid line break transformations inside them
+            let tempText = text.replace(/` + "`" + `{3}([\s\S]*?)` + "`" + `{3}/g, (match, code) => {
+                codeBlocks.push(code);
+                return "__CODE_BLOCK_" + (codeBlocks.length - 1) + "__";
+            });
+
+            // Escaping HTML characters in remaining text
+            let html = tempText
                 .replace(/&/g, "&amp;")
                 .replace(/</g, "&lt;")
                 .replace(/>/g, "&gt;");
-            
-            html = html.replace(/^### (.*$)/gim, '<h4 style="color: var(--accent); margin-top: 1.5rem; margin-bottom: 0.5rem; font-family: \'Outfit\'; font-weight: 600;">$1</h4>');
-            html = html.replace(/^## (.*$)/gim, '<h3 style="color: var(--accent); margin-top: 1.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.25rem; font-family: \'Outfit\'; font-weight: 700;">$1</h3>');
-            html = html.replace(/^# (.*$)/gim, '<h2 style="color: #ffffff; margin-top: 2rem; margin-bottom: 1rem; font-family: \'Outfit\'; font-weight: 800;">$1</h2>');
-            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            html = html.replace(/^\s*-\s+(.*$)/gim, '<li style="margin-left: 1.5rem; margin-bottom: 0.35rem; list-style-type: disc;">$1</li>');
-            html = html.replace(/\n\n/g, '</p><p style="margin-bottom: 1rem; line-height: 1.6;">');
-            html = html.replace(/\n/g, '<br>');
-            
-            return '<p style="margin-bottom: 1rem; line-height: 1.6;">' + html + '</p>';
+
+            let lines = html.split(/\r?\n/);
+            let htmlResult = [];
+            let inList = false;
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i];
+
+                // Check if line is a bullet point (starts with '-' or '*' or '+')
+                let listMatch = line.match(/^\s*[-*+]\s+(.*)$/);
+                if (listMatch) {
+                    if (!inList) {
+                        inList = true;
+                        htmlResult.push('<ul style="margin-bottom: 1rem; padding-left: 1.5rem; list-style-type: disc;">');
+                    }
+                    let itemContent = listMatch[1];
+                    itemContent = itemContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    htmlResult.push('<li style="margin-bottom: 0.35rem; line-height: 1.5;">' + itemContent + '</li>');
+                    continue;
+                }
+
+                if (inList) {
+                    htmlResult.push('</ul>');
+                    inList = false;
+                }
+
+                // Check for headers
+                let headerMatch = line.match(/^(#{1,6})\s+(.*)$/);
+                if (headerMatch) {
+                    let level = headerMatch[1].length;
+                    let content = headerMatch[2];
+                    content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    if (level === 1) {
+                        htmlResult.push('<h2 style="color: #ffffff; margin-top: 2rem; margin-bottom: 1rem; font-family: \'Outfit\'; font-weight: 800;">' + content + '</h2>');
+                    } else if (level === 2) {
+                        htmlResult.push('<h3 style="color: var(--accent); margin-top: 1.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.25rem; font-family: \'Outfit\'; font-weight: 700;">' + content + '</h3>');
+                    } else {
+                        htmlResult.push('<h4 style="color: var(--accent); margin-top: 1.5rem; margin-bottom: 0.5rem; font-family: \'Outfit\'; font-weight: 600;">' + content + '</h4>');
+                    }
+                    continue;
+                }
+
+                // Check if line is empty (paragraph separator)
+                if (line.trim() === '') {
+                    htmlResult.push('');
+                    continue;
+                }
+
+                // Regular line of text
+                let content = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                htmlResult.push(content);
+            }
+
+            if (inList) {
+                htmlResult.push('</ul>');
+            }
+
+            // Reconstruct paragraphs and block elements
+            let finalHtml = [];
+            let currentParagraph = [];
+
+            const flushParagraph = () => {
+                if (currentParagraph.length > 0) {
+                    finalHtml.push('<p style="margin-bottom: 1rem; line-height: 1.6;">' + currentParagraph.join('<br>') + '</p>');
+                    currentParagraph = [];
+                }
+            };
+
+            for (let i = 0; i < htmlResult.length; i++) {
+                let item = htmlResult[i];
+                if (item === '') {
+                    flushParagraph();
+                } else if (item.startsWith('<ul') || item.startsWith('</ul>') || item.startsWith('<li') || item.startsWith('<h')) {
+                    flushParagraph();
+                    finalHtml.push(item);
+                } else if (item.startsWith('__CODE_BLOCK_') && item.endsWith('__')) {
+                    flushParagraph();
+                    finalHtml.push(item);
+                } else {
+                    currentParagraph.push(item);
+                }
+            }
+            flushParagraph();
+
+            let output = finalHtml.join('\n');
+
+            // Restore code blocks, escaping their content so it doesn't break the HTML
+            codeBlocks.forEach((code, idx) => {
+                let cleanCode = code
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .trim();
+                
+                const blockHtml = '<pre style="background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.85rem; overflow-x: auto; margin-top: 0.5rem; margin-bottom: 1rem; color: #e2e8f0; line-height: 1.4; white-space: pre;"><code>' + cleanCode + '</code></pre>';
+                output = output.replace("__CODE_BLOCK_" + idx + "__", blockHtml);
+            });
+
+            return output;
         };
 
         const setCoachReportContent = (markdownText) => {
