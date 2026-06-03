@@ -3572,6 +3572,17 @@ func getDashboardTemplate() string {
             for (let i = 0; i < lines.length; i++) {
                 let line = lines[i];
 
+                // Check if line is a horizontal rule (3 or more hyphens, asterisks, or underscores)
+                let hrMatch = line.match(/^\s*[-*_]{3,}\s*$/);
+                if (hrMatch) {
+                    if (inList) {
+                        htmlResult.push('</ul>');
+                        inList = false;
+                    }
+                    htmlResult.push('<hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 1.5rem 0;">');
+                    continue;
+                }
+
                 // Check if line is a bullet point (starts with '-' or '*' or '+')
                 let listMatch = line.match(/^\s*[-*+]\s+(.*)$/);
                 if (listMatch) {
@@ -3636,7 +3647,7 @@ func getDashboardTemplate() string {
                 let item = htmlResult[i];
                 if (item === '') {
                     flushParagraph();
-                } else if (item.startsWith('<ul') || item.startsWith('</ul>') || item.startsWith('<li') || item.startsWith('<h')) {
+                } else if (item.startsWith('<ul') || item.startsWith('</ul>') || item.startsWith('<li') || item.startsWith('<h') || item.startsWith('<hr')) {
                     flushParagraph();
                     finalHtml.push(item);
                 } else if (item.startsWith('__CODE_BLOCK_') && item.endsWith('__')) {
