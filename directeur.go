@@ -1753,6 +1753,10 @@ func getDashboardTemplate() string {
     <!-- Leaflet.js for Maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- KaTeX for formula rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <style>
         :root {
             /* Fallback defaults: Giro Pink */
@@ -3564,6 +3568,21 @@ func getDashboardTemplate() string {
             return '<p style="margin-bottom: 1rem; line-height: 1.6;">' + html + '</p>';
         };
 
+        const setCoachReportContent = (markdownText) => {
+            coachReportContent.innerHTML = formatMarkdown(markdownText);
+            if (typeof renderMathInElement === 'function') {
+                renderMathInElement(coachReportContent, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '\\[', right: '\\]', display: true}
+                    ],
+                    throwOnError: false
+                });
+            }
+        };
+
         const renderHistory = () => {
             const historyList = document.getElementById('coach-history-list');
             const clearHistoryBtn = document.getElementById('coach-clear-history-btn');
@@ -3629,7 +3648,7 @@ func getDashboardTemplate() string {
                         if (planMatches && modelMatches) {
                             if (autoNavigate && !forceSetupView) {
                                 // Instantly show cached report
-                                coachReportContent.innerHTML = formatMarkdown(existingRide.report);
+                                setCoachReportContent(existingRide.report);
                                 coachModelUsed.innerText = existingRide.model + ' (Cached)';
                                 coachGenerateView.style.display = 'none';
                                 coachLoadingView.style.display = 'none';
@@ -3643,7 +3662,7 @@ func getDashboardTemplate() string {
                                     
                                     document.getElementById('coach-view-cached-link').addEventListener('click', (e) => {
                                         e.preventDefault();
-                                        coachReportContent.innerHTML = formatMarkdown(existingRide.report);
+                                        setCoachReportContent(existingRide.report);
                                         coachModelUsed.innerText = existingRide.model + ' (Cached)';
                                         coachGenerateView.style.display = 'none';
                                         coachLoadingView.style.display = 'none';
@@ -3660,7 +3679,7 @@ func getDashboardTemplate() string {
                                 
                                 document.getElementById('coach-view-cached-link').addEventListener('click', (e) => {
                                     e.preventDefault();
-                                    coachReportContent.innerHTML = formatMarkdown(existingRide.report);
+                                    setCoachReportContent(existingRide.report);
                                     coachModelUsed.innerText = existingRide.model + ' (Old Goals)';
                                     coachGenerateView.style.display = 'none';
                                     coachLoadingView.style.display = 'none';
@@ -4037,7 +4056,7 @@ func getDashboardTemplate() string {
 
                     // Short delay to let the user see the 100% complete bar
                     setTimeout(() => {
-                        coachReportContent.innerHTML = formatMarkdown(responseText);
+                        setCoachReportContent(responseText);
                         coachModelUsed.innerText = model;
                         coachLoadingView.style.display = 'none';
                         coachReportView.style.display = 'flex';
