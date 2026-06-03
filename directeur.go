@@ -378,9 +378,9 @@ func (ha *HammerheadActivity) UnmarshalJSON(data []byte) error {
 	}
 	// Duration mapping
 	if val, ok := raw["duration"].(float64); ok {
-		ha.DurationSeconds = val
+		ha.DurationSeconds = val / 1000.0
 	} else if val, ok := raw["elapsedTime"].(float64); ok {
-		ha.DurationSeconds = val
+		ha.DurationSeconds = val / 1000.0
 	} else if val, ok := raw["duration_seconds"].(float64); ok {
 		ha.DurationSeconds = val
 	}
