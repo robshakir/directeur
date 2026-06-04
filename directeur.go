@@ -2858,21 +2858,44 @@ func getDashboardTemplate() string {
             const bikeSelector = document.getElementById('bike-selector');
             if (!bikeSelector) return;
             
+            // 1. Populate from embedded configBikes if available (for static mode)
             if (typeof configBikes !== 'undefined' && configBikes && configBikes.length > 0) {
+                populateSelectorOptions(configBikes);
+            }
+            
+            // 2. Query /api/rides on load to fetch the configured bikes from the live server
+            if (window.location.protocol.startsWith('http')) {
+                fetch('/api/rides')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.bikes && data.bikes.length > 0) {
+                            populateSelectorOptions(data.bikes);
+                        }
+                    })
+                    .catch(err => {
+                        console.log("Could not fetch bikes from server (normal if offline/static):", err);
+                    });
+            }
+            
+            function populateSelectorOptions(bikesList) {
+                const currentVal = bikeSelector.value;
                 bikeSelector.innerHTML = '<option value="">⚙️ Default Gears</option>';
-                configBikes.forEach(bike => {
+                bikesList.forEach(bike => {
                     const opt = document.createElement('option');
                     opt.value = bike.name;
                     opt.textContent = '🚲 ' + bike.name;
                     bikeSelector.appendChild(opt);
                 });
+                bikeSelector.value = currentVal;
+                if (bikeSelector.value !== currentVal) {
+                    bikeSelector.value = '';
+                }
                 bikeSelector.style.display = 'block';
                 
                 const urlParams = new URLSearchParams(window.location.search);
                 const initialBike = urlParams.get('bike');
-                if (initialBike && configBikes.some(b => b.name === initialBike)) {
+                if (initialBike && bikesList.some(b => b.name === initialBike)) {
                     bikeSelector.value = initialBike;
-                    // Wait briefly for everything to render, then apply client-side recalculation
                     setTimeout(() => {
                         recalculateGearsClientSide(initialBike);
                     }, 50);
