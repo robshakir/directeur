@@ -2517,6 +2517,67 @@ func getDashboardTemplate() string {
                 </div>
             </div>
 
+            <!-- Neuromuscular vs. Aerobic Load (Quadrant Analysis) -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Neuromuscular vs. Aerobic Load (Quadrant Analysis)</div>
+                </div>
+                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; padding: 1rem 0;">
+                    <div style="flex: 1.5; min-width: 320px; height: 380px;">
+                        <canvas id="chart-quadrant-analysis"></canvas>
+                    </div>
+                    <div style="flex: 1; min-width: 250px; display: flex; flex-direction: column; justify-content: center; gap: 1rem;">
+                        <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.25rem;">Quadrant Statistics</h4>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; color: var(--text-secondary);">
+                            <tbody>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Total Active Pedaling Time</td>
+                                    <td id="quad-active-time" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Mean Active Power</td>
+                                    <td id="quad-mean-power" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Mean Active Cadence</td>
+                                    <td id="quad-mean-cadence" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Mean Pedal Velocity (CPV)</td>
+                                    <td id="quad-mean-cpv" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid var(--border-color);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Mean Pedal Force (AEPF)</td>
+                                    <td id="quad-mean-aepf" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <h4 style="color: var(--accent); margin: 0.5rem 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.25rem;">Time Distribution</h4>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; color: var(--text-secondary);">
+                            <tbody>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.4rem 0; font-weight: 600; color: #ff8b6b;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ff8b6b; margin-right:6px;"></span>QI (High Force / High Vel)</td>
+                                    <td id="quad-pct-1" style="padding: 0.4rem 0; text-align: right; color: #ffffff; font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.4rem 0; font-weight: 600; color: #f1c40f;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f1c40f; margin-right:6px;"></span>QII (High Force / Low Vel)</td>
+                                    <td id="quad-pct-2" style="padding: 0.4rem 0; text-align: right; color: #ffffff; font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.4rem 0; font-weight: 600; color: #3498db;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#3498db; margin-right:6px;"></span>QIII (Low Force / Low Vel)</td>
+                                    <td id="quad-pct-3" style="padding: 0.4rem 0; text-align: right; color: #ffffff; font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid var(--border-color);">
+                                    <td style="padding: 0.4rem 0; font-weight: 600; color: #2ecc71;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#2ecc71; margin-right:6px;"></span>QIV (Low Force / High Vel)</td>
+                                    <td id="quad-pct-4" style="padding: 0.4rem 0; text-align: right; color: #ffffff; font-weight: bold;">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
         </div>
 
         <!-- Right Column: Sidebar Stats -->
@@ -2842,7 +2903,7 @@ func getDashboardTemplate() string {
         console.log("Loaded Ride Data:", rideData);
 
         // Global Chart and Map references for dynamic updating
-        let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline;
+        let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline, quadrantAnalysisChart;
         let leafletMap, startMarker, endMarker;
         let fullJSONString = "";
         const fullSchemaString = JSON.stringify(schemaData, null, 2);
@@ -2945,6 +3006,7 @@ func getDashboardTemplate() string {
             if (powerCurveChart) { powerCurveChart.destroy(); powerCurveChart = null; }
             if (chartPZones) { chartPZones.destroy(); chartPZones = null; }
             if (chartHZones) { chartHZones.destroy(); chartHZones = null; }
+            if (quadrantAnalysisChart) { quadrantAnalysisChart.destroy(); quadrantAnalysisChart = null; }
         }
 
         // Initialize theme on load
@@ -3825,6 +3887,226 @@ func getDashboardTemplate() string {
                 }
             }
         });
+
+        // ==========================================
+        // Neuromuscular vs. Aerobic Load (Quadrant Analysis)
+        // ==========================================
+        const crankLength = 0.1725; // meters
+        const activeRecords = (data.records || []).filter(r => (r.cadence || 0) > 0 && (r.power || 0) > 0);
+
+        if (activeRecords.length > 0) {
+            let totalCpv = 0;
+            let totalAepf = 0;
+            let totalPower = 0;
+            let totalCadence = 0;
+
+            const processedPoints = activeRecords.map(r => {
+                const cpv = (r.cadence * 2 * Math.PI * crankLength) / 60;
+                const aepf = r.power / cpv;
+                
+                totalCpv += cpv;
+                totalAepf += aepf;
+                totalPower += r.power;
+                totalCadence += r.cadence;
+
+                return { cpv, aepf, power: r.power, cadence: r.cadence };
+            });
+
+            const meanCpv = totalCpv / activeRecords.length;
+            const meanAepf = totalAepf / activeRecords.length;
+            const meanPower = totalPower / activeRecords.length;
+            const meanCadence = totalCadence / activeRecords.length;
+
+            // Sort points into Quadrants for stats and plot
+            let quad1Count = 0;
+            let quad2Count = 0;
+            let quad3Count = 0;
+            let quad4Count = 0;
+
+            const q1Points = [];
+            const q2Points = [];
+            const q3Points = [];
+            const q4Points = [];
+
+            processedPoints.forEach(p => {
+                const isHighForce = p.aepf >= meanAepf;
+                const isHighVelocity = p.cpv >= meanCpv;
+
+                if (isHighForce && isHighVelocity) {
+                    quad1Count++;
+                    q1Points.push({ x: p.cpv, y: p.aepf });
+                } else if (isHighForce && !isHighVelocity) {
+                    quad2Count++;
+                    q2Points.push({ x: p.cpv, y: p.aepf });
+                } else if (!isHighForce && !isHighVelocity) {
+                    quad3Count++;
+                    q3Points.push({ x: p.cpv, y: p.aepf });
+                } else {
+                    quad4Count++;
+                    q4Points.push({ x: p.cpv, y: p.aepf });
+                }
+            });
+
+            const totalCount = activeRecords.length;
+            const pct1 = (quad1Count / totalCount) * 100;
+            const pct2 = (quad2Count / totalCount) * 100;
+            const pct3 = (quad3Count / totalCount) * 100;
+            const pct4 = (quad4Count / totalCount) * 100;
+
+            // Populate HTML stats
+            document.getElementById('quad-active-time').innerText = formatStatsDuration(totalCount);
+            document.getElementById('quad-mean-power').innerText = Math.round(meanPower) + ' W';
+            document.getElementById('quad-mean-cadence').innerText = Math.round(meanCadence) + ' rpm';
+            document.getElementById('quad-mean-cpv').innerText = meanCpv.toFixed(2) + ' m/s';
+            document.getElementById('quad-mean-aepf').innerText = Math.round(meanAepf) + ' N';
+
+            document.getElementById('quad-pct-1').innerText = pct1.toFixed(1) + '%';
+            document.getElementById('quad-pct-2').innerText = pct2.toFixed(1) + '%';
+            document.getElementById('quad-pct-3').innerText = pct3.toFixed(1) + '%';
+            document.getElementById('quad-pct-4').innerText = pct4.toFixed(1) + '%';
+
+            // Downsample datasets for performance to limit total scatter points plotted (~800 points total)
+            const downsampleDataset = (points) => {
+                const targetPoints = Math.max(1, Math.floor(points.length / (800 / 4)));
+                if (targetPoints <= 1) return points;
+                return points.filter((_, idx) => idx % targetPoints === 0);
+            };
+
+            const dsQ1 = downsampleDataset(q1Points);
+            const dsQ2 = downsampleDataset(q2Points);
+            const dsQ3 = downsampleDataset(q3Points);
+            const dsQ4 = downsampleDataset(q4Points);
+
+            // Custom plugins for crosshair lines & corner labels
+            const quadrantPlugin = {
+                id: 'quadrantCrosshairsAndLabels',
+                afterDraw: (chart) => {
+                    const { ctx, chartArea: { left, right, top, bottom }, scales: { x, y } } = chart;
+                    ctx.save();
+                    
+                    // 1. Draw dashed crosshairs at mean CPV and mean AEPF
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([5, 5]);
+
+                    const xPixel = x.getPixelForValue(meanCpv);
+                    if (xPixel >= left && xPixel <= right) {
+                        ctx.beginPath();
+                        ctx.moveTo(xPixel, top);
+                        ctx.lineTo(xPixel, bottom);
+                        ctx.stroke();
+                    }
+
+                    const yPixel = y.getPixelForValue(meanAepf);
+                    if (yPixel >= top && yPixel <= bottom) {
+                        ctx.beginPath();
+                        ctx.moveTo(left, yPixel);
+                        ctx.lineTo(right, yPixel);
+                        ctx.stroke();
+                    }
+
+                    // 2. Draw quadrant description labels & percentages in the corners
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+                    ctx.font = 'bold 10px Outfit, sans-serif';
+                    ctx.setLineDash([]); // clear dash for text
+
+                    // QI: Top Right
+                    ctx.fillText('QI: High Force/Vel (' + pct1.toFixed(1) + '%)', right - 165, top + 20);
+                    // QII: Top Left
+                    ctx.fillText('QII: High Force/Low Vel (' + pct2.toFixed(1) + '%)', left + 15, top + 20);
+                    // QIII: Bottom Left
+                    ctx.fillText('QIII: Low Force/Low Vel (' + pct3.toFixed(1) + '%)', left + 15, bottom - 15);
+                    // QIV: Bottom Right
+                    ctx.fillText('QIV: Low Force/High Vel (' + pct4.toFixed(1) + '%)', right - 165, bottom - 15);
+
+                    ctx.restore();
+                }
+            };
+
+            const ctxQuad = document.getElementById('chart-quadrant-analysis').getContext('2d');
+            quadrantAnalysisChart = new Chart(ctxQuad, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'QI (High Force/Vel)',
+                            data: dsQ1,
+                            backgroundColor: 'rgba(255, 139, 107, 0.5)',
+                            borderColor: '#ff8b6b',
+                            borderWidth: 1,
+                            pointRadius: 2.5,
+                            pointHoverRadius: 5
+                        },
+                        {
+                            label: 'QII (High Force/Low Vel)',
+                            data: dsQ2,
+                            backgroundColor: 'rgba(241, 196, 15, 0.5)',
+                            borderColor: '#f1c40f',
+                            borderWidth: 1,
+                            pointRadius: 2.5,
+                            pointHoverRadius: 5
+                        },
+                        {
+                            label: 'QIII (Low Force/Low Vel)',
+                            data: dsQ3,
+                            backgroundColor: 'rgba(52, 152, 219, 0.5)',
+                            borderColor: '#3498db',
+                            borderWidth: 1,
+                            pointRadius: 2.5,
+                            pointHoverRadius: 5
+                        },
+                        {
+                            label: 'QIV (Low Force/High Vel)',
+                            data: dsQ4,
+                            backgroundColor: 'rgba(46, 204, 113, 0.5)',
+                            borderColor: '#2ecc71',
+                            borderWidth: 1,
+                            pointRadius: 2.5,
+                            pointHoverRadius: 5
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                color: '#94a3b8',
+                                font: { family: 'Outfit', size: 9 },
+                                boxWidth: 6,
+                                usePointStyle: true
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1b1b26',
+                            titleFont: { family: 'Outfit' },
+                            bodyFont: { family: 'Outfit' },
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Velocity: ' + context.parsed.x.toFixed(2) + ' m/s | Force: ' + Math.round(context.parsed.y) + ' N';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.02)' },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
+                            title: { display: true, text: 'Circumferential Pedal Velocity (m/s)', color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.02)' },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
+                            title: { display: true, text: 'Average Effective Pedal Force (Newtons)', color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
+                        }
+                    }
+                },
+                plugins: [quadrantPlugin]
+            });
+        }
         } // End of renderDashboard function
 
         // Prepare JSON and Schema strings
@@ -4618,6 +4900,61 @@ func getDashboardTemplate() string {
             const selectedBike = document.getElementById('bike-selector') ? document.getElementById('bike-selector').value : '';
             const bikeLine = selectedBike ? ('- Bike Ridden: ' + selectedBike + '\n') : '- Bike Ridden: Default Gears / Standard Setup\n';
 
+            // Calculate Quadrant Analysis stats for Gemini Coach
+            const crankLength = 0.1725;
+            const activeRecordsForQuad = (rideData.records || []).filter(r => (r.cadence || 0) > 0 && (r.power || 0) > 0);
+            let quadContext = "";
+            
+            if (activeRecordsForQuad.length > 0) {
+                let totalCpv = 0;
+                let totalAepf = 0;
+                let totalPower = 0;
+                let totalCadence = 0;
+
+                const processedPoints = activeRecordsForQuad.map(r => {
+                    const cpv = (r.cadence * 2 * Math.PI * crankLength) / 60;
+                    const aepf = r.power / cpv;
+                    totalCpv += cpv;
+                    totalAepf += aepf;
+                    totalPower += r.power;
+                    totalCadence += r.cadence;
+                    return { cpv, aepf };
+                });
+
+                const meanCpv = totalCpv / activeRecordsForQuad.length;
+                const meanAepf = totalAepf / activeRecordsForQuad.length;
+                const meanPower = totalPower / activeRecordsForQuad.length;
+                const meanCadence = totalCadence / activeRecordsForQuad.length;
+
+                let q1 = 0, q2 = 0, q3 = 0, q4 = 0;
+                processedPoints.forEach(p => {
+                    const isHighForce = p.aepf >= meanAepf;
+                    const isHighVelocity = p.cpv >= meanCpv;
+                    if (isHighForce && isHighVelocity) q1++;
+                    else if (isHighForce && !isHighVelocity) q2++;
+                    else if (!isHighForce && !isHighVelocity) q3++;
+                    else q4++;
+                });
+
+                const totalPoints = activeRecordsForQuad.length;
+                const pct1 = (q1 / totalPoints) * 100;
+                const pct2 = (q2 / totalPoints) * 100;
+                const pct3 = (q3 / totalPoints) * 100;
+                const pct4 = (q4 / totalPoints) * 100;
+
+                quadContext = "### Neuromuscular vs. Aerobic Load (Quadrant Analysis):\n" +
+                    "- Total Active Pedaling Time: " + formatDuration(totalPoints) + "\n" +
+                    "- Mean Active Power: " + Math.round(meanPower) + " W\n" +
+                    "- Mean Active Cadence: " + Math.round(meanCadence) + " rpm\n" +
+                    "- Mean Pedal Velocity (CPV): " + meanCpv.toFixed(2) + " m/s\n" +
+                    "- Mean Pedal Force (AEPF): " + Math.round(meanAepf) + " N\n" +
+                    "- Quadrant Time Distribution:\n" +
+                    "  * QI (High Force / High Velocity - Sprinting, Attacking): " + pct1.toFixed(1) + "%\n" +
+                    "  * QII (High Force / Low Velocity - Climbing, Mashing): " + pct2.toFixed(1) + "%\n" +
+                    "  * QIII (Low Force / Low Velocity - Recovery, Cruising): " + pct3.toFixed(1) + "%\n" +
+                    "  * QIV (Low Force / High Velocity - High-cadence Spinning): " + pct4.toFixed(1) + "%\n\n";
+            }
+
             // Calculate Normalised Cadence stats for Gemini
             const activeCadences = (rideData.records || []).map(r => r.cadence || 0).filter(c => c > 0);
             let normCad = 0;
@@ -4646,6 +4983,7 @@ func getDashboardTemplate() string {
                 planContext +
                 historyContext +
                 rideNotesContext +
+                quadContext +
                 'Here is the telemetry data for the CURRENT ride:\n' +
                 bikeLine +
                 '- Start Time: ' + rideData.summary.start_time + '\n' +
@@ -4679,7 +5017,7 @@ func getDashboardTemplate() string {
                 '1. ## Ride Overview & Pacing (NP vs Avg Power, Efficiency Factor, pacing over climbs)\n' +
                 (planText ? '2. ## Progress Against Training Plan (Direct comparison of current ride against the athlete\'s stated goals/plan)\n' : '') +
                 (historyContext ? '3. ## Progression & Trends (Comparison to previous rides, fitness progression, shifting improvements)\n' : '') +
-                '4. ## Cadence & Shifting Efficiency (Analyze shift frequency, gear selections on ascents, and cadence drops)\n' +
+                '4. ## Cadence, Shifting & Quadrant Analysis (Analyze shift frequency, gear selections on ascents, cadence drops, and neuromuscular vs. aerobic load distribution from the quadrant analysis)\n' +
                 '5. ## Cardiovascular vs Power Output (Cardiorespiratory efficiency, decoupling, max HR response)\n' +
                 '6. ## Actionable Training Recommendations (Give 3 specific workouts or behavioral changes for future rides based on these findings)\n\n' +
                 'Keep the tone supportive, direct, and elite.\n\n' +
