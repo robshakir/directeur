@@ -473,17 +473,17 @@
             <p id="ride-date-sub">Cycling Analysis Dashboard</p>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
+            <button id="btn-select-ride" class="btn-action" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">📂 Select Ride</button>
             <select id="bike-selector" class="btn-action" style="display: none;">
                 <option value="">⚙️ Default Gears</option>
             </select>
-            <select id="theme-selector" class="btn-action">
-                <option value="theme-giro">🇮🇹 Giro Pink</option>
-                <option value="theme-flandrian">🇧🇪 Classics Flandrian</option>
-                <option value="theme-tour">🇫🇷 Tour Yellow</option>
-                <option value="theme-vuelta">🇪🇸 Vuelta Red</option>
-                <option value="theme-carbon">🚲 Carbon Dark</option>
+            <select id="theme-selector" class="badge" style="cursor: pointer; appearance: none; -webkit-appearance: none; font-family: inherit; font-size: 0.85rem; font-weight: 600; text-align: center; border-radius: 9999px; text-transform: uppercase;">
+                <option value="theme-giro" style="background: var(--bg-secondary); color: var(--text-primary);">GIRO PINK THEME</option>
+                <option value="theme-flandrian" style="background: var(--bg-secondary); color: var(--text-primary);">FLANDRIAN YELLOW THEME</option>
+                <option value="theme-tour" style="background: var(--bg-secondary); color: var(--text-primary);">TOUR YELLOW THEME</option>
+                <option value="theme-vuelta" style="background: var(--bg-secondary); color: var(--text-primary);">VUELTA RED THEME</option>
+                <option value="theme-carbon" style="background: var(--bg-secondary); color: var(--text-primary);">CARBON DARK THEME</option>
             </select>
-            <button id="btn-select-ride" class="btn-action" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">📂 Select Ride</button>
             <button id="btn-gemini-coach" class="btn-action" style="background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2)); border-color: #9b59b6; color: #e0aaff; font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">🤖 Ask directeurAI Coach</button>
             <div class="dropdown" id="data-dropdown">
                 <button class="btn-action" id="btn-data-dropdown" style="gap: 0.5rem;">
@@ -495,7 +495,6 @@
                     <button id="btn-download-json" class="dropdown-item">📥 Download JSON</button>
                 </div>
             </div>
-            <div id="theme-badge" class="badge">Theme loading...</div>
         </div>
     </header>
 
@@ -1399,9 +1398,15 @@
             }
 
             document.body.className = themeName;
-            document.getElementById('theme-badge').innerText = displayThemeName + " Theme";
-            document.getElementById('theme-badge').style.boxShadow = "0 0 15px " + currentAccentGlow;
-            document.getElementById('theme-selector').value = themeName;
+            
+            const themeSelector = document.getElementById('theme-selector');
+            if (themeSelector) {
+                themeSelector.style.borderColor = currentAccentColor;
+                themeSelector.style.color = currentAccentColor;
+                themeSelector.style.background = currentAccentGlow;
+                themeSelector.style.boxShadow = "0 0 15px " + currentAccentGlow;
+                themeSelector.value = themeName;
+            }
 
             
             updateChartColors();
@@ -1662,7 +1667,6 @@
             if (!data || !data.records || data.records.length === 0) {
                 console.log("No ride data to render");
                 document.getElementById('ride-date-sub').innerText = "No Ride Loaded";
-                document.getElementById('theme-badge').innerText = "No Ride Loaded";
                 return;
             }
 
