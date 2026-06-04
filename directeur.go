@@ -3917,15 +3917,15 @@ func getDashboardTemplate() string {
             const meanPower = totalPower / activeRecords.length;
             const meanCadence = totalCadence / activeRecords.length;
 
-            let maxCpv = 0;
-            let maxAepf = 0;
-            processedPoints.forEach(p => {
-                if (p.cpv > maxCpv) maxCpv = p.cpv;
-                if (p.aepf > maxAepf) maxAepf = p.aepf;
-            });
+            const sortedCpv = processedPoints.map(p => p.cpv).sort((a, b) => a - b);
+            const sortedAepf = processedPoints.map(p => p.aepf).sort((a, b) => a - b);
 
-            const xMaxVal = Math.max(meanCpv * 2, maxCpv);
-            const yMaxVal = Math.max(meanAepf * 2, maxAepf);
+            // Use the 99th percentile to filter out extreme low-cadence spikes/outliers from the scaling
+            const cpv99 = sortedCpv[Math.floor(sortedCpv.length * 0.99)] || meanCpv * 2;
+            const aepf99 = sortedAepf[Math.floor(sortedAepf.length * 0.99)] || meanAepf * 2;
+
+            const xMaxVal = Math.max(meanCpv * 2, cpv99);
+            const yMaxVal = Math.max(meanAepf * 2, aepf99);
 
             // Sort points into Quadrants for stats and plot
             let quad1Count = 0;
