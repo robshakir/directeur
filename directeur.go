@@ -3917,6 +3917,16 @@ func getDashboardTemplate() string {
             const meanPower = totalPower / activeRecords.length;
             const meanCadence = totalCadence / activeRecords.length;
 
+            let maxCpv = 0;
+            let maxAepf = 0;
+            processedPoints.forEach(p => {
+                if (p.cpv > maxCpv) maxCpv = p.cpv;
+                if (p.aepf > maxAepf) maxAepf = p.aepf;
+            });
+
+            const xMaxVal = Math.max(meanCpv * 2, maxCpv);
+            const yMaxVal = Math.max(meanAepf * 2, maxAepf);
+
             // Sort points into Quadrants for stats and plot
             let quad1Count = 0;
             let quad2Count = 0;
@@ -4095,14 +4105,14 @@ func getDashboardTemplate() string {
                     scales: {
                         x: {
                             min: 0,
-                            max: meanCpv * 2,
+                            max: xMaxVal,
                             grid: { color: 'rgba(255, 255, 255, 0.02)' },
                             ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
                             title: { display: true, text: 'Circumferential Pedal Velocity (m/s)', color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
                         },
                         y: {
                             min: 0,
-                            max: meanAepf * 2,
+                            max: yMaxVal,
                             grid: { color: 'rgba(255, 255, 255, 0.02)' },
                             ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
                             title: { display: true, text: 'Average Effective Pedal Force (Newtons)', color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
