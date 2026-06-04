@@ -2373,6 +2373,27 @@ func getDashboardTemplate() string {
                 <div class="chart-wrapper">
                     <canvas id="chart-hr-cadence"></canvas>
                 </div>
+                <!-- Cadence Stats Grid -->
+                <div id="cadence-stats-container" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; text-align: center;">
+                        <div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Normalised Cadence</div>
+                            <div id="stats-norm-cadence" style="font-size: 1.2rem; font-weight: 700; color: #2ecc71; margin-top: 0.2rem;">- <span style="font-size: 0.75rem; font-weight: 500; color: var(--text-secondary);">rpm</span></div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Pedalling Time</div>
+                            <div id="stats-pedalling-percent" style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary); margin-top: 0.2rem;">- <span style="font-size: 0.75rem; font-weight: 500; color: var(--text-secondary);">%</span></div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Pedalling Range</div>
+                            <div id="stats-pedalling-range" style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary); margin-top: 0.2rem;">- <span style="font-size: 0.75rem; font-weight: 500; color: var(--text-secondary);">rpm</span></div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Pedalling StDev</div>
+                            <div id="stats-cadence-variance" style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary); margin-top: 0.2rem;">- <span style="font-size: 0.75rem; font-weight: 500; color: var(--text-secondary);">rpm</span></div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Altitude & Gear Ratio Chart -->
@@ -3311,14 +3332,25 @@ func getDashboardTemplate() string {
         });
 
         // Chart 3: HR & Cadence
+        const maxCadVal = Math.max(120, ...data.records.map(rec => rec.cadence || 0));
         hrCadenceChart = new Chart(document.getElementById('chart-hr-cadence').getContext('2d'), {
             type: 'line',
             data: {
                 labels: timeLabels,
                 datasets: [
                     {
+                        label: 'Coasting (Not Pedalling)',
+                        data: data.records.map(r => r.cadence === 0 ? maxCadVal : 0),
+                        borderColor: 'transparent',
+                        backgroundColor: 'rgba(231, 76, 60, 0.08)',
+                        fill: true,
+                        yAxisID: 'y-cadence',
+                        pointRadius: 0,
+                        stepped: 'before',
+                    },
+                    {
                         label: 'Heart Rate (bpm)',
-                        data: rideData.records.map(r => r.heart_rate),
+                        data: data.records.map(r => r.heart_rate),
                         borderColor: '#e74c3c',
                         borderWidth: 2,
                         yAxisID: 'y-hr',
@@ -3327,7 +3359,7 @@ func getDashboardTemplate() string {
                     },
                     {
                         label: 'Cadence (rpm)',
-                        data: rideData.records.map(r => r.cadence),
+                        data: data.records.map(r => r.cadence),
                         borderColor: '#2ecc71',
                         borderWidth: 1.5,
                         yAxisID: 'y-cadence',
@@ -3357,6 +3389,47 @@ func getDashboardTemplate() string {
                 }
             }
         });
+
+        // Calculate Normalised Cadence stats
+        const pedallingCadences = data.records.map(r => r.cadence || 0).filter(c => c > 0);
+        let normalisedCadence = 0;
+        let pedallingPercent = 0;
+        let pedallingMin = 0;
+        let pedallingMax = 0;
+        let cadenceStDev = 0;
+        
+        if (pedallingCadences.length > 0) {
+            const sum = pedallingCadences.reduce((a, b) => a + b, 0);
+            normalisedCadence = sum / pedallingCadences.length;
+            pedallingMin = Math.min(...pedallingCadences);
+            pedallingMax = Math.max(...pedallingCadences);
+            
+            const mean = normalisedCadence;
+            const squareDiffs = pedallingCadences.map(c => (c - mean) * (c - mean));
+            const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length;
+            cadenceStDev = Math.sqrt(avgSquareDiff);
+            pedallingPercent = (pedallingCadences.length / data.records.length) * 100;
+        }
+
+        const formatStatsDuration = (secs) => {
+            const h = Math.floor(secs / 3600);
+            const m = Math.floor((secs % 3600) / 60);
+            const s = Math.floor(secs % 60);
+            if (h > 0) return h + 'h ' + m + 'm';
+            return m + 'm ' + s + 's';
+        };
+
+        const statsNormVal = document.getElementById('stats-norm-cadence');
+        const statsPedPct = document.getElementById('stats-pedalling-percent');
+        const statsPedRange = document.getElementById('stats-pedalling-range');
+        const statsCadVar = document.getElementById('stats-cadence-variance');
+
+        if (statsNormVal && statsPedPct && statsPedRange && statsCadVar) {
+            statsNormVal.innerHTML = Math.round(normalisedCadence) + ' <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-secondary);">rpm</span>';
+            statsPedPct.innerHTML = Math.round(pedallingPercent) + '% <span style="font-size: 0.75rem; font-weight: 500; color: var(--text-secondary);">(' + formatStatsDuration(pedallingCadences.length) + ')</span>';
+            statsPedRange.innerHTML = pedallingMin + '/' + pedallingMax + ' <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-secondary);">rpm</span>';
+            statsCadVar.innerHTML = cadenceStDev.toFixed(1) + ' <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-secondary);">rpm</span>';
+        }
 
         // Chart 4: Altitude & Gear Ratio
         altGearsChart = new Chart(document.getElementById('chart-alt-gears').getContext('2d'), {
@@ -4277,6 +4350,27 @@ func getDashboardTemplate() string {
             const selectedBike = document.getElementById('bike-selector') ? document.getElementById('bike-selector').value : '';
             const bikeLine = selectedBike ? ('- Bike Ridden: ' + selectedBike + '\n') : '- Bike Ridden: Default Gears / Standard Setup\n';
 
+            // Calculate Normalised Cadence stats for Gemini
+            const activeCadences = (rideData.records || []).map(r => r.cadence || 0).filter(c => c > 0);
+            let normCad = 0;
+            let pedMin = 0;
+            let pedMax = 0;
+            let cadStDev = 0;
+            let pedPct = 0;
+            
+            if (activeCadences.length > 0) {
+                const sum = activeCadences.reduce((a, b) => a + b, 0);
+                normCad = sum / activeCadences.length;
+                pedMin = Math.min(...activeCadences);
+                pedMax = Math.max(...activeCadences);
+                
+                const mean = normCad;
+                const squareDiffs = activeCadences.map(c => (c - mean) * (c - mean));
+                const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / squareDiffs.length;
+                cadStDev = Math.sqrt(avgSquareDiff);
+                pedPct = (activeCadences.length / rideData.records.length) * 100;
+            }
+
             const prompt = 'You are an elite cycling coach. Analyze this ride telemetry data and provide a detailed, constructive, and highly actionable coaching report.\n\n' +
                 (planText ? 'CRITICAL: The athlete has provided their specific Training Plan and Goals below. You MUST evaluate this ride directly against their plan, assessing how well they followed it and whether their performance aligns with their goals.\n\n' : '') +
                 (historyContext ? 'CRITICAL: You are also provided with a summary of the athlete\'s past rides. Compare their performance on this ride to their previous efforts, highlighting progress, trends, or areas needing attention.\n\n' : '') +
@@ -4293,10 +4387,18 @@ func getDashboardTemplate() string {
                 '- Max Power: ' + rideData.summary.max_power + ' W\n' +
                 '- Avg Heart Rate: ' + Math.round(rideData.summary.average_heart_rate) + ' bpm\n' +
                 '- Max Heart Rate: ' + rideData.summary.max_heart_rate + ' bpm\n' +
-                '- Avg Cadence: ' + Math.round(rideData.summary.average_cadence) + ' rpm\n' +
+                '- Standard Average Cadence: ' + Math.round(rideData.summary.average_cadence) + ' rpm (includes coasting/zeros)\n' +
+                '- Normalised Cadence (Pedalling Only): ' + Math.round(normCad) + ' rpm (excludes coasting/zeros)\n' +
+                '- Pedalling Time: ' + Math.round(pedPct) + '% of ride (' + formatDuration(activeCadences.length) + ')\n' +
+                '- Pedalling Cadence Range: ' + pedMin + ' - ' + pedMax + ' rpm\n' +
+                '- Pedalling Cadence Variability (Standard Deviation): ' + cadStDev.toFixed(1) + ' rpm\n' +
                 '- Max Cadence: ' + rideData.summary.max_cadence + ' rpm\n' +
                 '- Elevation Gain: ' + Math.round(rideData.summary.total_elevation_gain_meters) + ' m\n' +
                 '- Total Shifts: ' + rideData.summary.total_shifts + ' (Front: ' + rideData.summary.total_front_shifts + ', Rear: ' + rideData.summary.total_rear_shifts + ')\n\n' +
+                'Normalised Cadence Context:\n' +
+                '- Normalised Cadence evaluates the athlete\'s cadence ONLY when they are actively pedalling (cadence > 0), filtering out descents, cornering, or coasting.\n' +
+                '- Standard Average Cadence is ' + Math.round(rideData.summary.average_cadence) + ' rpm because it includes coasting periods. The difference between standard average cadence and Normalised Cadence shows the proportion of time spent coasting.\n' +
+                '- Pedalling Cadence Standard Deviation (StDev) of ' + cadStDev.toFixed(1) + ' rpm tells you how steady their cadence was while pedalling. Low variability (<5 rpm) is indicative of a steady-state time-trialist, while high variability (>10 rpm) suggests poor shifting, erratic pacing, or heavy micro-intervals.\n\n' +
                 'Peak Power Profile (Mean Maximal Power):\n' +
                 Object.entries(rideData.summary.power_curve || {}).map(entry => '- ' + entry[0] + ': ' + entry[1] + ' W').join('\n') + '\n\n' +
                 'Gear Combination Usage:\n' +
