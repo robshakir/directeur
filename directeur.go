@@ -2677,6 +2677,15 @@ func getDashboardTemplate() string {
                             <textarea id="coach-plan-input" placeholder="Enter your training plan or goals here (e.g. 'Build FTP to 280W, keep HR under 160 bpm on climbs'). The AI Coach will evaluate this ride against your goals." style="width: 100%; height: 90px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; font-size: 0.82rem; padding: 0.6rem; resize: none; outline: none; line-height: 1.4; font-family: inherit;"></textarea>
                         </div>
 
+                        <!-- Ride Notes section -->
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 16px; padding: 1rem;">
+                            <div style="font-size: 0.9rem; font-weight: 600; color: #ffffff; font-family: 'Outfit'; display: flex; align-items: center; gap: 0.5rem;">
+                                <span>💬 Ride Notes</span>
+                                <span id="coach-notes-saved-badge" style="display: none; font-size: 0.65rem; font-weight: 500; color: #2ecc71; background: rgba(46, 204, 113, 0.1); padding: 0.1rem 0.4rem; border-radius: 4px;">✓ Saved</span>
+                            </div>
+                            <textarea id="coach-ride-notes" placeholder="Add notes about this ride (e.g. 'Felt strong on the climbs, legs tired from yesterday's intervals, testing new saddle position'). These will be shared with the AI Coach for context." style="width: 100%; height: 70px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; font-size: 0.82rem; padding: 0.6rem; resize: none; outline: none; line-height: 1.4; font-family: inherit;"></textarea>
+                        </div>
+
                         <!-- History section -->
                         <div style="flex: 1; display: flex; flex-direction: column; gap: 0.5rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 16px; padding: 1rem; min-height: 0;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -2722,6 +2731,15 @@ func getDashboardTemplate() string {
                     </div>
                     <div id="coach-report-content" style="flex: 1; overflow-y: auto; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; color: #e2e8f0; font-size: 0.95rem; line-height: 1.6;">
                         <!-- Report HTML gets injected here -->
+                    </div>
+                    
+                    <!-- Chat / Follow-up Input Panel -->
+                    <div id="coach-chat-input-container" style="display: flex; gap: 0.75rem; background: rgba(255, 255, 255, 0.02); padding: 0.75rem; border-radius: 12px; border: 1px solid var(--border-color); align-items: center;">
+                        <input id="coach-chat-input" type="text" placeholder="Ask follow-up questions to your coach (e.g. 'Why was my normalized cadence so high?', 'How do I reduce heart rate coupling?')..." style="flex: 1; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.75rem; outline: none; font-size: 0.9rem;" />
+                        <button id="coach-chat-send-btn" class="btn-action" style="background: linear-gradient(135deg, #9b59b6, #3498db); border-color: #9b59b6; color: #ffffff; font-weight: 600; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; height: 100%;">
+                            <span>Send</span>
+                            <span>➔</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -3888,6 +3906,7 @@ func getDashboardTemplate() string {
         const coachClearKeyBtn = document.getElementById('coach-clear-key-btn');
         const coachModelSelect = document.getElementById('coach-model-select');
         let forceSetupView = false;
+        let coachChatHistory = [];
         
         const coachGenerateView = document.getElementById('coach-generate-view');
         const coachLoadingView = document.getElementById('coach-loading-view');
@@ -3897,6 +3916,8 @@ func getDashboardTemplate() string {
         const coachReportContent = document.getElementById('coach-report-content');
         const coachModelUsed = document.getElementById('coach-model-used');
         const coachLoadingStatus = document.getElementById('coach-loading-status');
+        const coachChatInput = document.getElementById('coach-chat-input');
+        const coachChatSendBtn = document.getElementById('coach-chat-send-btn');
 
         const formatDuration = (secs) => {
             const roundedSecs = Math.round(secs);
@@ -3947,6 +3968,7 @@ func getDashboardTemplate() string {
                     }
                     let itemContent = listMatch[1];
                     itemContent = itemContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    itemContent = itemContent.replace(/\*(.*?)\*/g, '<em>$1</em>');
                     htmlResult.push('<li style="margin-bottom: 0.35rem; line-height: 1.5;">' + itemContent + '</li>');
                     continue;
                 }
@@ -3962,6 +3984,7 @@ func getDashboardTemplate() string {
                     let level = headerMatch[1].length;
                     let content = headerMatch[2];
                     content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    content = content.replace(/\*(.*?)\*/g, '<em>$1</em>');
                     if (level === 1) {
                         htmlResult.push('<h2 style="color: #ffffff; margin-top: 2rem; margin-bottom: 1rem; font-family: \'Outfit\'; font-weight: 800;">' + content + '</h2>');
                     } else if (level === 2) {
@@ -3979,7 +4002,9 @@ func getDashboardTemplate() string {
                 }
 
                 // Regular line of text
-                let content = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                let content = line
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>');
                 htmlResult.push(content);
             }
 
@@ -4029,6 +4054,98 @@ func getDashboardTemplate() string {
             });
 
             return output;
+        };
+
+        const loadChatHistoryFromRide = (ride) => {
+            if (ride.chatHistory && ride.chatHistory.length > 0) {
+                coachChatHistory = JSON.parse(JSON.stringify(ride.chatHistory));
+            } else {
+                coachChatHistory = [
+                    { role: 'user', parts: [{ text: "Analyze my ride telemetry data." }] },
+                    { role: 'model', parts: [{ text: ride.report }] }
+                ];
+            }
+        };
+
+        const renderChatHistory = () => {
+            if (!coachChatHistory || coachChatHistory.length === 0) {
+                coachReportContent.innerHTML = '<div style="font-style: italic; color: var(--text-secondary); text-align: center;">No messages yet.</div>';
+                return;
+            }
+
+            coachReportContent.innerHTML = '';
+            
+            const chatListContainer = document.createElement('div');
+            chatListContainer.style.display = 'flex';
+            chatListContainer.style.flexDirection = 'column';
+            chatListContainer.style.gap = '1.25rem';
+            chatListContainer.style.width = '100%';
+            
+            for (let i = 1; i < coachChatHistory.length; i++) {
+                const msg = coachChatHistory[i];
+                if (!msg || !msg.parts || msg.parts.length === 0) continue;
+                const text = msg.parts[0].text;
+                const isUser = msg.role === 'user';
+                
+                const msgWrapper = document.createElement('div');
+                msgWrapper.style.display = 'flex';
+                msgWrapper.style.flexDirection = 'column';
+                msgWrapper.style.width = '100%';
+                if (isUser) {
+                    msgWrapper.style.alignItems = 'flex-end';
+                } else {
+                    msgWrapper.style.alignItems = 'flex-start';
+                }
+                
+                const senderLabel = document.createElement('div');
+                senderLabel.style.fontSize = '0.75rem';
+                senderLabel.style.fontWeight = '600';
+                senderLabel.style.marginBottom = '0.25rem';
+                senderLabel.style.color = isUser ? 'var(--accent)' : '#9b59b6';
+                senderLabel.innerText = isUser ? '👤 You' : '🚴‍♂️ AI Cycling Coach';
+                msgWrapper.appendChild(senderLabel);
+
+                const bubble = document.createElement('div');
+                bubble.style.maxWidth = '85%';
+                bubble.style.padding = '0.85rem 1.1rem';
+                bubble.style.borderRadius = '12px';
+                bubble.style.fontSize = '0.92rem';
+                bubble.style.lineHeight = '1.5';
+                
+                if (isUser) {
+                    bubble.style.background = 'rgba(255, 255, 255, 0.05)';
+                    bubble.style.border = '1px solid var(--border-color)';
+                    bubble.style.color = '#ffffff';
+                    bubble.style.borderRadius = '12px 0px 12px 12px';
+                    bubble.innerHTML = formatMarkdown(text);
+                } else {
+                    bubble.style.background = 'rgba(255, 255, 255, 0.015)';
+                    bubble.style.border = '1px solid var(--border-color)';
+                    bubble.style.color = '#e2e8f0';
+                    bubble.style.borderRadius = '0px 12px 12px 12px';
+                    bubble.innerHTML = formatMarkdown(text);
+                    if (typeof renderMathInElement === 'function') {
+                        renderMathInElement(bubble, {
+                            delimiters: [
+                                {left: '$$', right: '$$', display: true},
+                                {left: '$', right: '$', display: false},
+                                {left: '\\(', right: '\\)', display: false},
+                                {left: '\\[', right: '\\]', display: true}
+                            ],
+                            throwOnError: false
+                        });
+                    }
+                }
+                
+                msgWrapper.appendChild(bubble);
+                chatListContainer.appendChild(msgWrapper);
+            }
+            
+            coachReportContent.appendChild(chatListContainer);
+            
+            setTimeout(() => {
+                coachReportContent.scrollTop = coachReportContent.scrollHeight;
+            }, 50);
         };
 
         const setCoachReportContent = (markdownText) => {
@@ -4096,6 +4213,7 @@ func getDashboardTemplate() string {
             const currentPlan = localStorage.getItem('fit_athlete_training_plan') || '';
             const currentModel = coachModelSelect.value;
             const rideId = rideData.summary.start_time;
+            const currentNotes = document.getElementById('coach-ride-notes') ? document.getElementById('coach-ride-notes').value.trim() : '';
             const cacheStatus = document.getElementById('coach-cache-status');
             
             const historyData = localStorage.getItem('fit_ride_history');
@@ -4107,11 +4225,13 @@ func getDashboardTemplate() string {
                     if (existingRide && existingRide.report) {
                         const planMatches = (existingRide.plan || '') === currentPlan;
                         const modelMatches = existingRide.model === currentModel;
+                        const notesMatch = (existingRide.notes || '') === currentNotes;
                         
-                        if (planMatches && modelMatches) {
+                        if (planMatches && modelMatches && notesMatch) {
                             if (autoNavigate && !forceSetupView) {
                                 // Instantly show cached report
-                                setCoachReportContent(existingRide.report);
+                                loadChatHistoryFromRide(existingRide);
+                                renderChatHistory();
                                 coachModelUsed.innerText = existingRide.model + ' (Cached)';
                                 coachGenerateView.style.display = 'none';
                                 coachLoadingView.style.display = 'none';
@@ -4125,7 +4245,8 @@ func getDashboardTemplate() string {
                                     
                                     document.getElementById('coach-view-cached-link').addEventListener('click', (e) => {
                                         e.preventDefault();
-                                        setCoachReportContent(existingRide.report);
+                                        loadChatHistoryFromRide(existingRide);
+                                        renderChatHistory();
                                         coachModelUsed.innerText = existingRide.model + ' (Cached)';
                                         coachGenerateView.style.display = 'none';
                                         coachLoadingView.style.display = 'none';
@@ -4142,7 +4263,8 @@ func getDashboardTemplate() string {
                                 
                                 document.getElementById('coach-view-cached-link').addEventListener('click', (e) => {
                                     e.preventDefault();
-                                    setCoachReportContent(existingRide.report);
+                                    loadChatHistoryFromRide(existingRide);
+                                    renderChatHistory();
                                     coachModelUsed.innerText = existingRide.model + ' (Old Goals)';
                                     coachGenerateView.style.display = 'none';
                                     coachLoadingView.style.display = 'none';
@@ -4177,6 +4299,18 @@ func getDashboardTemplate() string {
                 if (planInput) {
                     planInput.value = localStorage.getItem('fit_athlete_training_plan') || '';
                 }
+                
+                // Load Ride Notes (keyed by ride start time)
+                const rideNotesInput = document.getElementById('coach-ride-notes');
+                if (rideNotesInput && rideData && rideData.summary) {
+                    const noteKey = 'fit_ride_notes_' + rideData.summary.start_time;
+                    rideNotesInput.value = localStorage.getItem(noteKey) || '';
+                    const savedBadge = document.getElementById('coach-notes-saved-badge');
+                    if (rideNotesInput.value && savedBadge) {
+                        savedBadge.style.display = 'inline';
+                    }
+                }
+
                 renderHistory();
                 checkCachedReport(true);
             } else {
@@ -4204,6 +4338,29 @@ func getDashboardTemplate() string {
             });
             planInput.addEventListener('blur', () => {
                 checkCachedReport(false);
+            });
+        }
+
+        // Register ride notes auto-save listener
+        const rideNotesInput = document.getElementById('coach-ride-notes');
+        if (rideNotesInput) {
+            let notesSaveTimeout = null;
+            rideNotesInput.addEventListener('input', () => {
+                const savedBadge = document.getElementById('coach-notes-saved-badge');
+                if (savedBadge) savedBadge.style.display = 'none';
+                checkCachedReport(false);
+                
+                clearTimeout(notesSaveTimeout);
+                notesSaveTimeout = setTimeout(() => {
+                    if (rideData && rideData.summary) {
+                        const noteKey = 'fit_ride_notes_' + rideData.summary.start_time;
+                        localStorage.setItem(noteKey, rideNotesInput.value);
+                        if (savedBadge) {
+                            savedBadge.style.display = 'inline';
+                            setTimeout(() => { savedBadge.style.display = 'none'; }, 2000);
+                        }
+                    }
+                }, 500);
             });
         }
 
@@ -4347,6 +4504,13 @@ func getDashboardTemplate() string {
                 }
             }
 
+            // Build Ride Notes context
+            let rideNotesContext = "";
+            const rideNotesText = document.getElementById('coach-ride-notes') ? document.getElementById('coach-ride-notes').value.trim() : "";
+            if (rideNotesText) {
+                rideNotesContext = "### Rider's Notes for This Ride:\nThe athlete has provided the following subjective notes about this ride. Consider these when forming your analysis:\n" + rideNotesText + "\n\n";
+            }
+
             const selectedBike = document.getElementById('bike-selector') ? document.getElementById('bike-selector').value : '';
             const bikeLine = selectedBike ? ('- Bike Ridden: ' + selectedBike + '\n') : '- Bike Ridden: Default Gears / Standard Setup\n';
 
@@ -4374,8 +4538,10 @@ func getDashboardTemplate() string {
             const prompt = 'You are an elite cycling coach. Analyze this ride telemetry data and provide a detailed, constructive, and highly actionable coaching report.\n\n' +
                 (planText ? 'CRITICAL: The athlete has provided their specific Training Plan and Goals below. You MUST evaluate this ride directly against their plan, assessing how well they followed it and whether their performance aligns with their goals.\n\n' : '') +
                 (historyContext ? 'CRITICAL: You are also provided with a summary of the athlete\'s past rides. Compare their performance on this ride to their previous efforts, highlighting progress, trends, or areas needing attention.\n\n' : '') +
+                (rideNotesText ? 'IMPORTANT: The athlete has provided personal notes about this ride. Factor these subjective observations into your analysis and address them directly in your report.\n\n' : '') +
                 planContext +
                 historyContext +
+                rideNotesContext +
                 'Here is the telemetry data for the CURRENT ride:\n' +
                 bikeLine +
                 '- Start Time: ' + rideData.summary.start_time + '\n' +
@@ -4415,6 +4581,13 @@ func getDashboardTemplate() string {
                 'Keep the tone supportive, direct, and elite.\n\n' +
                 'IMPORTANT: At the very end of your response, add a section starting exactly with [HISTORY_SUMMARY_START] followed by a 2-3 sentence concise summary of this ride\'s performance and key recommendations for the athlete\'s training log, and end it with [HISTORY_SUMMARY_END]. Do not include any formatting or other text inside those tags.';
 
+            coachChatHistory = [
+                {
+                    role: 'user',
+                    parts: [{ text: prompt }]
+                }
+            ];
+
             // Step 3: Contacting API
             setStep('step-prompt', 'done');
             setStep('step-api', 'active');
@@ -4428,11 +4601,7 @@ func getDashboardTemplate() string {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        contents: [{
-                            parts: [{
-                                text: prompt
-                            }]
-                        }]
+                        contents: coachChatHistory
                     })
                 })
                 .then(res => {
@@ -4512,6 +4681,12 @@ func getDashboardTemplate() string {
                         }
                     }
 
+                    // Push model response to chat history
+                    coachChatHistory.push({
+                        role: 'model',
+                        parts: [{ text: responseText }]
+                    });
+
                     // Save this ride analysis to local history
                     try {
                         const historyData = localStorage.getItem('fit_ride_history');
@@ -4535,7 +4710,9 @@ func getDashboardTemplate() string {
                             elevation_gain: Math.round(rideData.summary.total_elevation_gain_meters),
                             summary: summaryText.trim(),
                             report: responseText,
+                            chatHistory: coachChatHistory,
                             plan: planText,
+                            notes: rideNotesText,
                             model: model
                         };
                         
@@ -4552,7 +4729,8 @@ func getDashboardTemplate() string {
 
                     // Short delay to let the user see the 100% complete bar
                     setTimeout(() => {
-                        setCoachReportContent(responseText);
+                        coachChatInput.value = '';
+                        renderChatHistory();
                         coachModelUsed.innerText = model;
                         coachLoadingView.style.display = 'none';
                         coachReportView.style.display = 'flex';
@@ -4574,6 +4752,160 @@ func getDashboardTemplate() string {
         coachRegenerateBtn.addEventListener('click', () => {
             coachReportView.style.display = 'none';
             coachGenerateView.style.display = 'flex';
+        });
+
+        // Follow-up Conversation Chat Handler
+        const sendFollowUpMessage = () => {
+            const userMsg = coachChatInput.value.trim();
+            if (!userMsg) return;
+
+            const key = localStorage.getItem('gemini_api_key');
+            if (!key) {
+                alert('API key missing!');
+                return;
+            }
+
+            const model = coachModelSelect.value;
+
+            // 1. Add message to chat history
+            coachChatHistory.push({
+                role: 'user',
+                parts: [{ text: userMsg }]
+            });
+
+            // Clear input and render immediately
+            coachChatInput.value = '';
+            renderChatHistory();
+
+            // Disable input and button while loading
+            coachChatInput.disabled = true;
+            coachChatSendBtn.disabled = true;
+            
+            // Append a temporary loading bubble
+            const loadingBubbleWrapper = document.createElement('div');
+            loadingBubbleWrapper.id = 'coach-chat-loading-bubble';
+            loadingBubbleWrapper.style.display = 'flex';
+            loadingBubbleWrapper.style.flexDirection = 'column';
+            loadingBubbleWrapper.style.alignItems = 'flex-start';
+            loadingBubbleWrapper.style.width = '100%';
+            
+            const label = document.createElement('div');
+            label.style.fontSize = '0.75rem';
+            label.style.fontWeight = '600';
+            label.style.marginBottom = '0.25rem';
+            label.style.color = '#9b59b6';
+            label.innerText = '🚴‍♂️ AI Cycling Coach';
+            
+            const bubble = document.createElement('div');
+            bubble.style.maxWidth = '85%';
+            bubble.style.padding = '0.85rem 1.1rem';
+            bubble.style.borderRadius = '0px 12px 12px 12px';
+            bubble.style.fontSize = '0.92rem';
+            bubble.style.background = 'rgba(255, 255, 255, 0.015)';
+            bubble.style.border = '1px solid var(--border-color)';
+            bubble.style.color = 'var(--text-secondary)';
+            bubble.innerHTML = '<span style="display: inline-flex; align-items: center; gap: 0.5rem; animation: pulse 1.5s infinite;">⚡ Coach is thinking...</span>';
+            
+            loadingBubbleWrapper.appendChild(label);
+            loadingBubbleWrapper.appendChild(bubble);
+            
+            const listContainer = coachReportContent.querySelector('div');
+            if (listContainer) {
+                listContainer.appendChild(loadingBubbleWrapper);
+                coachReportContent.scrollTop = coachReportContent.scrollHeight;
+            }
+
+            const callGeminiChatAPI = (apiVersion) => {
+                const url = 'https://generativelanguage.googleapis.com/' + apiVersion + '/models/' + model + ':generateContent?key=' + key;
+                return fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        contents: coachChatHistory
+                    })
+                })
+                .then(res => {
+                    if (!res.ok) {
+                        return res.json().then(errData => {
+                            const errMsg = errData.error?.message || ('HTTP ' + res.status);
+                            return { ok: false, status: res.status, message: errMsg };
+                        });
+                    }
+                    return res.json().then(data => ({ ok: true, data }));
+                });
+            };
+
+            callGeminiChatAPI('v1')
+                .then(result => {
+                    if (result.ok) return result.data;
+                    if (result.status === 404) {
+                        return callGeminiChatAPI('v1beta').then(betaResult => {
+                            if (betaResult.ok) return betaResult.data;
+                            throw new Error(betaResult.message);
+                        });
+                    }
+                    throw new Error(result.message);
+                })
+                .then(data => {
+                    let responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!responseText) {
+                        throw new Error('Empty response from Gemini API.');
+                    }
+
+                    // Remove loading bubble
+                    const loadingBubble = document.getElementById('coach-chat-loading-bubble');
+                    if (loadingBubble) loadingBubble.remove();
+
+                    // Enable inputs
+                    coachChatInput.disabled = false;
+                    coachChatSendBtn.disabled = false;
+
+                    // Push answer to history
+                    coachChatHistory.push({
+                        role: 'model',
+                        parts: [{ text: responseText }]
+                    });
+
+                    // Re-save entire history list to localStorage
+                    try {
+                        const historyData = localStorage.getItem('fit_ride_history');
+                        if (historyData) {
+                            const history = JSON.parse(historyData);
+                            const rideId = rideData.summary.start_time;
+                            const idx = history.findIndex(r => r.id === rideId);
+                            if (idx !== -1) {
+                                history[idx].chatHistory = coachChatHistory;
+                                localStorage.setItem('fit_ride_history', JSON.stringify(history));
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to update chat history in localStorage:', e);
+                    }
+
+                    renderChatHistory();
+                    coachChatInput.focus();
+                })
+                .catch(err => {
+                    const loadingBubble = document.getElementById('coach-chat-loading-bubble');
+                    if (loadingBubble) loadingBubble.remove();
+
+                    coachChatInput.disabled = false;
+                    coachChatSendBtn.disabled = false;
+
+                    coachChatHistory.pop();
+                    
+                    console.error(err);
+                    alert('Error from coach: ' + err.message);
+                });
+        };
+
+        coachChatSendBtn.addEventListener('click', sendFollowUpMessage);
+        coachChatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                sendFollowUpMessage();
+            }
         });
 
         // ==========================================
