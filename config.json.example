@@ -1,6 +1,18 @@
 {
   "front_gears": [33, 46],
   "rear_gears": [36, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10],
+  "bikes": [
+    {
+      "name": "Cervélo Soloist",
+      "front_gears": [33, 46],
+      "rear_gears": [36, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10]
+    },
+    {
+      "name": "Cervélo Aspero",
+      "front_gears": [40],
+      "rear_gears": [46, 38, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10]
+    }
+  ],
   "local_directory": "/path/to/your/downloads/or/fits",
   "hammerhead_api": {
     "enabled": false,
