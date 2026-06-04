@@ -35,6 +35,7 @@ type Config struct {
 	LocalDirectory string           `json:"local_directory"`
 	HammerheadAPI  HammerheadConfig `json:"hammerhead_api"`
 	WahooAPI       WahooConfig      `json:"wahoo_api"`
+	FTP            int              `json:"ftp"`
 }
 
 // HammerheadConfig represents authentication and caching details for Hammerhead Dashboard API integration
@@ -331,6 +332,7 @@ func loadConfig(path string) Config {
 	defaultConfig := Config{
 		FrontGears: []int{33, 46},
 		RearGears:  []int{36, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10},
+		FTP:        250,
 	}
 
 	f, err := os.Open(path)
@@ -344,6 +346,9 @@ func loadConfig(path string) Config {
 	if err := json.NewDecoder(f).Decode(&config); err != nil {
 		fmt.Printf("Warning: Error parsing config %s (%v), using default config.\n", path, err)
 		return defaultConfig
+	}
+	if config.FTP == 0 {
+		config.FTP = 250
 	}
 	if config.HammerheadAPI.DownloadDir == "" {
 		config.HammerheadAPI.DownloadDir = "./fit_downloads"
@@ -1390,6 +1395,7 @@ func writeHTML(path string, analysis RideAnalysis, config Config) {
 		BikesStr  template.JS
 		Summary   RideSummary
 		GearUsage []GearStats
+		FTP       int
 	}
 
 	data := TmplData{
@@ -1398,6 +1404,7 @@ func writeHTML(path string, analysis RideAnalysis, config Config) {
 		BikesStr:  template.JS(bikesData),
 		Summary:   analysis.Summary,
 		GearUsage: analysis.GearUsage,
+		FTP:       config.FTP,
 	}
 
 	if err := tmpl.Execute(f, data); err != nil {
@@ -2484,7 +2491,14 @@ func getDashboardTemplate() string {
                 <div style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
                         <div>
-                            <h4 style="color: var(--accent); margin-bottom: 0.5rem; font-family: 'Outfit'; font-weight: 600;">Power Zones (FTP: 250W)</h4>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                                <h4 style="color: var(--accent); margin: 0; font-family: 'Outfit'; font-weight: 600;">Power Zones</h4>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.25rem;">
+                                    FTP: 
+                                    <input type="number" id="ftp-input" value="250" style="width: 55px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: #ffffff; text-align: center; font-family: inherit; font-size: 0.82rem; padding: 0.1rem 0.2rem; outline: none; border-color: rgba(255,255,255,0.15);" />
+                                    <span>W</span>
+                                </div>
+                            </div>
                             <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; color: var(--text-secondary);">
                                 <thead>
                                     <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
@@ -2512,6 +2526,40 @@ func getDashboardTemplate() string {
                                 <tbody id="hr-zones-tbody">
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FTP History & Estimation Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">FTP History & Estimation</div>
+                </div>
+                <div style="padding: 0.5rem 0; display: flex; flex-direction: column; gap: 1rem;">
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5;">
+                        FTP (Functional Threshold Power) is the highest average power output you can sustain for approximately one hour. 
+                        It is standardly estimated as <strong>95% of your peak 20-minute power</strong>. Below are the estimated FTP calculations from your analyzed rides:
+                    </div>
+                    
+                    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 280px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600;">Current Ride Estimate</h4>
+                                <div id="ftp-current-estimate-val" style="font-size: 1.8rem; font-weight: bold; color: #ffffff; margin-bottom: 0.25rem;">-</div>
+                                <div id="ftp-current-estimate-method" style="font-size: 0.75rem; color: var(--text-secondary);">Calculating...</div>
+                            </div>
+                            <div style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-size: 0.75rem; color: var(--text-secondary);">Apply to dashboard:</span>
+                                <button id="btn-apply-current-ftp" class="btn-action" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-color: var(--accent); color: var(--accent); cursor: pointer;">Apply FTP</button>
+                            </div>
+                        </div>
+                        
+                        <div style="flex: 1.5; min-width: 320px; display: flex; flex-direction: column; gap: 0.5rem;">
+                            <h4 style="color: var(--accent); margin: 0 0 0.25rem 0; font-family: 'Outfit'; font-weight: 600;">Historical FTP Estimates</h4>
+                            <div id="ftp-history-list" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; padding-right: 0.25rem;">
+                                <!-- Will be populated by JS -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2902,6 +2950,9 @@ func getDashboardTemplate() string {
         const configBikes = {{.BikesStr}};
         console.log("Loaded Ride Data:", rideData);
 
+        const defaultFTP = {{.FTP}} || 250;
+        let athleteFTP = parseInt(localStorage.getItem('fit_athlete_ftp')) || defaultFTP;
+
         // Global Chart and Map references for dynamic updating
         let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline, quadrantAnalysisChart;
         let leafletMap, startMarker, endMarker;
@@ -3267,10 +3318,13 @@ func getDashboardTemplate() string {
         document.getElementById('val-avg-power').innerText = 'Avg: ' + Math.round(rideData.summary.average_power) + ' W';
         document.getElementById('val-max-power').innerHTML = rideData.summary.max_power + ' <span class="stat-unit">W</span>';
         
-        // Intensity Factor (IF) calculation: NP / 250W (assumed FTP)
-        const ftp = 250;
-        const intensityFactor = (rideData.summary.normalized_power / ftp).toFixed(2);
-        document.getElementById('val-intensity-factor').innerText = 'IF: ' + intensityFactor + ' (FTP ' + ftp + 'W)';
+        // Intensity Factor (IF) calculation
+        const updateIFDisplay = () => {
+            const intensityFactor = (rideData.summary.normalized_power / athleteFTP).toFixed(2);
+            document.getElementById('val-intensity-factor').innerText = 'IF: ' + intensityFactor + ' (FTP ' + athleteFTP + 'W)';
+        };
+        updateIFDisplay();
+        window.updateIFDisplay = updateIFDisplay;
 
         document.getElementById('val-avg-hr').innerHTML = Math.round(rideData.summary.average_heart_rate) + ' <span class="stat-unit">bpm</span>';
         document.getElementById('val-max-hr').innerText = 'Max: ' + rideData.summary.max_heart_rate + ' bpm';
@@ -3720,19 +3774,18 @@ func getDashboardTemplate() string {
         // ==========================================
         // Training Zones Calculations & Charts
         // ==========================================
-        const calculateZones = () => {
-            const ftp = 250;
+        const renderZones = () => {
             const maxHR = rideData.summary.max_heart_rate || 180;
             document.getElementById('zones-max-hr').innerText = maxHR;
 
             const pZones = [
-                { name: 'Z1 - Active Recovery', min: 0, max: Math.round(ftp * 0.55), secs: 0, color: 'rgba(52, 152, 219, 0.65)' },
-                { name: 'Z2 - Endurance', min: Math.round(ftp * 0.55) + 1, max: Math.round(ftp * 0.75), secs: 0, color: 'rgba(46, 204, 113, 0.65)' },
-                { name: 'Z3 - Tempo', min: Math.round(ftp * 0.75) + 1, max: Math.round(ftp * 0.90), secs: 0, color: 'rgba(241, 196, 15, 0.65)' },
-                { name: 'Z4 - Threshold', min: Math.round(ftp * 0.90) + 1, max: Math.round(ftp * 1.05), secs: 0, color: 'rgba(230, 126, 34, 0.65)' },
-                { name: 'Z5 - VO2 Max', min: Math.round(ftp * 1.05) + 1, max: Math.round(ftp * 1.20), secs: 0, color: 'rgba(231, 76, 60, 0.65)' },
-                { name: 'Z6 - Anaerobic', min: Math.round(ftp * 1.20) + 1, max: Math.round(ftp * 1.50), secs: 0, color: 'rgba(155, 89, 182, 0.65)' },
-                { name: 'Z7 - Neuromuscular', min: Math.round(ftp * 1.50) + 1, max: 9999, secs: 0, color: 'rgba(149, 165, 166, 0.65)' }
+                { name: 'Z1 - Active Recovery', min: 0, max: Math.round(athleteFTP * 0.55), secs: 0, color: 'rgba(52, 152, 219, 0.65)' },
+                { name: 'Z2 - Endurance', min: Math.round(athleteFTP * 0.55) + 1, max: Math.round(athleteFTP * 0.75), secs: 0, color: 'rgba(46, 204, 113, 0.65)' },
+                { name: 'Z3 - Tempo', min: Math.round(athleteFTP * 0.75) + 1, max: Math.round(athleteFTP * 0.90), secs: 0, color: 'rgba(241, 196, 15, 0.65)' },
+                { name: 'Z4 - Threshold', min: Math.round(athleteFTP * 0.90) + 1, max: Math.round(athleteFTP * 1.05), secs: 0, color: 'rgba(230, 126, 34, 0.65)' },
+                { name: 'Z5 - VO2 Max', min: Math.round(athleteFTP * 1.05) + 1, max: Math.round(athleteFTP * 1.20), secs: 0, color: 'rgba(231, 76, 60, 0.65)' },
+                { name: 'Z6 - Anaerobic', min: Math.round(athleteFTP * 1.20) + 1, max: Math.round(athleteFTP * 1.50), secs: 0, color: 'rgba(155, 89, 182, 0.65)' },
+                { name: 'Z7 - Neuromuscular', min: Math.round(athleteFTP * 1.50) + 1, max: 9999, secs: 0, color: 'rgba(149, 165, 166, 0.65)' }
             ];
 
             const hZones = [
@@ -3757,136 +3810,148 @@ func getDashboardTemplate() string {
                 if (hz) hz.secs++;
             });
 
-            return { pZones, hZones, totalSecs };
-        };
+            const formatSecs = (s) => {
+                const m = Math.floor(s / 60);
+                const sec = s % 60;
+                return m + 'm ' + sec + 's';
+            };
 
-        const zonesData = calculateZones();
-        const formatSecs = (s) => {
-            const m = Math.floor(s / 60);
-            const sec = s % 60;
-            return m + 'm ' + sec + 's';
-        };
+            // Render Power Zones Table
+            const pBody = document.getElementById('power-zones-tbody');
+            if (pBody) {
+                pBody.innerHTML = '';
+                pZones.forEach(z => {
+                    const pct = totalSecs ? ((z.secs / totalSecs) * 100).toFixed(1) : '0.0';
+                    const rangeStr = z.max === 9999 ? '> ' + z.min + 'W' : z.min + ' - ' + z.max + 'W';
+                    pBody.innerHTML += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.02);">' +
+                        '<td style="padding: 0.35rem 0; font-weight: 500; color: #ffffff;">' + z.name + '</td>' +
+                        '<td style="padding: 0.35rem 0;">' + rangeStr + '</td>' +
+                        '<td style="padding: 0.35rem 0; text-align: right; font-family: monospace;">' + formatSecs(z.secs) + '</td>' +
+                        '<td style="padding: 0.35rem 0; text-align: right; font-weight: 600; color: ' + z.color.replace('0.65', '1') + ';">' + pct + '%</td>' +
+                        '</tr>';
+                });
+            }
 
-        // Render Power Zones Table
-        const pBody = document.getElementById('power-zones-tbody');
-        pBody.innerHTML = '';
-        zonesData.pZones.forEach(z => {
-            const pct = zonesData.totalSecs ? ((z.secs / zonesData.totalSecs) * 100).toFixed(1) : '0.0';
-            const rangeStr = z.max === 9999 ? '> ' + z.min + 'W' : z.min + ' - ' + z.max + 'W';
-            pBody.innerHTML += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.02);">' +
-                '<td style="padding: 0.35rem 0; font-weight: 500; color: #ffffff;">' + z.name + '</td>' +
-                '<td style="padding: 0.35rem 0;">' + rangeStr + '</td>' +
-                '<td style="padding: 0.35rem 0; text-align: right; font-family: monospace;">' + formatSecs(z.secs) + '</td>' +
-                '<td style="padding: 0.35rem 0; text-align: right; font-weight: 600; color: ' + z.color.replace('0.65', '1') + ';">' + pct + '%</td>' +
-                '</tr>';
-        });
+            // Render HR Zones Table
+            const hBody = document.getElementById('hr-zones-tbody');
+            if (hBody) {
+                hBody.innerHTML = '';
+                hZones.forEach(z => {
+                    const pct = totalSecs ? ((z.secs / totalSecs) * 100).toFixed(1) : '0.0';
+                    const rangeStr = z.max === 999 ? '> ' + z.min + ' bpm' : z.min + ' - ' + z.max + ' bpm';
+                    hBody.innerHTML += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.02);">' +
+                        '<td style="padding: 0.35rem 0; font-weight: 500; color: #ffffff;">' + z.name + '</td>' +
+                        '<td style="padding: 0.35rem 0;">' + rangeStr + '</td>' +
+                        '<td style="padding: 0.35rem 0; text-align: right; font-family: monospace;">' + formatSecs(z.secs) + '</td>' +
+                        '<td style="padding: 0.35rem 0; text-align: right; font-weight: 600; color: ' + z.color.replace('0.65', '1') + ';">' + pct + '%</td>' +
+                        '</tr>';
+                });
+            }
 
-        // Render HR Zones Table
-        const hBody = document.getElementById('hr-zones-tbody');
-        hBody.innerHTML = '';
-        zonesData.hZones.forEach(z => {
-            const pct = zonesData.totalSecs ? ((z.secs / zonesData.totalSecs) * 100).toFixed(1) : '0.0';
-            const rangeStr = z.max === 999 ? '> ' + z.min + ' bpm' : z.min + ' - ' + z.max + ' bpm';
-            hBody.innerHTML += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.02);">' +
-                '<td style="padding: 0.35rem 0; font-weight: 500; color: #ffffff;">' + z.name + '</td>' +
-                '<td style="padding: 0.35rem 0;">' + rangeStr + '</td>' +
-                '<td style="padding: 0.35rem 0; text-align: right; font-family: monospace;">' + formatSecs(z.secs) + '</td>' +
-                '<td style="padding: 0.35rem 0; text-align: right; font-weight: 600; color: ' + z.color.replace('0.65', '1') + ';">' + pct + '%</td>' +
-                '</tr>';
-        });
-
-        // Render Charts
-        chartPZones = new Chart(document.getElementById('chart-power-zones').getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: zonesData.pZones.map(z => z.name.split(' - ')[0]),
-                datasets: [{
-                    label: 'Power Zones Time (seconds)',
-                    data: zonesData.pZones.map(z => z.secs),
-                    backgroundColor: zonesData.pZones.map(z => z.color),
-                    borderColor: zonesData.pZones.map(z => z.color.replace('0.65', '1')),
-                    borderWidth: 1,
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const secs = context.parsed.y;
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const pct = total ? ((secs / total) * 100).toFixed(1) : 0;
-                                return zonesData.pZones[context.dataIndex].name + ': ' + formatSecs(secs) + ' (' + pct + '%)';
+            // Power Zones Chart
+            if (chartPZones) {
+                chartPZones.destroy();
+            }
+            chartPZones = new Chart(document.getElementById('chart-power-zones').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: pZones.map(z => z.name.split(' - ')[0]),
+                    datasets: [{
+                        label: 'Power Zones Time (seconds)',
+                        data: pZones.map(z => z.secs),
+                        backgroundColor: pZones.map(z => z.color),
+                        borderColor: pZones.map(z => z.color.replace('0.65', '1')),
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const secs = context.parsed.y;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = total ? ((secs / total) * 100).toFixed(1) : 0;
+                                    return pZones[context.dataIndex].name + ': ' + formatSecs(secs) + ' (' + pct + '%)';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.02)' },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { family: 'Outfit', size: 10 },
+                                callback: function(val) { return formatSecs(val).split(' ')[0] + 'm'; }
                             }
                         }
                     }
-                },
-                scales: {
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
-                    },
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.02)' },
-                        ticks: {
-                            color: '#94a3b8',
-                            font: { family: 'Outfit', size: 10 },
-                            callback: function(val) { return formatSecs(val).split(' ')[0] + 'm'; }
-                        }
-                    }
                 }
-            }
-        });
+            });
 
-        chartHZones = new Chart(document.getElementById('chart-hr-zones').getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: zonesData.hZones.map(z => z.name.split(' - ')[0]),
-                datasets: [{
-                    label: 'HR Zones Time (seconds)',
-                    data: zonesData.hZones.map(z => z.secs),
-                    backgroundColor: zonesData.hZones.map(z => z.color),
-                    borderColor: zonesData.hZones.map(z => z.color.replace('0.65', '1')),
-                    borderWidth: 1,
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const secs = context.parsed.y;
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const pct = total ? ((secs / total) * 100).toFixed(1) : 0;
-                                return zonesData.hZones[context.dataIndex].name + ': ' + formatSecs(secs) + ' (' + pct + '%)';
+            // HR Zones Chart
+            if (chartHZones) {
+                chartHZones.destroy();
+            }
+            chartHZones = new Chart(document.getElementById('chart-hr-zones').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: hZones.map(z => z.name.split(' - ')[0]),
+                    datasets: [{
+                        label: 'HR Zones Time (seconds)',
+                        data: hZones.map(z => z.secs),
+                        backgroundColor: hZones.map(z => z.color),
+                        borderColor: hZones.map(z => z.color.replace('0.65', '1')),
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const secs = context.parsed.y;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = total ? ((secs / total) * 100).toFixed(1) : 0;
+                                    return hZones[context.dataIndex].name + ': ' + formatSecs(secs) + ' (' + pct + '%)';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.02)' },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { family: 'Outfit', size: 10 },
+                                callback: function(val) { return formatSecs(val).split(' ')[0] + 'm'; }
                             }
                         }
                     }
-                },
-                scales: {
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
-                    },
-                    y: {
-                        grid: { color: 'rgba(255,255,255,0.02)' },
-                        ticks: {
-                            color: '#94a3b8',
-                            font: { family: 'Outfit', size: 10 },
-                            callback: function(val) { return formatSecs(val).split(' ')[0] + 'm'; }
-                        }
-                    }
                 }
-            }
-        });
+            });
+        };
+
+        // Initial zones render
+        renderZones();
+        window.renderZones = renderZones;
 
         // ==========================================
         // Neuromuscular vs. Aerobic Load (Quadrant Analysis)
@@ -4122,6 +4187,136 @@ func getDashboardTemplate() string {
                 plugins: [quadrantPlugin]
             });
         }
+
+        // ==========================================
+        // FTP Estimation & Configuration
+        // ==========================================
+        const estimateFTPForRide = (ride) => {
+            if (ride.twenty_min_power && ride.twenty_min_power > 0) {
+                return {
+                    val: Math.round(ride.twenty_min_power * 0.95),
+                    method: '95% of 20-min power (' + ride.twenty_min_power + 'W)'
+                };
+            } else if (ride.power_curve && ride.power_curve["20m"] && ride.power_curve["20m"] > 0) {
+                return {
+                    val: Math.round(ride.power_curve["20m"] * 0.95),
+                    method: '95% of 20-min power (' + ride.power_curve["20m"] + 'W)'
+                };
+            } else if (ride.np && ride.np > 0) {
+                return {
+                    val: Math.round(ride.np * 0.95),
+                    method: '95% of NP (' + ride.np + 'W)'
+                };
+            } else if (ride.avg_power && ride.avg_power > 0) {
+                return {
+                    val: Math.round(ride.avg_power * 1.05),
+                    method: 'Avg Power + 5% (' + ride.avg_power + 'W)'
+                };
+            }
+            return null;
+        };
+
+        const renderFtpEstimates = () => {
+            // 1. Current Ride Estimate
+            const currentEst = estimateFTPForRide({
+                power_curve: rideData.summary.power_curve,
+                np: rideData.summary.normalized_power,
+                avg_power: rideData.summary.average_power
+            });
+
+            const currentEstValEl = document.getElementById('ftp-current-estimate-val');
+            const currentEstMethodEl = document.getElementById('ftp-current-estimate-method');
+            const btnApplyCurrentFtp = document.getElementById('btn-apply-current-ftp');
+
+            if (currentEst) {
+                if (currentEstValEl) currentEstValEl.innerText = currentEst.val + ' W';
+                if (currentEstMethodEl) currentEstMethodEl.innerText = currentEst.method;
+                if (btnApplyCurrentFtp) {
+                    btnApplyCurrentFtp.style.display = 'inline-block';
+                    btnApplyCurrentFtp.onclick = () => {
+                        updateFTP(currentEst.val);
+                    };
+                }
+            } else {
+                if (currentEstValEl) currentEstValEl.innerText = '-';
+                if (currentEstMethodEl) currentEstMethodEl.innerText = 'No power data available';
+                if (btnApplyCurrentFtp) btnApplyCurrentFtp.style.display = 'none';
+            }
+
+            // 2. Historical Estimates
+            const ftpHistoryList = document.getElementById('ftp-history-list');
+            if (ftpHistoryList) {
+                const historyData = localStorage.getItem('fit_ride_history');
+                let history = [];
+                if (historyData) {
+                    try {
+                        history = JSON.parse(historyData);
+                    } catch (e) {
+                        console.error("Error parsing history:", e);
+                    }
+                }
+
+                if (history.length === 0) {
+                    ftpHistoryList.innerHTML = '<div style="font-style: italic; color: var(--text-secondary); font-size: 0.75rem; text-align: center; padding-top: 1rem;">No historical rides analyzed yet. Your training history estimates will appear here.</div>';
+                } else {
+                    const sortedHistory = [...history].reverse();
+                    ftpHistoryList.innerHTML = sortedHistory.map(ride => {
+                        const est = estimateFTPForRide(ride);
+                        if (!est) return '';
+
+                        const isActive = est.val === athleteFTP;
+                        const activeStyle = isActive ? 'border-color: var(--accent); background: rgba(155, 89, 182, 0.1);' : '';
+                        const buttonText = isActive ? 'Active' : 'Apply';
+                        const buttonColor = isActive ? 'color: var(--accent); border-color: var(--accent);' : '';
+                        const disabledAttr = isActive ? 'disabled' : '';
+
+                        return '<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.75rem; ' + activeStyle + '">' +
+                            '<div>' +
+                                '<div style="font-weight: 600; color: #ffffff;">📅 ' + ride.date + ' (' + est.val + ' W)</div>' +
+                                '<div style="font-size: 0.68rem; color: var(--text-secondary);">' + est.method + ' | ' + ride.distance_km + ' km</div>' +
+                            '</div>' +
+                            '<button class="btn-action" onclick="updateFTP(' + est.val + ')" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; ' + buttonColor + '" ' + disabledAttr + '>' + buttonText + '</button>' +
+                        '</div>';
+                    }).join('');
+                }
+            }
+        };
+
+        const updateFTP = (newFTP) => {
+            athleteFTP = parseInt(newFTP);
+            if (isNaN(athleteFTP) || athleteFTP <= 0) athleteFTP = 250;
+            
+            localStorage.setItem('fit_athlete_ftp', athleteFTP);
+            
+            const ftpInput = document.getElementById('ftp-input');
+            if (ftpInput) {
+                ftpInput.value = athleteFTP;
+            }
+
+            if (window.updateIFDisplay) window.updateIFDisplay();
+            if (window.renderZones) window.renderZones();
+            renderFtpEstimates();
+        };
+
+        // Expose updateFTP globally for inline onclick buttons
+        window.updateFTP = updateFTP;
+
+        // Initialize FTP input field and render lists
+        const ftpInput = document.getElementById('ftp-input');
+        if (ftpInput) {
+            ftpInput.value = athleteFTP;
+            ftpInput.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                if (!isNaN(val) && val > 0) {
+                    athleteFTP = val;
+                    localStorage.setItem('fit_athlete_ftp', athleteFTP);
+                    if (window.updateIFDisplay) window.updateIFDisplay();
+                    if (window.renderZones) window.renderZones();
+                    renderFtpEstimates();
+                }
+            });
+        }
+        renderFtpEstimates();
         } // End of renderDashboard function
 
         // Prepare JSON and Schema strings
@@ -4879,7 +5074,7 @@ func getDashboardTemplate() string {
             progressBar.style.width = '30%';
 
             const model = coachModelSelect.value;
-            const ftp = 250;
+            const ftp = athleteFTP;
             const intensityFactor = (rideData.summary.normalized_power / ftp).toFixed(2);
             
             // Build Plan and History Context
@@ -5170,7 +5365,8 @@ func getDashboardTemplate() string {
                             chatHistory: coachChatHistory,
                             plan: planText,
                             notes: rideNotesText,
-                            model: model
+                            model: model,
+                            power_curve: rideData.summary.power_curve
                         };
                         
                         if (existingIdx !== -1) {
