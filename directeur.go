@@ -4010,14 +4010,15 @@ func getDashboardTemplate() string {
                     ctx.font = 'bold 10px Outfit, sans-serif';
                     ctx.setLineDash([]); // clear dash for text
 
-                    // QI: Top Right
-                    ctx.fillText('QI: High Force/Vel (' + pct1.toFixed(1) + '%)', right - 165, top + 20);
-                    // QII: Top Left
+                    // Left-aligned labels (QII, QIII)
+                    ctx.textAlign = 'left';
                     ctx.fillText('QII: High Force/Low Vel (' + pct2.toFixed(1) + '%)', left + 15, top + 20);
-                    // QIII: Bottom Left
                     ctx.fillText('QIII: Low Force/Low Vel (' + pct3.toFixed(1) + '%)', left + 15, bottom - 15);
-                    // QIV: Bottom Right
-                    ctx.fillText('QIV: Low Force/High Vel (' + pct4.toFixed(1) + '%)', right - 165, bottom - 15);
+
+                    // Right-aligned labels (QI, QIV)
+                    ctx.textAlign = 'right';
+                    ctx.fillText('QI: High Force/Vel (' + pct1.toFixed(1) + '%)', right - 15, top + 20);
+                    ctx.fillText('QIV: Low Force/High Vel (' + pct4.toFixed(1) + '%)', right - 15, bottom - 15);
 
                     ctx.restore();
                 }
@@ -4093,11 +4094,15 @@ func getDashboardTemplate() string {
                     },
                     scales: {
                         x: {
+                            min: 0,
+                            max: meanCpv * 2,
                             grid: { color: 'rgba(255, 255, 255, 0.02)' },
                             ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
                             title: { display: true, text: 'Circumferential Pedal Velocity (m/s)', color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
                         },
                         y: {
+                            min: 0,
+                            max: meanAepf * 2,
                             grid: { color: 'rgba(255, 255, 255, 0.02)' },
                             ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
                             title: { display: true, text: 'Average Effective Pedal Force (Newtons)', color: '#94a3b8', font: { family: 'Outfit', size: 10 } }

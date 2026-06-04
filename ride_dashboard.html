@@ -2640,13 +2640,14 @@
                     ctx.setLineDash([]); 
 
                     
-                    ctx.fillText('QI: High Force/Vel (' + pct1.toFixed(1) + '%)', right - 165, top + 20);
-                    
+                    ctx.textAlign = 'left';
                     ctx.fillText('QII: High Force/Low Vel (' + pct2.toFixed(1) + '%)', left + 15, top + 20);
-                    
                     ctx.fillText('QIII: Low Force/Low Vel (' + pct3.toFixed(1) + '%)', left + 15, bottom - 15);
+
                     
-                    ctx.fillText('QIV: Low Force/High Vel (' + pct4.toFixed(1) + '%)', right - 165, bottom - 15);
+                    ctx.textAlign = 'right';
+                    ctx.fillText('QI: High Force/Vel (' + pct1.toFixed(1) + '%)', right - 15, top + 20);
+                    ctx.fillText('QIV: Low Force/High Vel (' + pct4.toFixed(1) + '%)', right - 15, bottom - 15);
 
                     ctx.restore();
                 }
@@ -2722,11 +2723,15 @@
                     },
                     scales: {
                         x: {
+                            min: 0,
+                            max: meanCpv * 2,
                             grid: { color: 'rgba(255, 255, 255, 0.02)' },
                             ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
                             title: { display: true, text: 'Circumferential Pedal Velocity (m/s)', color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
                         },
                         y: {
+                            min: 0,
+                            max: meanAepf * 2,
                             grid: { color: 'rgba(255, 255, 255, 0.02)' },
                             ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
                             title: { display: true, text: 'Average Effective Pedal Force (Newtons)', color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
