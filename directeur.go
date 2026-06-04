@@ -2291,6 +2291,7 @@ func getDashboardTemplate() string {
                     <button id="btn-copy-json" class="dropdown-item">📋 View JSON Data</button>
                     <button id="btn-view-schema" class="dropdown-item">📋 View Schema</button>
                     <button id="btn-download-json" class="dropdown-item">📥 Download JSON</button>
+                    <button id="btn-show-saved-data" class="dropdown-item">📦 Show Saved Data</button>
                 </div>
             </div>
         </div>
@@ -2608,6 +2609,32 @@ func getDashboardTemplate() string {
                 </div>
             </div>
             <textarea id="schema-textarea" readonly style="flex: 1; width: 100%; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; color: #e2e8f0; font-family: monospace; font-size: 0.85rem; padding: 1rem; resize: none; outline: none; line-height: 1.4;"></textarea>
+        </div>
+    </div>
+
+    <!-- Modal for Show Saved Data -->
+    <div id="saved-data-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center; padding: 2rem;">
+        <div style="width: 100%; max-width: 800px; height: 85%; display: flex; flex-direction: column; gap: 1rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; padding: 1.5rem; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                <div style="font-size: 1.4rem; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 0.5rem; font-family: 'Outfit';">
+                    <span>📦 Browser Local Storage Cache</span>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <button id="saved-data-export-btn" class="btn-action" style="background: var(--accent-glow); border-color: var(--accent); color: var(--accent); font-weight: 600;">📤 Export Data</button>
+                    <button id="saved-data-import-btn" class="btn-action" style="font-weight: 600;">📥 Import Data</button>
+                    <input type="file" id="saved-data-import-file" style="display: none;" accept=".json" />
+                    <button id="saved-data-close-btn" class="btn-action">Close</button>
+                </div>
+            </div>
+            
+            <div id="saved-data-content" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; padding-right: 0.5rem;">
+                <!-- Content generated dynamically -->
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 0.5rem;">
+                <span style="font-size: 0.8rem; color: var(--text-secondary);">Your data is stored completely client-side in this browser.</span>
+                <button id="saved-data-clear-all-btn" class="btn-action" style="border-color: rgba(231, 76, 60, 0.5); color: #fc8181; font-weight: 600;">⚠️ Clear All Browser Data</button>
+            </div>
         </div>
     </div>
 
@@ -3892,6 +3919,18 @@ func getDashboardTemplate() string {
                 dropdownArrow.style.transform = 'rotate(0deg)';
             }
         });
+
+        // ==========================================
+        // Saved Data Manager Integration
+        // ==========================================
+        const savedDataModal = document.getElementById('saved-data-modal');
+        const btnShowSavedData = document.getElementById('btn-show-saved-data');
+        const savedDataCloseBtn = document.getElementById('saved-data-close-btn');
+        const savedDataContent = document.getElementById('saved-data-content');
+        const savedDataClearAllBtn = document.getElementById('saved-data-clear-all-btn');
+        const savedDataExportBtn = document.getElementById('saved-data-export-btn');
+        const savedDataImportBtn = document.getElementById('saved-data-import-btn');
+        const savedDataImportFile = document.getElementById('saved-data-import-file');
 
         // ==========================================
         // Gemini AI Coach Integration
@@ -5507,6 +5546,378 @@ func getDashboardTemplate() string {
             if (e.target === selectRideModal) {
                 selectRideModal.style.display = 'none';
             }
+        });
+
+        // ==========================================
+        // Saved Data Manager Logic
+        // ==========================================
+        btnShowSavedData.addEventListener('click', () => {
+            savedDataModal.style.display = 'flex';
+            populateSavedDataModal();
+        });
+
+        savedDataCloseBtn.addEventListener('click', () => {
+            savedDataModal.style.display = 'none';
+        });
+
+        savedDataModal.addEventListener('click', (e) => {
+            if (e.target === savedDataModal) {
+                savedDataModal.style.display = 'none';
+            }
+        });
+
+        const populateSavedDataModal = () => {
+            savedDataContent.innerHTML = '';
+
+            // Category 1: Settings & Credentials
+            const savedKey = localStorage.getItem('gemini_api_key') || '';
+            const maskedKey = savedKey ? (savedKey.substring(0, 6) + '...' + savedKey.substring(savedKey.length - 4)) : 'Not Configured';
+            const planVal = localStorage.getItem('fit_athlete_training_plan') || '';
+            const planPreview = planVal ? (planVal.length > 50 ? planVal.substring(0, 50) + '...' : planVal) : 'Not Configured';
+            const selectedBikeVal = localStorage.getItem('directeur_selected_bike') || '';
+            const bikePreview = selectedBikeVal ? ('🚲 ' + selectedBikeVal) : 'Default Gears';
+
+            const settingsSection = document.createElement('div');
+            settingsSection.style.background = 'rgba(255,255,255,0.02)';
+            settingsSection.style.border = '1px solid rgba(255,255,255,0.05)';
+            settingsSection.style.borderRadius = '12px';
+            settingsSection.style.padding = '1.25rem';
+            settingsSection.innerHTML = '<h4 style="margin: 0 0 1rem 0; font-family: \'Outfit\'; color: var(--accent); font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">⚙️ Settings & Credentials</h4>' +
+                '<div style="display: flex; flex-direction: column; gap: 0.75rem;">' +
+                    '<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.15); padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">' +
+                        '<div>' +
+                            '<div style="font-weight: 600; font-size: 0.85rem; color: #ffffff;">Gemini API Key</div>' +
+                            '<div style="font-size: 0.75rem; color: var(--text-secondary); font-family: monospace;">' + maskedKey + '</div>' +
+                        '</div>' +
+                        (savedKey ? '<button class="btn-action" id="sd-clear-key-btn" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-color: rgba(231,76,60,0.3); color: #fc8181;">Clear</button>' : '') +
+                    '</div>' +
+                    '<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.15); padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">' +
+                        '<div style="flex: 1; margin-right: 1rem;">' +
+                            '<div style="font-weight: 600; font-size: 0.85rem; color: #ffffff;">My Training Plan & Goals</div>' +
+                            '<div style="font-size: 0.75rem; color: var(--text-secondary); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">' + planPreview + '</div>' +
+                        '</div>' +
+                        (planVal ? '<button class="btn-action" id="sd-clear-plan-btn" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-color: rgba(231,76,60,0.3); color: #fc8181;">Clear</button>' : '') +
+                    '</div>' +
+                    '<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.15); padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">' +
+                        '<div>' +
+                            '<div style="font-weight: 600; font-size: 0.85rem; color: #ffffff;">Default Bike Selection</div>' +
+                            '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + bikePreview + '</div>' +
+                        '</div>' +
+                        (selectedBikeVal ? '<button class="btn-action" id="sd-clear-bike-btn" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-color: rgba(231,76,60,0.3); color: #fc8181;">Clear</button>' : '') +
+                    '</div>' +
+                '</div>';
+            savedDataContent.appendChild(settingsSection);
+
+            const sdClearKeyBtn = document.getElementById('sd-clear-key-btn');
+            if (sdClearKeyBtn) {
+                sdClearKeyBtn.addEventListener('click', () => {
+                    if (confirm('Are you sure you want to clear your saved Gemini API Key?')) {
+                        localStorage.removeItem('gemini_api_key');
+                        const coachKeyPanel = document.getElementById('coach-key-panel');
+                        const coachAnalysisPanel = document.getElementById('coach-analysis-panel');
+                        const coachClearKeyBtn = document.getElementById('coach-clear-key-btn');
+                        if (coachKeyPanel) coachKeyPanel.style.display = 'flex';
+                        if (coachAnalysisPanel) coachAnalysisPanel.style.display = 'none';
+                        if (coachClearKeyBtn) coachClearKeyBtn.style.display = 'none';
+                        populateSavedDataModal();
+                    }
+                });
+            }
+
+            const sdClearPlanBtn = document.getElementById('sd-clear-plan-btn');
+            if (sdClearPlanBtn) {
+                sdClearPlanBtn.addEventListener('click', () => {
+                    if (confirm('Are you sure you want to clear your Training Plan & Goals?')) {
+                        localStorage.removeItem('fit_athlete_training_plan');
+                        const planInput = document.getElementById('coach-plan-input');
+                        if (planInput) planInput.value = '';
+                        checkCachedReport(false);
+                        populateSavedDataModal();
+                    }
+                });
+            }
+
+            const sdClearBikeBtn = document.getElementById('sd-clear-bike-btn');
+            if (sdClearBikeBtn) {
+                sdClearBikeBtn.addEventListener('click', () => {
+                    if (confirm('Are you sure you want to reset your default bike to Default Gears?')) {
+                        localStorage.removeItem('directeur_selected_bike');
+                        const bikeSelector = document.getElementById('bike-selector');
+                        if (bikeSelector) {
+                            bikeSelector.value = '';
+                            recalculateGearsClientSide('');
+                        }
+                        populateSavedDataModal();
+                    }
+                });
+            }
+
+            // Category 2: Coaching Reports & Chat History
+            const historySection = document.createElement('div');
+            historySection.style.background = 'rgba(255,255,255,0.02)';
+            historySection.style.border = '1px solid rgba(255,255,255,0.05)';
+            historySection.style.borderRadius = '12px';
+            historySection.style.padding = '1.25rem';
+            
+            let historyHtml = '<h4 style="margin: 0 0 1rem 0; font-family: \'Outfit\'; color: var(--accent); font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">📋 Analyzed Ride History</h4>';
+            
+            const historyData = localStorage.getItem('fit_ride_history');
+            let history = [];
+            if (historyData) {
+                try {
+                    history = JSON.parse(historyData);
+                } catch(e) {
+                    console.error("Error parsing historyData:", e);
+                }
+            }
+
+            if (history.length === 0) {
+                historyHtml += '<div style="font-size: 0.8rem; color: var(--text-secondary); font-style: italic; padding: 0.5rem 0;">No analyzed rides in cache.</div>';
+                historySection.innerHTML = historyHtml;
+            } else {
+                historyHtml += '<div style="display: flex; flex-direction: column; gap: 0.75rem;">';
+                history.forEach((ride, index) => {
+                    const chatMsgCount = (ride.chatHistory ? ride.chatHistory.length : 0);
+                    const messagesText = chatMsgCount > 0 ? (chatMsgCount - 1) + ' chat follow-up(s)' : 'Initial report only';
+                    historyHtml += '<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.15); padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">' +
+                        '<div>' +
+                            '<div style="font-weight: 600; font-size: 0.85rem; color: #ffffff;">📅 ' + ride.date + ' (' + ride.distance_km + ' km)</div>' +
+                            '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + ride.model + ' | ' + messagesText + '</div>' +
+                        '</div>' +
+                        '<button class="btn-action sd-delete-ride-btn" data-id="' + ride.id + '" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-color: rgba(231,76,60,0.3); color: #fc8181;">Delete</button>' +
+                    '</div>';
+                });
+                historyHtml += '</div>';
+                historySection.innerHTML = historyHtml;
+            }
+            savedDataContent.appendChild(historySection);
+
+            const deleteRideBtns = historySection.querySelectorAll('.sd-delete-ride-btn');
+            deleteRideBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const rideId = e.target.getAttribute('data-id');
+                    if (confirm('Are you sure you want to delete this ride coaching report and chat history from this browser?')) {
+                        const updatedHistory = history.filter(r => r.id !== rideId);
+                        localStorage.setItem('fit_ride_history', JSON.stringify(updatedHistory));
+                        renderHistory();
+                        checkCachedReport(false);
+                        populateSavedDataModal();
+                    }
+                });
+            });
+
+            // Category 3: Subjective Ride Notes
+            const notesSection = document.createElement('div');
+            notesSection.style.background = 'rgba(255,255,255,0.02)';
+            notesSection.style.border = '1px solid rgba(255,255,255,0.05)';
+            notesSection.style.borderRadius = '12px';
+            notesSection.style.padding = '1.25rem';
+            
+            let notesHtml = '<h4 style="margin: 0 0 1rem 0; font-family: \'Outfit\'; color: var(--accent); font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">💬 Subjective Ride Notes</h4>';
+            
+            const notesKeys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith('fit_ride_notes_')) {
+                    notesKeys.push(k);
+                }
+            }
+
+            if (notesKeys.length === 0) {
+                notesHtml += '<div style="font-size: 0.8rem; color: var(--text-secondary); font-style: italic; padding: 0.5rem 0;">No subjective ride notes found.</div>';
+                notesSection.innerHTML = notesHtml;
+            } else {
+                notesHtml += '<div style="display: flex; flex-direction: column; gap: 0.75rem;">';
+                notesKeys.forEach(k => {
+                    const timestamp = k.replace('fit_ride_notes_', '');
+                    let formattedDate = timestamp;
+                    try {
+                        formattedDate = new Date(timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    } catch(e) {}
+                    
+                    const noteContent = localStorage.getItem(k) || '';
+                    const notePreview = noteContent.length > 60 ? noteContent.substring(0, 60) + '...' : noteContent;
+
+                    notesHtml += '<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.15); padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">' +
+                        '<div style="flex: 1; margin-right: 1rem;">' +
+                            '<div style="font-weight: 600; font-size: 0.85rem; color: #ffffff;">Ride: ' + formattedDate + '</div>' +
+                            '<div style="font-size: 0.75rem; color: var(--text-secondary); font-style: italic;">"' + notePreview + '"</div>' +
+                        '</div>' +
+                        '<button class="btn-action sd-delete-note-btn" data-key="' + k + '" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-color: rgba(231,76,60,0.3); color: #fc8181;">Delete</button>' +
+                    '</div>';
+                });
+                notesHtml += '</div>';
+                notesSection.innerHTML = notesHtml;
+            }
+            savedDataContent.appendChild(notesSection);
+
+            const deleteNoteBtns = notesSection.querySelectorAll('.sd-delete-note-btn');
+            deleteNoteBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const noteKey = e.target.getAttribute('data-key');
+                    if (confirm('Are you sure you want to delete these subjective ride notes?')) {
+                        localStorage.removeItem(noteKey);
+                        if (rideData && rideData.summary && noteKey === 'fit_ride_notes_' + rideData.summary.start_time) {
+                            const rideNotesInput = document.getElementById('coach-ride-notes');
+                            if (rideNotesInput) rideNotesInput.value = '';
+                            const savedBadge = document.getElementById('coach-notes-saved-badge');
+                            if (savedBadge) savedBadge.style.display = 'none';
+                        }
+                        checkCachedReport(false);
+                        populateSavedDataModal();
+                    }
+                });
+            });
+        };
+
+        savedDataClearAllBtn.addEventListener('click', () => {
+            if (confirm('⚠️ WARNING: This will permanently delete ALL analyzed rides history, chat logs, training plan details, default bike settings, and API keys from this browser.\n\nAre you sure you want to delete everything?')) {
+                if (confirm('CONFIRM IRREVERSIBLE OPERATION:\nAre you absolutely sure? This cannot be undone.')) {
+                    const keysToRemove = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const k = localStorage.key(i);
+                        if (k && (k.startsWith('fit_') || k.startsWith('directeur_') || k === 'gemini_api_key')) {
+                            keysToRemove.push(k);
+                        }
+                    }
+                    keysToRemove.forEach(k => localStorage.removeItem(k));
+                    
+                    const coachKeyPanel = document.getElementById('coach-key-panel');
+                    const coachAnalysisPanel = document.getElementById('coach-analysis-panel');
+                    const coachClearKeyBtn = document.getElementById('coach-clear-key-btn');
+                    if (coachKeyPanel) coachKeyPanel.style.display = 'flex';
+                    if (coachAnalysisPanel) coachAnalysisPanel.style.display = 'none';
+                    if (coachClearKeyBtn) coachClearKeyBtn.style.display = 'none';
+
+                    const planInput = document.getElementById('coach-plan-input');
+                    if (planInput) planInput.value = '';
+
+                    const rideNotesInput = document.getElementById('coach-ride-notes');
+                    if (rideNotesInput) rideNotesInput.value = '';
+
+                    const savedBadge = document.getElementById('coach-notes-saved-badge');
+                    if (savedBadge) savedBadge.style.display = 'none';
+
+                    const bikeSelector = document.getElementById('bike-selector');
+                    if (bikeSelector) {
+                        bikeSelector.value = '';
+                        recalculateGearsClientSide('');
+                    }
+
+                    renderHistory();
+                    checkCachedReport(false);
+                    savedDataModal.style.display = 'none';
+                    alert('All browser local storage data wiped successfully.');
+                }
+            }
+        });
+
+        // Backup Export
+        savedDataExportBtn.addEventListener('click', () => {
+            const backup = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && (k.startsWith('fit_') || k.startsWith('directeur_') || k === 'gemini_api_key')) {
+                    backup[k] = localStorage.getItem(k);
+                }
+            }
+            
+            const jsonString = JSON.stringify(backup, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'directeurAI_backup_' + new Date().toISOString().split('T')[0] + '.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // Backup Import
+        savedDataImportBtn.addEventListener('click', () => {
+            savedDataImportFile.click();
+        });
+
+        savedDataImportFile.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const importedData = JSON.parse(event.target.result);
+                    
+                    if (typeof importedData !== 'object' || importedData === null) {
+                        throw new Error('Invalid backup file format.');
+                    }
+
+                    let count = 0;
+                    Object.keys(importedData).forEach(k => {
+                        if (k.startsWith('fit_') || k.startsWith('directeur_') || k === 'gemini_api_key') {
+                            localStorage.setItem(k, importedData[k]);
+                            count++;
+                        }
+                    });
+
+                    if (count === 0) {
+                        alert('No valid directeurAI browser cache data found in the backup file.');
+                        return;
+                    }
+
+                    const planInput = document.getElementById('coach-plan-input');
+                    if (planInput) {
+                        planInput.value = localStorage.getItem('fit_athlete_training_plan') || '';
+                    }
+                    
+                    const savedKey = localStorage.getItem('gemini_api_key');
+                    const coachKeyPanel = document.getElementById('coach-key-panel');
+                    const coachAnalysisPanel = document.getElementById('coach-analysis-panel');
+                    const coachClearKeyBtn = document.getElementById('coach-clear-key-btn');
+                    if (savedKey) {
+                        if (coachKeyPanel) coachKeyPanel.style.display = 'none';
+                        if (coachAnalysisPanel) coachAnalysisPanel.style.display = 'flex';
+                        if (coachClearKeyBtn) coachClearKeyBtn.style.display = 'inline-block';
+                    } else {
+                        if (coachKeyPanel) coachKeyPanel.style.display = 'flex';
+                        if (coachAnalysisPanel) coachAnalysisPanel.style.display = 'none';
+                        if (coachClearKeyBtn) coachClearKeyBtn.style.display = 'none';
+                    }
+
+                    const noteKey = 'fit_ride_notes_' + rideData.summary.start_time;
+                    const rideNotesInput = document.getElementById('coach-ride-notes');
+                    if (rideNotesInput) {
+                        rideNotesInput.value = localStorage.getItem(noteKey) || '';
+                    }
+                    const savedBadge = document.getElementById('coach-notes-saved-badge');
+                    if (savedBadge) {
+                        savedBadge.style.display = (rideNotesInput && rideNotesInput.value) ? 'inline' : 'none';
+                    }
+
+                    const bikeSelector = document.getElementById('bike-selector');
+                    if (bikeSelector) {
+                        const initialBike = localStorage.getItem('directeur_selected_bike');
+                        if (initialBike) {
+                            bikeSelector.value = initialBike;
+                            recalculateGearsClientSide(initialBike);
+                        } else {
+                            bikeSelector.value = '';
+                            recalculateGearsClientSide('');
+                        }
+                    }
+
+                    renderHistory();
+                    checkCachedReport(true);
+                    populateSavedDataModal();
+                    
+                    alert('Successfully imported ' + count + ' data items from backup file.');
+                } catch(err) {
+                    alert('Failed to parse backup file: ' + err.message);
+                }
+                savedDataImportFile.value = '';
+            };
+            reader.readAsText(file);
         });
 
     </script>
