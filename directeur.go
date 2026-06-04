@@ -2245,6 +2245,18 @@ func getDashboardTemplate() string {
     </style>
 </head>
 <body>
+    <div id="connection-error-banner" style="display: none; background: rgba(231, 76, 60, 0.15); border-bottom: 1px solid #e74c3c; padding: 0.75rem 1.5rem; text-align: center; font-size: 0.9rem; color: #ffffff; align-items: center; justify-content: center; gap: 1rem; z-index: 1000; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+        <div style="display: flex; align-items: center; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+            <span style="font-weight: 600; color: #ff6b6b; display: flex; align-items: center; gap: 0.3rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                Hammerhead Account Connection Expired:
+            </span>
+            <span id="connection-error-message" style="color: #e2e8f0; font-family: monospace; font-size: 0.8rem;">Token refresh failed.</span>
+            <a id="btn-reauth-banner" href="#" class="btn-action" style="padding: 0.4rem 1.2rem; font-size: 0.8rem; border-color: #e74c3c; color: #ffffff; background: rgba(231, 76, 60, 0.25); text-decoration: none; border-radius: 8px; font-weight: 600; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2); transition: all 0.2s;">
+                🔗 Re-authorize Account
+            </a>
+        </div>
+    </div>
 
     <header>
         <div class="logo-area">
@@ -2870,6 +2882,21 @@ func getDashboardTemplate() string {
                     .then(data => {
                         if (data.bikes && data.bikes.length > 0) {
                             populateSelectorOptions(data.bikes);
+                        }
+                        
+                        // Handle connection error banner at the top of the page
+                        const errBanner = document.getElementById('connection-error-banner');
+                        if (data.hammerhead_error) {
+                            const errMessage = document.getElementById('connection-error-message');
+                            const reauthLink = document.getElementById('btn-reauth-banner');
+                            if (errBanner && errMessage && reauthLink) {
+                                errMessage.textContent = data.hammerhead_error;
+                                const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                                reauthLink.href = authUrl;
+                                errBanner.style.display = 'block';
+                            }
+                        } else if (errBanner) {
+                            errBanner.style.display = 'none';
                         }
                     })
                     .catch(err => {
@@ -4232,12 +4259,16 @@ func getDashboardTemplate() string {
                 }
             }
 
+            const selectedBike = document.getElementById('bike-selector') ? document.getElementById('bike-selector').value : '';
+            const bikeLine = selectedBike ? ('- Bike Ridden: ' + selectedBike + '\n') : '- Bike Ridden: Default Gears / Standard Setup\n';
+
             const prompt = 'You are an elite cycling coach. Analyze this ride telemetry data and provide a detailed, constructive, and highly actionable coaching report.\n\n' +
                 (planText ? 'CRITICAL: The athlete has provided their specific Training Plan and Goals below. You MUST evaluate this ride directly against their plan, assessing how well they followed it and whether their performance aligns with their goals.\n\n' : '') +
                 (historyContext ? 'CRITICAL: You are also provided with a summary of the athlete\'s past rides. Compare their performance on this ride to their previous efforts, highlighting progress, trends, or areas needing attention.\n\n' : '') +
                 planContext +
                 historyContext +
                 'Here is the telemetry data for the CURRENT ride:\n' +
+                bikeLine +
                 '- Start Time: ' + rideData.summary.start_time + '\n' +
                 '- Total Distance: ' + (rideData.summary.distance_meters / 1000).toFixed(2) + ' km\n' +
                 '- Total Duration: ' + formatDuration(rideData.summary.duration_seconds) + '\n' +
@@ -4581,6 +4612,21 @@ func getDashboardTemplate() string {
                 })
                 .then(data => {
                     selectRideLoading.style.display = 'none';
+
+                    // Toggle connection error banner
+                    const errBanner = document.getElementById('connection-error-banner');
+                    if (data.hammerhead_error) {
+                        const errMessage = document.getElementById('connection-error-message');
+                        const reauthLink = document.getElementById('btn-reauth-banner');
+                        if (errBanner && errMessage && reauthLink) {
+                            errMessage.textContent = data.hammerhead_error;
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                            reauthLink.href = authUrl;
+                            errBanner.style.display = 'block';
+                        }
+                    } else if (errBanner) {
+                        errBanner.style.display = 'none';
+                    }
 
                     if (data.local && data.local.length > 0) {
                         data.local.forEach(file => {
