@@ -1811,6 +1811,8 @@ func getDashboardTemplate() string {
     <!-- Leaflet.js for Maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- KaTeX for formula rendering -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
@@ -2241,6 +2243,66 @@ func getDashboardTemplate() string {
             background: var(--accent-glow) !important;
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Markdown rendering styles for AI Coach Report */
+        #coach-report-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.88rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        }
+        #coach-report-content th {
+            background: rgba(255, 255, 255, 0.05);
+            color: #ffffff;
+            font-weight: 600;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            font-family: 'Outfit';
+        }
+        #coach-report-content td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+        #coach-report-content tr:last-child td {
+            border-bottom: none;
+        }
+        #coach-report-content tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.015);
+        }
+        #coach-report-content ul, #coach-report-content ol {
+            margin-bottom: 1rem;
+            padding-left: 1.5rem;
+        }
+        #coach-report-content li {
+            margin-bottom: 0.35rem;
+            line-height: 1.5;
+        }
+        #coach-report-content p {
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+        #coach-report-content hr {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin: 1.5rem 0;
+        }
+        #coach-report-content blockquote {
+            border-left: 4px solid var(--accent);
+            background: rgba(255, 255, 255, 0.02);
+            padding: 0.75rem 1rem;
+            margin: 0 0 1rem 0;
+            border-radius: 0 8px 8px 0;
+            color: #ffffff;
+            font-style: italic;
         }
     </style>
 </head>
@@ -3967,6 +4029,10 @@ func getDashboardTemplate() string {
         };
 
         const formatMarkdown = (text) => {
+            if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
+                return marked.parse(text);
+            }
+
             let codeBlocks = [];
             // Extract code blocks to avoid line break transformations inside them
             let tempText = text.replace(/` + "`" + `{3}([\s\S]*?)` + "`" + `{3}/g, (match, code) => {
