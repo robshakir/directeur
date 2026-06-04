@@ -313,11 +313,11 @@ func main() {
 
 		// Generate HTML Dashboard
 		fmt.Printf("Generating HTML dashboard to %s...\n", *outputHTML)
-		writeHTML(*outputHTML, resolvedAnalysis)
+		writeHTML(*outputHTML, resolvedAnalysis, config)
 		fmt.Println("Analysis completed successfully!")
 	} else {
 		// Generate blank dashboard to serve as base if in serveMode but no initial data found
-		writeHTML(*outputHTML, RideAnalysis{})
+		writeHTML(*outputHTML, RideAnalysis{}, config)
 	}
 
 	// Serve Mode if requested
@@ -1350,7 +1350,7 @@ func writeJSON(path string, analysis RideAnalysis) {
 	}
 }
 
-func writeHTML(path string, analysis RideAnalysis) {
+func writeHTML(path string, analysis RideAnalysis, config Config) {
 	tmplSrc := getDashboardTemplate()
 	tmpl, err := template.New("dashboard").Parse(tmplSrc)
 	if err != nil {
@@ -1363,6 +1363,12 @@ func writeHTML(path string, analysis RideAnalysis) {
 	if err != nil {
 		fmt.Printf("Error encoding embedded JSON: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Prepare bikes configuration for embedding
+	bikesData, err := json.Marshal(config.Bikes)
+	if err != nil {
+		bikesData = []byte("[]")
 	}
 
 	// Read schema
@@ -1381,6 +1387,7 @@ func writeHTML(path string, analysis RideAnalysis) {
 	type TmplData struct {
 		JSONStr   template.JS
 		SchemaStr template.JS
+		BikesStr  template.JS
 		Summary   RideSummary
 		GearUsage []GearStats
 	}
@@ -1388,6 +1395,7 @@ func writeHTML(path string, analysis RideAnalysis) {
 	data := TmplData{
 		JSONStr:   template.JS(jsonData),
 		SchemaStr: template.JS(schemaBytes),
+		BikesStr:  template.JS(bikesData),
 		Summary:   analysis.Summary,
 		GearUsage: analysis.GearUsage,
 	}
@@ -2692,6 +2700,7 @@ func getDashboardTemplate() string {
     <script>
         let rideData = {{.JSONStr}};
         const schemaData = {{.SchemaStr}};
+        const configBikes = {{.BikesStr}};
         console.log("Loaded Ride Data:", rideData);
 
         // Global Chart and Map references for dynamic updating
@@ -2699,6 +2708,10 @@ func getDashboardTemplate() string {
         let leafletMap, startMarker, endMarker;
         let fullJSONString = "";
         const fullSchemaString = JSON.stringify(schemaData, null, 2);
+
+        let currentRideSource = 'local';
+        let currentRideParam = rideData ? (rideData.source_file || '') : '';
+        let currentRideParam2 = '';
 
         // Apply Theme based on Month of the ride or user selection
         let defaultThemeClass = 'theme-carbon';
@@ -2809,9 +2822,150 @@ func getDashboardTemplate() string {
                 applyTheme(e.target.value);
             });
 
+            // Initialize Bike Selector from Config
+            initializeBikeSelector();
+
+            // Bind bike selector change listener
+            const bikeSelector = document.getElementById('bike-selector');
+            if (bikeSelector) {
+                bikeSelector.addEventListener('change', () => {
+                    const selectedBikeName = bikeSelector.value;
+                    
+                    // Update URL query parameter
+                    const url = new URL(window.location.href);
+                    if (selectedBikeName) {
+                        url.searchParams.set('bike', selectedBikeName);
+                    } else {
+                        url.searchParams.delete('bike');
+                    }
+                    window.history.replaceState({}, '', url);
+                    
+                    if (window.location.protocol.startsWith('http') && currentRideParam) {
+                        // Running on a server, perform server-side re-analysis
+                        loadRideData(currentRideSource, currentRideParam, currentRideParam2);
+                    } else {
+                        // Running locally/statically, perform client-side recalculation
+                        recalculateGearsClientSide(selectedBikeName);
+                    }
+                });
+            }
+
             // Initial render
             renderDashboard(rideData);
         });
+
+        function initializeBikeSelector() {
+            const bikeSelector = document.getElementById('bike-selector');
+            if (!bikeSelector) return;
+            
+            if (typeof configBikes !== 'undefined' && configBikes && configBikes.length > 0) {
+                bikeSelector.innerHTML = '<option value="">⚙️ Default Gears</option>';
+                configBikes.forEach(bike => {
+                    const opt = document.createElement('option');
+                    opt.value = bike.name;
+                    opt.textContent = '🚲 ' + bike.name;
+                    bikeSelector.appendChild(opt);
+                });
+                bikeSelector.style.display = 'block';
+                
+                const urlParams = new URLSearchParams(window.location.search);
+                const initialBike = urlParams.get('bike');
+                if (initialBike && configBikes.some(b => b.name === initialBike)) {
+                    bikeSelector.value = initialBike;
+                    // Wait briefly for everything to render, then apply client-side recalculation
+                    setTimeout(() => {
+                        recalculateGearsClientSide(initialBike);
+                    }, 50);
+                }
+            }
+        }
+
+        function recalculateGearsClientSide(bikeName) {
+            if (!rideData || !rideData.records) return;
+            
+            let bike = null;
+            if (typeof configBikes !== 'undefined' && configBikes) {
+                bike = configBikes.find(b => b.name === bikeName);
+            }
+            
+            const currentRideId = rideData.summary.start_time + rideData.summary.duration_seconds;
+            if (!window.originalRecords || window.originalRideId !== currentRideId) {
+                window.originalRecords = JSON.parse(JSON.stringify(rideData.records));
+                window.originalGearUsage = JSON.parse(JSON.stringify(rideData.gear_usage));
+                window.originalSummary = JSON.parse(JSON.stringify(rideData.summary));
+                window.originalRideId = currentRideId;
+            }
+            
+            if (!bike) {
+                rideData.records = JSON.parse(JSON.stringify(window.originalRecords));
+                rideData.gear_usage = JSON.parse(JSON.stringify(window.originalGearUsage));
+                rideData.summary = JSON.parse(JSON.stringify(window.originalSummary));
+                renderDashboard(rideData);
+                return;
+            }
+            
+            const frontGears = bike.front_gears || [];
+            const rearGears = bike.rear_gears || [];
+            
+            let frontShifts = 0;
+            let rearShifts = 0;
+            let lastFrontNum = 0;
+            let lastRearNum = 0;
+            
+            const gearDurations = {};
+            
+            rideData.records.forEach((r, idx) => {
+                const origRecord = window.originalRecords[idx];
+                const fNum = origRecord.front_gear_num;
+                const rNum = origRecord.rear_gear_num;
+                
+                let fTeeth = origRecord.front_gear_teeth;
+                if (fNum > 0 && fNum <= frontGears.length) {
+                    fTeeth = frontGears[fNum - 1];
+                }
+                
+                let rTeeth = origRecord.rear_gear_teeth;
+                if (rNum > 0 && rNum <= rearGears.length) {
+                    rTeeth = rearGears[rNum - 1];
+                }
+                
+                r.front_gear_teeth = fTeeth;
+                r.rear_gear_teeth = rTeeth;
+                r.gear_ratio = rTeeth > 0 ? fTeeth / rTeeth : 0;
+                
+                if (idx > 0) {
+                    if (fNum !== lastFrontNum && lastFrontNum !== 0) frontShifts++;
+                    if (rNum !== lastRearNum && lastRearNum !== 0) rearShifts++;
+                }
+                lastFrontNum = fNum;
+                lastRearNum = rNum;
+                
+                if (fTeeth > 0 && rTeeth > 0) {
+                    const combo = fTeeth + 'x' + rTeeth;
+                    gearDurations[combo] = (gearDurations[combo] || 0) + 1;
+                }
+            });
+            
+            const duration = rideData.summary.duration_seconds || 1;
+            const usage = [];
+            for (const combo in gearDurations) {
+                const secs = gearDurations[combo];
+                const pct = (secs / duration) * 100.0;
+                usage.push({
+                    combination: combo,
+                    seconds: secs,
+                    percentage: pct
+                });
+            }
+            usage.sort((a, b) => b.seconds - a.seconds);
+            
+            rideData.gear_usage = usage;
+            rideData.summary.total_front_shifts = frontShifts;
+            rideData.summary.total_rear_shifts = rearShifts;
+            rideData.summary.total_shifts = frontShifts + rearShifts;
+            
+            renderDashboard(rideData);
+        }
 
         // Modular renderDashboard function for dynamic updates
         function renderDashboard(data) {
@@ -2821,6 +2975,16 @@ func getDashboardTemplate() string {
                 document.getElementById('theme-badge').innerText = "No Ride Loaded";
                 return;
             }
+
+            // Cache original data for client-side bike mapping swaps
+            const currentRideId = data.summary.start_time + data.summary.duration_seconds;
+            if (!window.originalRecords || window.originalRideId !== currentRideId) {
+                window.originalRecords = JSON.parse(JSON.stringify(data.records));
+                window.originalGearUsage = JSON.parse(JSON.stringify(data.gear_usage));
+                window.originalSummary = JSON.parse(JSON.stringify(data.summary));
+                window.originalRideId = currentRideId;
+            }
+
             rideData = data;
             fullJSONString = JSON.stringify(rideData, null, 2);
 
@@ -4330,6 +4494,10 @@ func getDashboardTemplate() string {
             selectRideModal.style.display = 'none';
             analysisLoadingOverlay.style.display = 'flex';
 
+            currentRideSource = source;
+            currentRideParam = param;
+            currentRideParam2 = param2;
+
             let url = '/api/analyze?source=' + source;
             if (source === 'local') {
                 url += '&file=' + encodeURIComponent(param);
@@ -4337,6 +4505,12 @@ func getDashboardTemplate() string {
                 url += '&id=' + encodeURIComponent(param);
             } else if (source === 'wahoo') {
                 url += '&id=' + encodeURIComponent(param) + '&url=' + encodeURIComponent(param2);
+            }
+
+            const bikeSelector = document.getElementById('bike-selector');
+            const selectedBike = bikeSelector ? bikeSelector.value : '';
+            if (selectedBike) {
+                url += '&bike=' + encodeURIComponent(selectedBike);
             }
 
             fetch(url)
@@ -4770,6 +4944,25 @@ func getDashboardTemplate() string {
                             emptyItem.style.fontSize = '0.9rem';
                             emptyItem.innerText = 'No Wahoo activities found.';
                             listWahooContainer.appendChild(emptyItem);
+                        }
+                    }
+
+                    if (data.bikes && data.bikes.length > 0) {
+                        const bikeSelector = document.getElementById('bike-selector');
+                        if (bikeSelector) {
+                            const currentVal = bikeSelector.value;
+                            bikeSelector.innerHTML = '<option value="">⚙️ Default Gears</option>';
+                            data.bikes.forEach(bike => {
+                                const opt = document.createElement('option');
+                                opt.value = bike.name;
+                                opt.textContent = '🚲 ' + bike.name;
+                                bikeSelector.appendChild(opt);
+                            });
+                            bikeSelector.value = currentVal;
+                            if (bikeSelector.value !== currentVal) {
+                                bikeSelector.value = '';
+                            }
+                            bikeSelector.style.display = 'block';
                         }
                     }
 
