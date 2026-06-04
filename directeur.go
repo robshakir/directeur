@@ -2843,6 +2843,13 @@ func getDashboardTemplate() string {
                 bikeSelector.addEventListener('change', () => {
                     const selectedBikeName = bikeSelector.value;
                     
+                    // Persist selected bike to localStorage
+                    if (selectedBikeName) {
+                        localStorage.setItem('directeur_selected_bike', selectedBikeName);
+                    } else {
+                        localStorage.removeItem('directeur_selected_bike');
+                    }
+
                     // Update URL query parameter
                     const url = new URL(window.location.href);
                     if (selectedBikeName) {
@@ -2920,7 +2927,11 @@ func getDashboardTemplate() string {
                 bikeSelector.style.display = 'block';
                 
                 const urlParams = new URLSearchParams(window.location.search);
-                const initialBike = urlParams.get('bike');
+                let initialBike = urlParams.get('bike');
+                if (!initialBike) {
+                    initialBike = localStorage.getItem('directeur_selected_bike');
+                }
+                
                 if (initialBike && bikesList.some(b => b.name === initialBike)) {
                     bikeSelector.value = initialBike;
                     setTimeout(() => {
