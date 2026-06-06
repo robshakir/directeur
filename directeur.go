@@ -2527,7 +2527,7 @@ func getDashboardTemplate() string {
     </div>
 
     <!-- Calendar View Container -->
-    <div id="calendar-view" style="display: none; padding: 2rem; max-width: 1300px; margin: 0 auto; min-height: 100vh; box-sizing: border-box; font-family: var(--font-family); color: var(--text-primary);">
+    <div id="calendar-view" style="display: none; padding: 2rem; max-width: 1400px; margin: 0 auto; min-height: 100vh; box-sizing: border-box; font-family: var(--font-family); color: var(--text-primary);">
         <header style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1.5rem; margin-bottom: 2rem;">
             <div class="logo-area">
                 <h1 style="display: flex; align-items: center; gap: 0.5rem; text-transform: none; letter-spacing: normal; cursor: pointer;" onclick="showLandingView()" title="Return to Landing Page">
@@ -2547,7 +2547,7 @@ func getDashboardTemplate() string {
             <!-- Grid columns split for desktop -->
             <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
                 <!-- Left Column: Inputs -->
-                <div class="card" style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 1.25rem;">
+                <div class="card" style="flex: 1 1 320px; max-width: 340px; display: flex; flex-direction: column; gap: 1.25rem;">
                     <div class="card-header">
                         <div class="card-title">Planner Configuration</div>
                     </div>
@@ -2577,12 +2577,24 @@ func getDashboardTemplate() string {
                 </div>
 
                 <!-- Right Column: Outputs -->
-                <div style="flex: 2; min-width: 320px; display: flex; flex-direction: column; gap: 1.5rem;">
+                <div style="flex: 3 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 1.5rem;">
                     <!-- Weekly Focus Box -->
                     <div class="card" id="calendar-summary-box" style="display: none; background: linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.03) 100%); border-left: 4px solid var(--accent);">
                         <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em;">Weekly Physiological Focus</h4>
                         <p id="calendar-summary-text" style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; margin: 0;"></p>
                     </div>
+
+                    <!-- Calendar Overview Box -->
+                    <div class="card" id="calendar-overview-box" style="display: none; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 1.25rem;">
+                        <h4 style="color: var(--text-secondary); margin: 0 0 1rem 0; font-family: 'Outfit'; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.4rem;">
+                            <span>📅</span> Weekly Schedule Overview (Click to jump)
+                        </h4>
+                        <div id="calendar-overview-grid" style="display: grid; grid-template-columns: repeat(7, minmax(80px, 1fr)); gap: 0.75rem; overflow-x: auto; padding-bottom: 0.25rem;">
+                            <!-- Will be populated dynamically -->
+                        </div>
+                    </div>
+
+
 
                     <!-- Calendar Loading Indicator -->
                     <div id="calendar-loading" style="display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem; padding: 4rem 2rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px;">
@@ -4899,11 +4911,14 @@ func getDashboardTemplate() string {
             const grid = document.getElementById('calendar-grid');
             const summaryBox = document.getElementById('calendar-summary-box');
             const summaryText = document.getElementById('calendar-summary-text');
+            const overviewBox = document.getElementById('calendar-overview-box');
+            const overviewGrid = document.getElementById('calendar-overview-grid');
             const emptyState = document.getElementById('calendar-empty-state');
             
             if (!data || !data.days) {
                 grid.style.display = 'none';
                 summaryBox.style.display = 'none';
+                overviewBox.style.display = 'none';
                 emptyState.style.display = 'flex';
                 return;
             }
@@ -4911,10 +4926,17 @@ func getDashboardTemplate() string {
             emptyState.style.display = 'none';
             summaryText.innerText = data.weekly_summary || 'Weekly training plan focus.';
             summaryBox.style.display = 'block';
+            overviewBox.style.display = 'block';
 
             grid.innerHTML = '';
+            overviewGrid.innerHTML = '';
             
-            data.days.forEach(d => {
+            let startDate = null;
+            if (data && data.start_date) {
+                startDate = new Date(data.start_date);
+            }
+            
+            data.days.forEach((d, idx) => {
                 let badgeColor = 'rgba(255,255,255,0.08)';
                 let textColor = '#ffffff';
                 let borderColor = 'rgba(255,255,255,0.15)';
@@ -4942,7 +4964,79 @@ func getDashboardTemplate() string {
                     borderColor = 'rgba(155, 89, 182, 0.25)';
                 }
 
+                let dateDisplay = '';
+                let shortDateStr = '';
+                const weekdayOffsets = {
+                    'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+                    'friday': 4, 'saturday': 5, 'sunday': 6
+                };
+                const dayName = (d.day || '').toLowerCase().trim();
+                const offset = weekdayOffsets[dayName] !== undefined ? weekdayOffsets[dayName] : idx;
+
+                if (startDate) {
+                    const dayDate = new Date(startDate);
+                    dayDate.setDate(startDate.getDate() + offset);
+                    shortDateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    dateDisplay = '<span style="font-size: 0.85rem; color: var(--text-secondary); margin-top: -0.2rem; margin-bottom: 0.2rem; font-weight: 500;">' + shortDateStr + '</span>';
+                }
+
+                // Create the top bar overview capsule
+                const overviewCard = document.createElement('div');
+                overviewCard.style.background = 'var(--bg-tertiary)';
+                overviewCard.style.border = '1px solid var(--border-color)';
+                overviewCard.style.borderRadius = '8px';
+                overviewCard.style.padding = '0.75rem';
+                overviewCard.style.cursor = 'pointer';
+                overviewCard.style.transition = 'all 0.2s ease-in-out';
+                overviewCard.style.display = 'flex';
+                overviewCard.style.flexDirection = 'column';
+                overviewCard.style.gap = '0.35rem';
+                overviewCard.style.minWidth = '100px';
+
+                overviewCard.onmouseover = () => {
+                    overviewCard.style.transform = 'translateY(-2px)';
+                    overviewCard.style.borderColor = 'var(--accent)';
+                    overviewCard.style.background = 'rgba(255,255,255,0.03)';
+                };
+                overviewCard.onmouseout = () => {
+                    overviewCard.style.transform = 'translateY(0)';
+                    overviewCard.style.borderColor = 'var(--border-color)';
+                    overviewCard.style.background = 'var(--bg-tertiary)';
+                };
+
+                overviewCard.onclick = () => {
+                    const targetRow = document.getElementById('calendar-day-row-' + d.day);
+                    if (targetRow) {
+                        targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        targetRow.style.boxShadow = '0 0 20px var(--accent-glow)';
+                        targetRow.style.borderColor = 'var(--accent)';
+                        targetRow.style.transform = 'scale(1.01)';
+                        targetRow.style.transition = 'all 0.4s ease';
+                        setTimeout(() => {
+                            targetRow.style.boxShadow = 'none';
+                            targetRow.style.borderColor = 'var(--border-color)';
+                            targetRow.style.transform = 'scale(1)';
+                        }, 1500);
+                    }
+                };
+
+                const titleText = d.title || 'Workout';
+                const durationText = d.duration_mins ? d.duration_mins + ' mins' : 'Rest Day';
+
+                overviewCard.innerHTML = 
+                    '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 0.25rem;">' +
+                        '<strong style="font-size: 0.85rem; color: #ffffff; font-family: \'Outfit\';">' + d.day.substring(0, 3) + '</strong>' +
+                        '<span style="font-size: 0.75rem; color: var(--text-secondary);">' + shortDateStr + '</span>' +
+                    '</div>' +
+                    '<span class="badge" style="background: ' + badgeColor + '; color: ' + textColor + '; border: 1px solid ' + borderColor + '; font-size: 0.65rem; text-align: center; border-radius: 4px; padding: 0.05rem 0.25rem; text-transform: uppercase; width: fit-content; font-weight: 600; font-family: var(--font-family);">' + (type.includes('rest') ? 'REST' : d.workout_type) + '</span>' +
+                    '<div style="font-size: 0.75rem; font-weight: 500; color: #ffffff; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; margin-top: 0.1rem;" title="' + titleText + '">' + titleText + '</div>' +
+                    '<div style="font-size: 0.7rem; color: var(--text-secondary);">' + durationText + '</div>';
+
+                overviewGrid.appendChild(overviewCard);
+
+                // Create the detailed Day Row Card
                 const row = document.createElement('div');
+                row.id = 'calendar-day-row-' + d.day;
                 row.className = 'calendar-day-row';
                 row.style.display = 'flex';
                 row.style.gap = '1.5rem';
@@ -4951,17 +5045,19 @@ func getDashboardTemplate() string {
                 row.style.borderRadius = '12px';
                 row.style.padding = '1.25rem';
                 row.style.alignItems = 'start';
+                row.style.transition = 'all 0.3s ease';
                 
                 row.innerHTML = 
-                    '<div style="min-width: 140px; display: flex; flex-direction: column; gap: 0.4rem;">' +
+                    '<div style="flex: 0 0 160px; min-width: 160px; display: flex; flex-direction: column; gap: 0.4rem;">' +
                         '<span style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">' + d.day + '</span>' +
+                        dateDisplay +
                         '<span class="badge" style="background: ' + badgeColor + '; color: ' + textColor + '; border: 1px solid ' + borderColor + '; font-size: 0.75rem; text-align: center; border-radius: 4px; padding: 0.15rem 0.4rem; text-transform: uppercase; width: fit-content; font-weight: 600;">' + d.workout_type + '</span>' +
                     '</div>' +
-                    '<div style="flex: 1.5; display: flex; flex-direction: column; gap: 0.3rem;">' +
+                    '<div style="flex: 3 1 0px; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; padding-right: 0.5rem;">' +
                         '<span style="font-size: 1rem; font-weight: 600; color: #ffffff; font-family: \'Outfit\';">' + d.title + '</span>' +
                         '<span style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">' + d.description + '</span>' +
                     '</div>' +
-                    '<div class="calendar-day-details" style="flex: 2; display: flex; flex-direction: column; gap: 0.5rem; border-left: 1px solid rgba(255,255,255,0.05); padding-left: 1.5rem;">' +
+                    '<div class="calendar-day-details" style="flex: 4 1 0px; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; border-left: 1px solid rgba(255,255,255,0.05); padding-left: 1.5rem;">' +
                         '<div style="display: flex; gap: 1.5rem; font-size: 0.8rem; color: var(--text-secondary);">' +
                             '<span>⏱️ <strong>' + d.duration_mins + '</strong> mins</span>' +
                             '<span>⚡ Target TSS: <strong>' + (d.target_tss || 0) + '</strong></span>' +
@@ -4998,6 +5094,8 @@ func getDashboardTemplate() string {
             document.getElementById('calendar-empty-state').style.display = 'none';
             document.getElementById('calendar-grid').style.display = 'none';
             document.getElementById('calendar-summary-box').style.display = 'none';
+            document.getElementById('calendar-overview-box').style.display = 'none';
+
             
             // Build recent ride history context
             let historyText = "No previous ride history found.";
@@ -5015,11 +5113,48 @@ func getDashboardTemplate() string {
                 }
             }
 
+            // Calculate current date context and training week dates
+            const today = new Date();
+            const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            
+            let startMonday = new Date(today);
+            if (dayOfWeek >= 1 && dayOfWeek <= 3) {
+                // Mon-Wed: plan for this week (starting this week's Monday)
+                startMonday.setDate(today.getDate() - (dayOfWeek - 1));
+            } else {
+                // Thu-Sun: plan for next week (starting next week's Monday)
+                const daysToMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+                startMonday.setDate(today.getDate() + daysToMonday);
+            }
+            
+            const formatDate = (d) => d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            
+            const todayStr = formatDate(today);
+            
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+            const tomorrowStr = formatDate(tomorrow);
+            
+            const startMondayStr = formatDate(startMonday);
+            
+            let weekDaysText = "";
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(startMonday);
+                d.setDate(startMonday.getDate() + i);
+                weekDaysText += "- " + d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }) + "\n";
+            }
+
             const promptText = "You are an elite cycling coach and exercise physiologist. Design a structured weekly training program (7 days, Monday to Sunday) for an athlete based on their recent ride history, current FTP, training goals, and constraints.\n\n" +
+                "Date Context:\n" +
+                "- Today is: " + todayStr + "\n" +
+                "- Tomorrow is: " + tomorrowStr + "\n" +
+                "- The training program is for the week starting on: " + startMondayStr + "\n" +
+                "- The specific days of this training week are:\n" + weekDaysText + "\n" +
+                "IMPORTANT: Today's date and day of the week is " + todayStr + ". Use this exact date context to correctly interpret any relative days/dates mentioned in the athlete's constraints (e.g. if today is Friday and they say 'tomorrow' or 'this Saturday', it refers to Saturday, " + tomorrowStr + ", which is before the training week, but if they say 'next week' or refer to days within the training week, align them correctly with the training week dates above).\n\n" +
                 "Athlete FTP: " + athleteFTP + " W\n\n" +
                 "Recent Ride History:\n" + historyText + "\n\n" +
                 "Athlete's Training Goals:\n" + goals + "\n\n" +
-                "Athlete's Constraints for Next Week:\n" + constraints + "\n\n" +
+                "Athlete's Constraints for the Training Week:\n" + constraints + "\n\n" +
                 "Please output the program strictly as a JSON object matching the following structure:\n" +
                 "{\n" +
                 "  \"weekly_summary\": \"Provide a 2-3 sentence overview of the week's physiological focus and progression.\",\n" +
@@ -5084,6 +5219,9 @@ func getDashboardTemplate() string {
                     }
                     const jsonText = text.substring(jsonStart, jsonEnd + 1);
                     const parsedProgram = JSON.parse(jsonText);
+                    
+                    // Attach the start_date of the training week to the program object
+                    parsedProgram.start_date = startMonday.toISOString();
                     
                     localStorage.setItem('fit_training_program', JSON.stringify(parsedProgram));
                     renderTrainingCalendar(parsedProgram);
