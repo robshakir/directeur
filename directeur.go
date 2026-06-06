@@ -1847,6 +1847,7 @@ func getDashboardTemplate() string {
             --accent: #F5C400;
             --accent-glow: rgba(245, 196, 0, 0.15);
             --border-color: #2a2a22;
+            --btn-primary-text: #0a0a0c;
         }
 
         /* Giro Pink (April, May) Theme */
@@ -1867,6 +1868,7 @@ func getDashboardTemplate() string {
             --accent: #FDE100;
             --accent-glow: rgba(253, 225, 0, 0.15);
             --border-color: #222940;
+            --btn-primary-text: #0a0a0c;
         }
 
         /* Vuelta Red (August, September) Theme */
@@ -2311,35 +2313,329 @@ func getDashboardTemplate() string {
             color: #ffffff;
             font-style: italic;
         }
+
+        /* Landing Page Styling */
+        #landing-view {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: radial-gradient(circle at center, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+            padding: 2.5rem 1.5rem;
+            box-sizing: border-box;
+            font-family: var(--font-family);
+            color: var(--text-primary);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .landing-glow {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 0;
+            animation: pulse-glow 8s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse-glow {
+            0% { opacity: 0.5; width: 350px; height: 350px; }
+            100% { opacity: 0.9; width: 480px; height: 480px; }
+        }
+
+        .landing-container {
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+            z-index: 10;
+            background: rgba(19, 19, 26, 0.45);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 3rem 2rem;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4), 0 0 25px var(--accent-glow);
+            transition: transform 0.3s ease;
+        }
+
+        .landing-logo-container {
+            margin-bottom: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .landing-logo-icon {
+            color: var(--accent);
+            filter: drop-shadow(0 0 15px var(--accent));
+            animation: float-logo 4s ease-in-out infinite alternate;
+        }
+
+        @keyframes float-logo {
+            0% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-8px) rotate(1.5deg); }
+            100% { transform: translateY(0) rotate(0deg); }
+        }
+
+        .landing-title {
+            font-size: 3rem;
+            font-weight: 800;
+            margin: 1.2rem 0 0.5rem 0;
+            font-family: 'Outfit', sans-serif;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #ffffff 40%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .landing-subtitle {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-bottom: 2.5rem;
+            font-weight: 400;
+            letter-spacing: 0.02em;
+            max-width: 440px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.4;
+        }
+
+        .landing-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            max-width: 320px;
+            margin: 0 auto;
+        }
+
+        .landing-btn {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 1rem 1.5rem;
+            color: #ffffff;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+        }
+
+        .landing-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .landing-btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--btn-primary-text, #ffffff);
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .landing-btn-primary:hover {
+            background: var(--accent);
+            filter: brightness(1.1);
+            box-shadow: 0 6px 16px var(--accent-glow);
+            transform: translateY(-2px);
+        }
+
+        .landing-footer {
+            margin-top: 3.5rem;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            opacity: 0.7;
+            font-family: var(--font-family);
+        }
+
+        /* Training Programme Calendar Sizing & Stacking */
+        .calendar-day-row {
+            transition: all 0.2s ease;
+        }
+        .calendar-day-row:hover {
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 12px var(--accent-glow);
+            transform: scale(1.005);
+        }
+
+        @media (max-width: 768px) {
+            .calendar-day-row {
+                flex-direction: column;
+                gap: 1rem !important;
+            }
+            .calendar-day-details {
+                border-left: none !important;
+                padding-left: 0 !important;
+                width: 100% !important;
+            }
+        }
     </style>
 </head>
 <body>
-    <div id="connection-error-banner" style="display: none; background: rgba(231, 76, 60, 0.15); border-bottom: 1px solid #e74c3c; padding: 0.75rem 1.5rem; text-align: center; font-size: 0.9rem; color: #ffffff; align-items: center; justify-content: center; gap: 1rem; z-index: 1000; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-        <div style="display: flex; align-items: center; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
-            <span style="font-weight: 600; color: #ff6b6b; display: flex; align-items: center; gap: 0.3rem;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                Hammerhead Account Connection Expired:
-            </span>
-            <span id="connection-error-message" style="color: #e2e8f0; font-family: monospace; font-size: 0.8rem;">Token refresh failed.</span>
-            <a id="btn-reauth-banner" href="#" class="btn-action" style="padding: 0.4rem 1.2rem; font-size: 0.8rem; border-color: #e74c3c; color: #ffffff; background: rgba(231, 76, 60, 0.25); text-decoration: none; border-radius: 8px; font-weight: 600; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2); transition: all 0.2s;">
-                🔗 Re-authorize Account
-            </a>
-        </div>
-    </div>
-
-    <header>
-        <div class="logo-area">
-            <h1 style="display: flex; align-items: center; gap: 0.5rem; text-transform: none; letter-spacing: normal;">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); filter: drop-shadow(0 0 8px var(--accent-glow)); transition: all 0.3s ease; margin-right: 0.1rem; vertical-align: middle;">
+    <!-- Landing View -->
+    <div id="landing-view">
+        <div class="landing-glow"></div>
+        <div class="landing-container">
+            <div class="landing-logo-container">
+                <svg class="landing-logo-icon" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-width="2"/>
                     <circle cx="12" cy="12" r="7" stroke-width="1.5"/>
                     <path d="M12 7c0 2-1 3-3 3 2 0 3 1 3 3 0-2 1-3 3-3-2 0-3-1-3-3z" fill="currentColor" stroke="none"/>
                 </svg>
-                directeur<span style="color: var(--accent); font-weight: 800;">AI</span> <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.8; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase;">dsAI</span>
-            </h1>
-            <p id="ride-date-sub">Cycling Analysis Dashboard</p>
+                <h1 class="landing-title">directeur<span style="color: var(--accent); font-weight: 800;">AI</span></h1>
+                <div style="font-size: 0.75rem; font-weight: 600; opacity: 0.8; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 0.5rem; display: inline-block;">dsAI Cycling Coach</div>
+            </div>
+            
+            <p class="landing-subtitle">
+                Unlock elite cycling analytics. Map drivetrain efficiency, evaluate neuromuscular load, and receive advanced AI coaching telemetry.
+            </p>
+            
+            <div class="landing-menu">
+                <button class="landing-btn landing-btn-primary" onclick="showDashboardView()">
+                    ⚡ Analyse Ride
+                </button>
+                <button class="landing-btn" onclick="showCalendarView()">
+                    🗓️ Training Programme
+                </button>
+                <button class="landing-btn" onclick="triggerDeviceLinking()">
+                    🔗 Link Devices & Import
+                </button>
+                <button class="landing-btn" onclick="promptFTPConfig()">
+                    ⚙️ Configure FTP
+                </button>
+                <button class="landing-btn" onclick="promptAPIConfig()">
+                    🔑 Configure Gemini Key
+                </button>
+            </div>
+            
+            <div class="landing-footer">
+                directeurAI v1.2 &copy; 2026. Standalone offline mode enabled.
+            </div>
         </div>
+    </div>
+
+    <!-- Calendar View Container -->
+    <div id="calendar-view" style="display: none; padding: 2rem; max-width: 1300px; margin: 0 auto; min-height: 100vh; box-sizing: border-box; font-family: var(--font-family); color: var(--text-primary);">
+        <header style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1.5rem; margin-bottom: 2rem;">
+            <div class="logo-area">
+                <h1 style="display: flex; align-items: center; gap: 0.5rem; text-transform: none; letter-spacing: normal; cursor: pointer;" onclick="showLandingView()" title="Return to Landing Page">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); filter: drop-shadow(0 0 8px var(--accent-glow)); transition: all 0.3s ease; margin-right: 0.1rem; vertical-align: middle;">
+                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-width="2"/>
+                        <circle cx="12" cy="12" r="7" stroke-width="1.5"/>
+                        <path d="M12 7c0 2-1 3-3 3 2 0 3 1 3 3 0-2 1-3 3-3-2 0-3-1-3-3z" fill="currentColor" stroke="none"/>
+                    </svg>
+                    directeur<span style="color: var(--accent); font-weight: 800;">AI</span> <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.8; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase;">dsAI</span>
+                </h1>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.2rem;">Elite Training Programme Planner</p>
+            </div>
+            <button class="btn-action" onclick="showLandingView()" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;" title="Return to Landing Page">🏠 Home</button>
+        </header>
+
+        <div style="display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: start; margin-top: 1rem;">
+            <!-- Grid columns split for desktop -->
+            <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                <!-- Left Column: Inputs -->
+                <div class="card" style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 1.25rem;">
+                    <div class="card-header">
+                        <div class="card-title">Planner Configuration</div>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Training Goals</label>
+                        <textarea id="calendar-goals-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 70px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Build FTP and climbing endurance for hilly grand fondo">Build FTP and climbing endurance</textarea>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Constraints for Next Week</label>
+                        <textarea id="calendar-constraints-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 100px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Tuesday/Thursday trainer sessions capped at 1h. Long ride on Saturday. Monday/Friday Rest.">Monday and Friday are rest days. Long endurance ride on Saturday. Tuesday/Thursday trainer sessions capped at 1 hour.</textarea>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Gemini AI Model</label>
+                        <select id="calendar-model-select" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%;">
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Default)</option>
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        </select>
+                    </div>
+
+                    <button id="btn-generate-calendar" onclick="generateTrainingCalendar()" class="landing-btn landing-btn-primary" style="width: 100%; justify-content: center; font-size: 0.9rem; padding: 0.75rem;">
+                        🗓️ Generate Programme
+                    </button>
+                </div>
+
+                <!-- Right Column: Outputs -->
+                <div style="flex: 2; min-width: 320px; display: flex; flex-direction: column; gap: 1.5rem;">
+                    <!-- Weekly Focus Box -->
+                    <div class="card" id="calendar-summary-box" style="display: none; background: linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.03) 100%); border-left: 4px solid var(--accent);">
+                        <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em;">Weekly Physiological Focus</h4>
+                        <p id="calendar-summary-text" style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; margin: 0;"></p>
+                    </div>
+
+                    <!-- Calendar Loading Indicator -->
+                    <div id="calendar-loading" style="display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem; padding: 4rem 2rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px;">
+                        <div style="width: 48px; height: 48px; border: 4px solid var(--border-color); border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                        <div style="color: var(--text-primary); font-weight: 600; font-size: 1.05rem; font-family: 'Outfit';">directeurAI is planning your week...</div>
+                        <div style="color: var(--text-secondary); font-size: 0.85rem; max-width: 320px; text-align: center;">Retrieving recent ride metrics and structuring optimal workout intervals.</div>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="calendar-empty-state" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem; padding: 4rem 2rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; text-align: center;">
+                        <div style="font-size: 3rem; filter: drop-shadow(0 0 10px var(--accent-glow));">🗓️</div>
+                        <div style="color: var(--text-primary); font-weight: 600; font-size: 1.1rem; font-family: 'Outfit';">No Training Programme Generated Yet</div>
+                        <div style="color: var(--text-secondary); font-size: 0.85rem; max-width: 380px;">Enter your goals and constraints, then click "Generate Programme" to build your custom, AI-coach suggested training week.</div>
+                    </div>
+
+                    <!-- Calendar Card Grid -->
+                    <div id="calendar-grid" style="display: none; flex-direction: column; gap: 1rem;">
+                        <!-- Will be populated dynamically by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard View Container -->
+    <div id="dashboard-view" style="display: none;">
+        <div id="connection-error-banner" style="display: none; background: rgba(231, 76, 60, 0.15); border-bottom: 1px solid #e74c3c; padding: 0.75rem 1.5rem; text-align: center; font-size: 0.9rem; color: #ffffff; align-items: center; justify-content: center; gap: 1rem; z-index: 1000; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+            <div style="display: flex; align-items: center; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+                <span style="font-weight: 600; color: #ff6b6b; display: flex; align-items: center; gap: 0.3rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    Hammerhead Account Connection Expired:
+                </span>
+                <span id="connection-error-message" style="color: #e2e8f0; font-family: monospace; font-size: 0.8rem;">Token refresh failed.</span>
+                <a id="btn-reauth-banner" href="#" class="btn-action" style="padding: 0.4rem 1.2rem; font-size: 0.8rem; border-color: #e74c3c; color: #ffffff; background: rgba(231, 76, 60, 0.25); text-decoration: none; border-radius: 8px; font-weight: 600; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2); transition: all 0.2s;">
+                    🔗 Re-authorize Account
+                </a>
+            </div>
+        </div>
+
+        <header>
+            <div class="logo-area">
+                <h1 style="display: flex; align-items: center; gap: 0.5rem; text-transform: none; letter-spacing: normal; cursor: pointer;" onclick="showLandingView()" title="Return to Landing Page">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); filter: drop-shadow(0 0 8px var(--accent-glow)); transition: all 0.3s ease; margin-right: 0.1rem; vertical-align: middle;">
+                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-width="2"/>
+                        <circle cx="12" cy="12" r="7" stroke-width="1.5"/>
+                        <path d="M12 7c0 2-1 3-3 3 2 0 3 1 3 3 0-2 1-3 3-3-2 0-3-1-3-3z" fill="currentColor" stroke="none"/>
+                    </svg>
+                    directeur<span style="color: var(--accent); font-weight: 800;">AI</span> <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.8; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase;">dsAI</span>
+                </h1>
+                <p id="ride-date-sub">Cycling Analysis Dashboard</p>
+            </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
+            <button class="btn-action" onclick="showLandingView()" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;" title="Return to Landing Page">🏠 Home</button>
             <button id="btn-select-ride" class="btn-action" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">📂 Select Ride</button>
             <select id="bike-selector" class="btn-action" style="display: none;">
                 <option value="">⚙️ Default Gears</option>
@@ -2376,7 +2672,12 @@ func getDashboardTemplate() string {
         <div class="stat-card">
             <div class="stat-label">Max Power</div>
             <div class="stat-value" id="val-max-power">- <span class="stat-unit">W</span></div>
-            <div class="stat-subtext" id="val-intensity-factor">IF: -</div>
+            <div class="stat-subtext" id="val-max-power-sub">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Training Stress (TSS)</div>
+            <div class="stat-value" id="val-tss">-</div>
+            <div class="stat-subtext" id="val-tss-details">IF: - (FTP -W)</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Heart Rate</div>
@@ -2465,13 +2766,45 @@ func getDashboardTemplate() string {
                 </div>
             </div>
 
-            <!-- Altitude & Gear Ratio Chart -->
+            <!-- Advanced Shifting Analytics (Gear Choice vs. Terrain) -->
             <div class="card">
                 <div class="card-header">
-                    <div class="card-title">Altitude & Gear Ratios</div>
+                    <div class="card-title">Advanced Shifting Analytics (Gear Choice vs. Terrain)</div>
                 </div>
-                <div class="chart-wrapper">
-                    <canvas id="chart-alt-gears"></canvas>
+                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin: 0.5rem 0.25rem; border-left: 3px solid var(--accent); padding-left: 0.75rem;">
+                    Analyzes drivetrain efficiency by mapping your gear selection (ratios) against the terrain profile. Highlights <strong>Cross-Chaining</strong> (Big front ring to largest rear cogs, or small front ring to smallest rear cogs) which increases mechanical friction, chain noise, and drivetrain wear.
+                </div>
+                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; padding: 1rem 0;">
+                    <div style="flex: 1.5; min-width: 320px; height: 380px;">
+                        <canvas id="chart-alt-gears"></canvas>
+                    </div>
+                    <div style="flex: 1; min-width: 280px; display: flex; flex-direction: column; justify-content: center; gap: 1rem; padding: 0 0.5rem;">
+                        <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 0.25rem;">Drivetrain Statistics</h4>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; color: var(--text-secondary);">
+                            <tbody>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Total Shifts</td>
+                                    <td id="shift-total" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Front / Rear Shifts</td>
+                                    <td id="shift-front-rear" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Big-Big Cross-Chaining</td>
+                                    <td id="shift-cross-big" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 0.5rem 0; font-weight: 600; color: #ffffff;">Small-Small Cross-Chaining</td>
+                                    <td id="shift-cross-small" style="padding: 0.5rem 0; text-align: right; color: var(--text-primary); font-weight: bold;">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; font-size: 0.8rem; line-height: 1.4;">
+                            <div style="font-weight: 600; color: var(--accent); margin-bottom: 0.25rem; font-family: 'Outfit';">Drivetrain Diagnostics</div>
+                            <div id="drivetrain-diagnostics-text" style="color: var(--text-secondary);">Calculating stats...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2531,44 +2864,13 @@ func getDashboardTemplate() string {
                 </div>
             </div>
 
-            <!-- FTP History & Estimation Card -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">FTP History & Estimation</div>
-                </div>
-                <div style="padding: 0.5rem 0; display: flex; flex-direction: column; gap: 1rem;">
-                    <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5;">
-                        FTP (Functional Threshold Power) is the highest average power output you can sustain for approximately one hour. 
-                        It is standardly estimated as <strong>95% of your peak 20-minute power</strong>. Below are the estimated FTP calculations from your analyzed rides:
-                    </div>
-                    
-                    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
-                        <div style="flex: 1; min-width: 280px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between;">
-                            <div>
-                                <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600;">Current Ride Estimate</h4>
-                                <div id="ftp-current-estimate-val" style="font-size: 1.8rem; font-weight: bold; color: #ffffff; margin-bottom: 0.25rem;">-</div>
-                                <div id="ftp-current-estimate-method" style="font-size: 0.75rem; color: var(--text-secondary);">Calculating...</div>
-                            </div>
-                            <div style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
-                                <span style="font-size: 0.75rem; color: var(--text-secondary);">Apply to dashboard:</span>
-                                <button id="btn-apply-current-ftp" class="btn-action" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-color: var(--accent); color: var(--accent); cursor: pointer;">Apply FTP</button>
-                            </div>
-                        </div>
-                        
-                        <div style="flex: 1.5; min-width: 320px; display: flex; flex-direction: column; gap: 0.5rem;">
-                            <h4 style="color: var(--accent); margin: 0 0 0.25rem 0; font-family: 'Outfit'; font-weight: 600;">Historical FTP Estimates</h4>
-                            <div id="ftp-history-list" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; padding-right: 0.25rem;">
-                                <!-- Will be populated by JS -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Neuromuscular vs. Aerobic Load (Quadrant Analysis) -->
             <div class="card">
                 <div class="card-header">
                     <div class="card-title">Neuromuscular vs. Aerobic Load (Quadrant Analysis)</div>
+                </div>
+                <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin: 0.5rem 0.25rem; border-left: 3px solid var(--accent); padding-left: 0.75rem;">
+                    This chart plots Average Effective Pedal Force (AEPF) in Newtons against Circumferential Pedal Velocity (CPV) in m/s. The dashed crosshairs indicate your mean force and velocity, dividing the plot into four quadrants: <strong>QI (High Force / High Velocity - Sprinting)</strong>, <strong>QII (High Force / Low Velocity - Climbing/Mashing)</strong>, <strong>QIII (Low Force / Low Velocity - Recovery)</strong>, and <strong>QIV (Low Force / High Velocity - Spinning)</strong>, showing how your muscle recruitment and aerobic contribution were balanced during active pedaling.
                 </div>
                 <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; padding: 1rem 0;">
                     <div style="flex: 1.5; min-width: 320px; height: 380px;">
@@ -2622,6 +2924,40 @@ func getDashboardTemplate() string {
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FTP History & Estimation Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">FTP History & Estimation</div>
+                </div>
+                <div style="padding: 0.5rem 0; display: flex; flex-direction: column; gap: 1rem;">
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5;">
+                        FTP (Functional Threshold Power) is the highest average power output you can sustain for approximately one hour. 
+                        It is standardly estimated as <strong>95% of your peak 20-minute power</strong>. Below are the estimated FTP calculations from your analyzed rides:
+                    </div>
+                    
+                    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 280px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600;">Current Ride Estimate</h4>
+                                <div id="ftp-current-estimate-val" style="font-size: 1.8rem; font-weight: bold; color: #ffffff; margin-bottom: 0.25rem;">-</div>
+                                <div id="ftp-current-estimate-method" style="font-size: 0.75rem; color: var(--text-secondary);">Calculating...</div>
+                            </div>
+                            <div style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-size: 0.75rem; color: var(--text-secondary);">Apply to dashboard:</span>
+                                <button id="btn-apply-current-ftp" class="btn-action" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border-color: var(--accent); color: var(--accent); cursor: pointer;">Apply FTP</button>
+                            </div>
+                        </div>
+                        
+                        <div style="flex: 1.5; min-width: 320px; display: flex; flex-direction: column; gap: 0.5rem;">
+                            <h4 style="color: var(--accent); margin: 0 0 0.25rem 0; font-family: 'Outfit'; font-weight: 600;">Historical FTP Estimates</h4>
+                            <div id="ftp-history-list" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; padding-right: 0.25rem;">
+                                <!-- Will be populated by JS -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3318,10 +3654,30 @@ func getDashboardTemplate() string {
         document.getElementById('val-avg-power').innerText = 'Avg: ' + Math.round(rideData.summary.average_power) + ' W';
         document.getElementById('val-max-power').innerHTML = rideData.summary.max_power + ' <span class="stat-unit">W</span>';
         
-        // Intensity Factor (IF) calculation
+        // Intensity Factor (IF) & Training Stress Score (TSS) calculation
         const updateIFDisplay = () => {
-            const intensityFactor = (rideData.summary.normalized_power / athleteFTP).toFixed(2);
-            document.getElementById('val-intensity-factor').innerText = 'IF: ' + intensityFactor + ' (FTP ' + athleteFTP + 'W)';
+            const np = rideData.summary.normalized_power;
+            const duration = rideData.summary.duration_seconds;
+            const ifVal = np / athleteFTP;
+            const intensityFactorStr = ifVal.toFixed(2);
+            
+            // Calculate TSS
+            const tss = Math.round((duration * np * ifVal) / (athleteFTP * 36));
+            
+            // Update TSS elements
+            document.getElementById('val-tss').innerText = isNaN(tss) ? '-' : tss;
+            const tssDetailsEl = document.getElementById('val-tss-details');
+            if (tssDetailsEl) {
+                tssDetailsEl.innerText = 'IF: ' + intensityFactorStr + ' | FTP: ' + athleteFTP + 'W';
+            }
+            
+            // Update Max Power subtext: show Max Power as ratio to FTP
+            const maxPower = rideData.summary.max_power;
+            const maxFtpRatio = Math.round((maxPower / athleteFTP) * 100);
+            const valMaxPowerSub = document.getElementById('val-max-power-sub');
+            if (valMaxPowerSub) {
+                valMaxPowerSub.innerText = maxFtpRatio + '% FTP (' + (maxPower / athleteFTP).toFixed(1) + 'x)';
+            }
         };
         updateIFDisplay();
         window.updateIFDisplay = updateIFDisplay;
@@ -3653,7 +4009,155 @@ func getDashboardTemplate() string {
             statsCadVar.innerHTML = cadenceStDev.toFixed(1) + ' <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-secondary);">rpm</span>';
         }
 
-        // Chart 4: Altitude & Gear Ratio
+        // Advanced Shifting Analytics (Gear Choice vs. Terrain)
+        const frontTeethSet = new Set();
+        const rearTeethSet = new Set();
+        rideData.records.forEach(r => {
+            if (r.front_gear_teeth > 0) frontTeethSet.add(r.front_gear_teeth);
+            if (r.rear_gear_teeth > 0) rearTeethSet.add(r.rear_gear_teeth);
+        });
+        const frontGears = Array.from(frontTeethSet).sort((a, b) => a - b);
+        const rearGears = Array.from(rearTeethSet).sort((a, b) => a - b);
+        const drivetrain = {
+            frontGears,
+            rearGears,
+            isDouble: frontGears.length >= 2,
+            bigRing: frontGears[frontGears.length - 1] || 0,
+            smallRing: frontGears[0] || 0,
+            largestRearCogs: rearGears.slice(-2),
+            smallestRearCogs: rearGears.slice(0, 2)
+        };
+
+        // Instantaneous Incline/Grade Calculation (10-second rolling window)
+        const grades = new Array(rideData.records.length).fill(0);
+        const windowSize = 10;
+        for (let i = 0; i < rideData.records.length; i++) {
+            let prevIdx = Math.max(0, i - windowSize);
+            if (i === prevIdx) {
+                grades[i] = 0;
+                continue;
+            }
+            const distDiff = rideData.records[i].distance_meters - rideData.records[prevIdx].distance_meters;
+            const altDiff = rideData.records[i].altitude_meters - rideData.records[prevIdx].altitude_meters;
+            if (distDiff > 0.5) {
+                grades[i] = (altDiff / distDiff) * 100;
+                if (grades[i] > 30) grades[i] = 30;
+                if (grades[i] < -30) grades[i] = -30;
+            } else {
+                grades[i] = i > 0 ? grades[i - 1] : 0;
+            }
+        }
+
+        // Mechanical efficiency and stats
+        let bigBigSeconds = 0;
+        let smallSmallSeconds = 0;
+        let bigBigPowerSum = 0, bigBigPowerCount = 0;
+        let bigBigCadenceSum = 0, bigBigCadenceCount = 0;
+        let bigBigGradeSum = 0, bigBigGradeCount = 0;
+        
+        let smallSmallPowerSum = 0, smallSmallPowerCount = 0;
+        let smallSmallCadenceSum = 0, smallSmallCadenceCount = 0;
+        let smallSmallGradeSum = 0, smallSmallGradeCount = 0;
+
+        rideData.records.forEach((r, idx) => {
+            if (!drivetrain.isDouble) return;
+            const isBigBig = r.front_gear_teeth === drivetrain.bigRing && drivetrain.largestRearCogs.includes(r.rear_gear_teeth);
+            const isSmallSmall = r.front_gear_teeth === drivetrain.smallRing && drivetrain.smallestRearCogs.includes(r.rear_gear_teeth);
+            const curGrade = grades[idx] || 0;
+
+            if (isBigBig) {
+                bigBigSeconds++;
+                if (r.power > 0) {
+                    bigBigPowerSum += r.power;
+                    bigBigPowerCount++;
+                }
+                if (r.cadence > 0) {
+                    bigBigCadenceSum += r.cadence;
+                    bigBigCadenceCount++;
+                }
+                bigBigGradeSum += curGrade;
+                bigBigGradeCount++;
+            } else if (isSmallSmall) {
+                smallSmallSeconds++;
+                if (r.power > 0) {
+                    smallSmallPowerSum += r.power;
+                    smallSmallPowerCount++;
+                }
+                if (r.cadence > 0) {
+                    smallSmallCadenceSum += r.cadence;
+                    smallSmallCadenceCount++;
+                }
+                smallSmallGradeSum += curGrade;
+                smallSmallGradeCount++;
+            }
+        });
+
+        const totalDurationSecs = rideData.summary.duration_seconds || 1;
+        const bigBigPct = (bigBigSeconds / totalDurationSecs) * 100;
+        const smallSmallPct = (smallSmallSeconds / totalDurationSecs) * 100;
+
+        const avgBigBigPower = bigBigPowerCount > 0 ? Math.round(bigBigPowerSum / bigBigPowerCount) : 0;
+        const avgBigBigCadence = bigBigCadenceCount > 0 ? Math.round(bigBigCadenceSum / bigBigCadenceCount) : 0;
+        const avgBigBigGrade = bigBigGradeCount > 0 ? (bigBigGradeSum / bigBigGradeCount) : 0;
+
+        const avgSmallSmallPower = smallSmallPowerCount > 0 ? Math.round(smallSmallPowerSum / smallSmallPowerCount) : 0;
+        const avgSmallSmallCadence = smallSmallCadenceCount > 0 ? Math.round(smallSmallCadenceSum / smallSmallCadenceCount) : 0;
+        const avgSmallSmallGrade = smallSmallGradeCount > 0 ? (smallSmallGradeSum / smallSmallGradeCount) : 0;
+
+        // Render Stats Panel
+        const totalShifts = (rideData.summary.total_front_shifts || 0) + (rideData.summary.total_rear_shifts || 0);
+        document.getElementById('shift-total').innerText = totalShifts;
+        document.getElementById('shift-front-rear').innerText = 'F: ' + (rideData.summary.total_front_shifts || 0) + ' / R: ' + (rideData.summary.total_rear_shifts || 0);
+        
+        if (drivetrain.isDouble) {
+            document.getElementById('shift-cross-big').innerHTML = bigBigSeconds + 's <span style="font-size: 0.72rem; color: var(--text-secondary);">(' + bigBigPct.toFixed(1) + '%)</span>';
+            document.getElementById('shift-cross-small').innerHTML = smallSmallSeconds + 's <span style="font-size: 0.72rem; color: var(--text-secondary);">(' + smallSmallPct.toFixed(1) + '%)</span>';
+        } else {
+            document.getElementById('shift-cross-big').innerText = 'N/A (1x Setup)';
+            document.getElementById('shift-cross-small').innerText = 'N/A (1x Setup)';
+        }
+
+        // Diagnostic recommendation block
+        let diagText = "";
+        if (!drivetrain.isDouble) {
+            diagText = "Your bike setup is configured as a single chainring (1x). Cross-chaining friction is mechanically managed by the chainring profile and clutched derailleur. Shifting discipline looks optimal.";
+        } else {
+            const crossPct = bigBigPct + smallSmallPct;
+            if (crossPct === 0) {
+                diagText = "Flawless shifting discipline! You did not spend any time in cross-chained gear combinations, keeping drivetrain friction at its absolute minimum.";
+            } else if (crossPct < 1.0) {
+                diagText = "Excellent drivetrain management. You spent very little time cross-chaining (" + crossPct.toFixed(1) + "%). This ensures maximum drivetrain efficiency and component life.";
+            } else {
+                diagText = "You spent " + Math.round(bigBigSeconds + smallSmallSeconds) + "s (" + crossPct.toFixed(1) + "% of ride) in cross-chained gear configurations. ";
+                
+                const recs = [];
+                if (bigBigSeconds > 10) {
+                    if (avgBigBigGrade > 3) {
+                        recs.push("Big-Big cross-chaining occurred mostly on climbs (avg grade: " + avgBigBigGrade.toFixed(1) + "%). Swap to the small chainring and shift down the cassette to maintain efficiency.");
+                    } else {
+                        recs.push("Big-Big cross-chaining occurred on flat/descents (avg grade: " + avgBigBigGrade.toFixed(1) + "%), suggesting accidental gearing. Shift to the small chainring and a mid-cassette cog.");
+                    }
+                }
+                if (smallSmallSeconds > 10) {
+                    if (avgSmallSmallGrade < 1) {
+                        recs.push("Small-Small cross-chaining occurred on flats/descents (avg grade: " + avgSmallSmallGrade.toFixed(1) + "%). Switch to the big chainring and shift up the cassette.");
+                    } else {
+                        recs.push("Small-Small cross-chaining occurred on uphill sections. Select a lower gear ratio to avoid high-torque cross-chain friction.");
+                    }
+                }
+                diagText += recs.join(" ");
+            }
+        }
+        document.getElementById('drivetrain-diagnostics-text').innerText = diagText;
+
+        // Build Datasets for the Shifting Analytics Chart
+        const crossChainingData = rideData.records.map(r => {
+            if (!drivetrain.isDouble) return null;
+            const isBigBig = r.front_gear_teeth === drivetrain.bigRing && drivetrain.largestRearCogs.includes(r.rear_gear_teeth);
+            const isSmallSmall = r.front_gear_teeth === drivetrain.smallRing && drivetrain.smallestRearCogs.includes(r.rear_gear_teeth);
+            return (isBigBig || isSmallSmall) ? r.gear_ratio : null;
+        });
+
         altGearsChart = new Chart(document.getElementById('chart-alt-gears').getContext('2d'), {
             type: 'line',
             data: {
@@ -3673,11 +4177,39 @@ func getDashboardTemplate() string {
                         label: 'Gear Ratio',
                         data: rideData.records.map(r => r.gear_ratio),
                         borderColor: currentAccentColor,
-                        borderWidth: 2,
+                        borderWidth: 2.5,
                         yAxisID: 'y-ratio',
                         fill: false,
                         pointRadius: 0,
-                        stepped: true
+                        stepped: true,
+                        segment: {
+                            borderColor: (ctx) => {
+                                const idx = ctx.p0.parsed.x;
+                                const r = rideData.records[idx];
+                                if (!r) return currentAccentColor;
+                                if (!drivetrain.isDouble) return currentAccentColor;
+                                const isBigBig = r.front_gear_teeth === drivetrain.bigRing && drivetrain.largestRearCogs.includes(r.rear_gear_teeth);
+                                const isSmallSmall = r.front_gear_teeth === drivetrain.smallRing && drivetrain.smallestRearCogs.includes(r.rear_gear_teeth);
+                                if (isBigBig) return '#e74c3c'; // Red
+                                if (isSmallSmall) return '#e67e22'; // Orange
+                                if (r.front_gear_teeth === drivetrain.bigRing) return '#2ecc71'; // Green
+                                if (r.front_gear_teeth === drivetrain.smallRing) return '#f1c40f'; // Yellow
+                                return currentAccentColor;
+                            }
+                        }
+                    },
+                    {
+                        label: 'Cross-Chaining Point',
+                        data: crossChainingData,
+                        borderColor: '#e74c3c',
+                        backgroundColor: '#e74c3c',
+                        pointRadius: (ctx) => {
+                            const val = ctx.dataset.data[ctx.dataIndex];
+                            return (val !== null && val !== undefined) ? 3.5 : 0;
+                        },
+                        pointHoverRadius: 5.5,
+                        showLine: false,
+                        yAxisID: 'y-ratio'
                     }
                 ]
             },
@@ -3693,17 +4225,21 @@ func getDashboardTemplate() string {
                                 if (label) {
                                     label += ': ';
                                 }
-                                if (context.datasetIndex === 1) {
+                                if (context.datasetIndex === 1 || context.datasetIndex === 2) {
                                     const record = rideData.records[context.dataIndex];
-                                    if (record.front_gear_teeth > 0 && record.rear_gear_teeth > 0) {
-                                        label += context.raw.toFixed(2) + ' (' + record.front_gear_teeth + 'x' + record.rear_gear_teeth + ')';
-                                    } else {
-                                        label += context.raw.toFixed(2);
+                                    if (record && record.front_gear_teeth > 0 && record.rear_gear_teeth > 0) {
+                                        const isBigBig = record.front_gear_teeth === drivetrain.bigRing && drivetrain.largestRearCogs.includes(record.rear_gear_teeth);
+                                        const isSmallSmall = record.front_gear_teeth === drivetrain.smallRing && drivetrain.smallestRearCogs.includes(record.rear_gear_teeth);
+                                        let detail = context.raw.toFixed(2) + ' (' + record.front_gear_teeth + 'x' + record.rear_gear_teeth + ')';
+                                        if (isBigBig || isSmallSmall) {
+                                            detail += ' [CROSS-CHAINING!]';
+                                        }
+                                        return label + detail;
                                     }
+                                    return label + context.raw.toFixed(2);
                                 } else {
-                                    label += context.raw.toFixed(1) + ' m';
+                                    return label + context.raw.toFixed(1) + ' m';
                                 }
-                                return label;
                             }
                         }
                     }
@@ -4300,6 +4836,297 @@ func getDashboardTemplate() string {
 
         // Expose updateFTP globally for inline onclick buttons
         window.updateFTP = updateFTP;
+
+        const showDashboardView = () => {
+            document.getElementById('landing-view').style.display = 'none';
+            document.getElementById('calendar-view').style.display = 'none';
+            document.getElementById('dashboard-view').style.display = 'block';
+            window.dispatchEvent(new Event('resize'));
+            
+            // Fix Leaflet map sizing/zooming when switching from hidden to visible
+            if (leafletMap) {
+                leafletMap.invalidateSize();
+                if (routePolyline) {
+                    leafletMap.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
+                }
+            }
+        };
+        window.showDashboardView = showDashboardView;
+
+        const showLandingView = () => {
+            document.getElementById('dashboard-view').style.display = 'none';
+            document.getElementById('calendar-view').style.display = 'none';
+            document.getElementById('landing-view').style.display = 'flex';
+        };
+        window.showLandingView = showLandingView;
+
+        const showCalendarView = () => {
+            document.getElementById('landing-view').style.display = 'none';
+            document.getElementById('dashboard-view').style.display = 'none';
+            document.getElementById('calendar-view').style.display = 'block';
+            
+            // Load custom inputs from local storage if saved
+            const savedGoals = localStorage.getItem('fit_calendar_goals');
+            if (savedGoals) {
+                document.getElementById('calendar-goals-input').value = savedGoals;
+            }
+            const savedConstraints = localStorage.getItem('fit_calendar_constraints');
+            if (savedConstraints) {
+                document.getElementById('calendar-constraints-input').value = savedConstraints;
+            }
+            const savedModel = localStorage.getItem('fit_calendar_model');
+            if (savedModel) {
+                document.getElementById('calendar-model-select').value = savedModel;
+            }
+
+            // Check if there is cached calendar data
+            const cached = localStorage.getItem('fit_training_program');
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    renderTrainingCalendar(parsed);
+                } catch(e) {
+                    console.error("Error loading cached calendar:", e);
+                    renderTrainingCalendar(null);
+                }
+            } else {
+                renderTrainingCalendar(null);
+            }
+        };
+        window.showCalendarView = showCalendarView;
+
+        const renderTrainingCalendar = (data) => {
+            const grid = document.getElementById('calendar-grid');
+            const summaryBox = document.getElementById('calendar-summary-box');
+            const summaryText = document.getElementById('calendar-summary-text');
+            const emptyState = document.getElementById('calendar-empty-state');
+            
+            if (!data || !data.days) {
+                grid.style.display = 'none';
+                summaryBox.style.display = 'none';
+                emptyState.style.display = 'flex';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            summaryText.innerText = data.weekly_summary || 'Weekly training plan focus.';
+            summaryBox.style.display = 'block';
+
+            grid.innerHTML = '';
+            
+            data.days.forEach(d => {
+                let badgeColor = 'rgba(255,255,255,0.08)';
+                let textColor = '#ffffff';
+                let borderColor = 'rgba(255,255,255,0.15)';
+                const type = (d.workout_type || '').toLowerCase();
+                
+                if (type.includes('rest') || type.includes('recovery')) {
+                    badgeColor = 'rgba(46, 204, 113, 0.1)';
+                    textColor = '#2ecc71';
+                    borderColor = 'rgba(46, 204, 113, 0.25)';
+                } else if (type.includes('endurance') || type.includes('aerobic')) {
+                    badgeColor = 'rgba(52, 152, 219, 0.1)';
+                    textColor = '#3498db';
+                    borderColor = 'rgba(52, 152, 219, 0.25)';
+                } else if (type.includes('sweet spot') || type.includes('tempo')) {
+                    badgeColor = 'rgba(241, 196, 15, 0.1)';
+                    textColor = '#f1c40f';
+                    borderColor = 'rgba(241, 196, 15, 0.25)';
+                } else if (type.includes('threshold') || type.includes('intervals')) {
+                    badgeColor = 'rgba(230, 126, 34, 0.1)';
+                    textColor = '#e67e22';
+                    borderColor = 'rgba(230, 126, 34, 0.25)';
+                } else if (type.includes('vo2') || type.includes('anaerobic')) {
+                    badgeColor = 'rgba(155, 89, 182, 0.1)';
+                    textColor = '#9b59b6';
+                    borderColor = 'rgba(155, 89, 182, 0.25)';
+                }
+
+                const row = document.createElement('div');
+                row.className = 'calendar-day-row';
+                row.style.display = 'flex';
+                row.style.gap = '1.5rem';
+                row.style.background = 'var(--bg-secondary)';
+                row.style.border = '1px solid var(--border-color)';
+                row.style.borderRadius = '12px';
+                row.style.padding = '1.25rem';
+                row.style.alignItems = 'start';
+                
+                row.innerHTML = 
+                    '<div style="min-width: 140px; display: flex; flex-direction: column; gap: 0.4rem;">' +
+                        '<span style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">' + d.day + '</span>' +
+                        '<span class="badge" style="background: ' + badgeColor + '; color: ' + textColor + '; border: 1px solid ' + borderColor + '; font-size: 0.75rem; text-align: center; border-radius: 4px; padding: 0.15rem 0.4rem; text-transform: uppercase; width: fit-content; font-weight: 600;">' + d.workout_type + '</span>' +
+                    '</div>' +
+                    '<div style="flex: 1.5; display: flex; flex-direction: column; gap: 0.3rem;">' +
+                        '<span style="font-size: 1rem; font-weight: 600; color: #ffffff; font-family: \'Outfit\';">' + d.title + '</span>' +
+                        '<span style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">' + d.description + '</span>' +
+                    '</div>' +
+                    '<div class="calendar-day-details" style="flex: 2; display: flex; flex-direction: column; gap: 0.5rem; border-left: 1px solid rgba(255,255,255,0.05); padding-left: 1.5rem;">' +
+                        '<div style="display: flex; gap: 1.5rem; font-size: 0.8rem; color: var(--text-secondary);">' +
+                            '<span>⏱️ <strong>' + d.duration_mins + '</strong> mins</span>' +
+                            '<span>⚡ Target TSS: <strong>' + (d.target_tss || 0) + '</strong></span>' +
+                            '<span>📈 Target IF: <strong>' + (d.target_if || 0) + '</strong></span>' +
+                        '</div>' +
+                        '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: var(--font-family); line-height: 1.4; color: var(--text-primary);">' +
+                            d.structure +
+                        '</div>' +
+                    '</div>';
+                grid.appendChild(row);
+            });
+            grid.style.display = 'flex';
+        };
+        window.renderTrainingCalendar = renderTrainingCalendar;
+
+        const generateTrainingCalendar = () => {
+            const key = localStorage.getItem('gemini_api_key');
+            if (!key) {
+                alert('Gemini API Key missing! Please configure your API key first.');
+                return;
+            }
+
+            const goals = document.getElementById('calendar-goals-input').value.trim();
+            const constraints = document.getElementById('calendar-constraints-input').value.trim();
+            const model = document.getElementById('calendar-model-select').value;
+            
+            // Persist parameters in local storage
+            localStorage.setItem('fit_calendar_goals', goals);
+            localStorage.setItem('fit_calendar_constraints', constraints);
+            localStorage.setItem('fit_calendar_model', model);
+
+            // Show loading, hide outputs
+            document.getElementById('calendar-loading').style.display = 'flex';
+            document.getElementById('calendar-empty-state').style.display = 'none';
+            document.getElementById('calendar-grid').style.display = 'none';
+            document.getElementById('calendar-summary-box').style.display = 'none';
+            
+            // Build recent ride history context
+            let historyText = "No previous ride history found.";
+            const historyData = localStorage.getItem('fit_ride_history');
+            if (historyData) {
+                try {
+                    const parsed = JSON.parse(historyData);
+                    if (parsed && parsed.length > 0) {
+                        historyText = parsed.slice(-5).map(r => 
+                            "- Date: " + r.date + " | Distance: " + r.distance_km + " km | NP: " + r.np + " W | Avg HR: " + r.avg_hr + " bpm\n  Key Performance Summary: " + r.summary
+                        ).join('\n');
+                    }
+                } catch(e) {
+                    console.error("Error reading history for calendar:", e);
+                }
+            }
+
+            const promptText = "You are an elite cycling coach and exercise physiologist. Design a structured weekly training program (7 days, Monday to Sunday) for an athlete based on their recent ride history, current FTP, training goals, and constraints.\n\n" +
+                "Athlete FTP: " + athleteFTP + " W\n\n" +
+                "Recent Ride History:\n" + historyText + "\n\n" +
+                "Athlete's Training Goals:\n" + goals + "\n\n" +
+                "Athlete's Constraints for Next Week:\n" + constraints + "\n\n" +
+                "Please output the program strictly as a JSON object matching the following structure:\n" +
+                "{\n" +
+                "  \"weekly_summary\": \"Provide a 2-3 sentence overview of the week's physiological focus and progression.\",\n" +
+                "  \"days\": [\n" +
+                "    {\n" +
+                "      \"day\": \"Monday\",\n" +
+                "      \"workout_type\": \"Rest Day / Recovery / Endurance / Tempo / Sweet Spot / Threshold / VO2 Max / Anaerobic\",\n" +
+                "      \"title\": \"Workout Name\",\n" +
+                "      \"duration_mins\": 60,\n" +
+                "      \"target_tss\": 55,\n" +
+                "      \"target_if\": 0.72,\n" +
+                "      \"description\": \"Overview of the workout focus.\",\n" +
+                "      \"structure\": \"Warm Up: 10m easy spinning. Main Set: 3x8m at Sweet Spot (200-215W) with 4m recovery. Cool Down: 10m easy spinning.\"\n" +
+                "    },\n" +
+                "    ... (continue for Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)\n" +
+                "  ]\n" +
+                "}\n\n" +
+                "Ensure the output is valid JSON. Do not wrap it in anything other than the JSON block. Do not include markdown code block syntax outside the raw JSON text.";
+
+            const callGemini = (apiVersion) => {
+                const url = 'https://generativelanguage.googleapis.com/' + apiVersion + '/models/' + model + ':generateContent?key=' + key;
+                return fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            role: 'user',
+                            parts: [{ text: promptText }]
+                        }]
+                    })
+                })
+                .then(res => {
+                    if (!res.ok) {
+                        return res.json().then(errData => {
+                            const errMsg = errData.error?.message || ('HTTP ' + res.status);
+                            return { ok: false, status: res.status, message: errMsg };
+                        });
+                    }
+                    return res.json().then(data => ({ ok: true, data }));
+                });
+            };
+
+            callGemini('v1')
+                .then(result => {
+                    if (result.ok) return result.data;
+                    if (result.status === 404) {
+                        return callGemini('v1beta').then(betaResult => {
+                            if (betaResult.ok) return betaResult.data;
+                            throw new Error(betaResult.message);
+                        });
+                    }
+                    throw new Error(result.message);
+                })
+                .then(data => {
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) throw new Error("Empty response from Gemini API.");
+                    
+                    const jsonStart = text.indexOf('{');
+                    const jsonEnd = text.lastIndexOf('}');
+                    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
+                        throw new Error("Failed to parse training plan: response was not in JSON format.");
+                    }
+                    const jsonText = text.substring(jsonStart, jsonEnd + 1);
+                    const parsedProgram = JSON.parse(jsonText);
+                    
+                    localStorage.setItem('fit_training_program', JSON.stringify(parsedProgram));
+                    renderTrainingCalendar(parsedProgram);
+                })
+                .catch(err => {
+                    console.error("Calendar generation error:", err);
+                    alert("Error planning training week: " + err.message);
+                    document.getElementById('calendar-empty-state').style.display = 'flex';
+                })
+                .finally(() => {
+                    document.getElementById('calendar-loading').style.display = 'none';
+                });
+        };
+        window.generateTrainingCalendar = generateTrainingCalendar;
+
+        const triggerDeviceLinking = () => {
+            showDashboardView();
+            setTimeout(() => {
+                const selectRideBtn = document.getElementById('btn-select-ride');
+                if (selectRideBtn) selectRideBtn.click();
+            }, 150);
+        };
+        window.triggerDeviceLinking = triggerDeviceLinking;
+
+        const promptFTPConfig = () => {
+            const currentFTP = athleteFTP;
+            const newFTP = prompt('Enter your Functional Threshold Power (FTP) in Watts:', currentFTP);
+            if (newFTP && !isNaN(parseInt(newFTP)) && parseInt(newFTP) > 0) {
+                updateFTP(parseInt(newFTP));
+                alert('FTP updated to ' + parseInt(newFTP) + 'W');
+            }
+        };
+        window.promptFTPConfig = promptFTPConfig;
+
+        const promptAPIConfig = () => {
+            const currentKey = localStorage.getItem('gemini_api_key') || '';
+            const newKey = prompt('Enter your Gemini API Key:', currentKey);
+            if (newKey !== null) {
+                localStorage.setItem('gemini_api_key', newKey.trim());
+                alert('Gemini API Key updated successfully!');
+            }
+        };
+        window.promptAPIConfig = promptAPIConfig;
 
         // Initialize FTP input field and render lists
         const ftpInput = document.getElementById('ftp-input');
@@ -5068,6 +5895,96 @@ func getDashboardTemplate() string {
                 });
             }
 
+            // Calculate Drivetrain & Cross-Chaining Analysis for Gemini Coach
+            const coachFrontTeethSet = new Set();
+            const coachRearTeethSet = new Set();
+            rawRecords.forEach(r => {
+                if (r.front_gear_teeth > 0) coachFrontTeethSet.add(r.front_gear_teeth);
+                if (r.rear_gear_teeth > 0) coachRearTeethSet.add(r.rear_gear_teeth);
+            });
+            const coachFrontGears = Array.from(coachFrontTeethSet).sort((a, b) => a - b);
+            const coachRearGears = Array.from(coachRearTeethSet).sort((a, b) => a - b);
+            const coachDrivetrain = {
+                frontGears: coachFrontGears,
+                rearGears: coachRearGears,
+                isDouble: coachFrontGears.length >= 2,
+                bigRing: coachFrontGears[coachFrontGears.length - 1] || 0,
+                smallRing: coachFrontGears[0] || 0,
+                largestRearCogs: coachRearGears.slice(-2),
+                smallestRearCogs: coachRearGears.slice(0, 2)
+            };
+
+            // Rolling Incline Calculation for prompt context
+            const coachGrades = new Array(rawRecords.length).fill(0);
+            const coachWindow = 10;
+            for (let i = 0; i < rawRecords.length; i++) {
+                let prevIdx = Math.max(0, i - coachWindow);
+                if (i === prevIdx) {
+                    coachGrades[i] = 0;
+                    continue;
+                }
+                const distDiff = rawRecords[i].distance_meters - rawRecords[prevIdx].distance_meters;
+                const altDiff = rawRecords[i].altitude_meters - rawRecords[prevIdx].altitude_meters;
+                if (distDiff > 0.5) {
+                    coachGrades[i] = (altDiff / distDiff) * 100;
+                } else {
+                    coachGrades[i] = i > 0 ? coachGrades[i - 1] : 0;
+                }
+            }
+
+            let coachBigBigSeconds = 0;
+            let coachSmallSmallSeconds = 0;
+            let coachBigBigPowerSum = 0, coachBigBigPowerCount = 0;
+            let coachBigBigCadenceSum = 0, coachBigBigCadenceCount = 0;
+            let coachBigBigGradeSum = 0, coachBigBigGradeCount = 0;
+            
+            let coachSmallSmallPowerSum = 0, coachSmallSmallPowerCount = 0;
+            let coachSmallSmallCadenceSum = 0, coachSmallSmallCadenceCount = 0;
+            let coachSmallSmallGradeSum = 0, coachSmallSmallGradeCount = 0;
+
+            rawRecords.forEach((r, idx) => {
+                if (!coachDrivetrain.isDouble) return;
+                const isBigBig = r.front_gear_teeth === coachDrivetrain.bigRing && coachDrivetrain.largestRearCogs.includes(r.rear_gear_teeth);
+                const isSmallSmall = r.front_gear_teeth === coachDrivetrain.smallRing && coachDrivetrain.smallestRearCogs.includes(r.rear_gear_teeth);
+                const curGrade = coachGrades[idx] || 0;
+
+                if (isBigBig) {
+                    coachBigBigSeconds++;
+                    if (r.power > 0) {
+                        coachBigBigPowerSum += r.power;
+                        coachBigBigPowerCount++;
+                    }
+                    if (r.cadence > 0) {
+                        coachBigBigCadenceSum += r.cadence;
+                        coachBigBigCadenceCount++;
+                    }
+                    coachBigBigGradeSum += curGrade;
+                    coachBigBigGradeCount++;
+                } else if (isSmallSmall) {
+                    coachSmallSmallSeconds++;
+                    if (r.power > 0) {
+                        coachSmallSmallPowerSum += r.power;
+                        coachSmallSmallPowerCount++;
+                    }
+                    if (r.cadence > 0) {
+                        coachSmallSmallCadenceSum += r.cadence;
+                        coachSmallSmallCadenceCount++;
+                    }
+                    coachSmallSmallGradeSum += curGrade;
+                    coachSmallSmallGradeCount++;
+                }
+            });
+
+            const coachTotalRideSeconds = rideData.summary.duration_seconds || 1;
+            const coachBigBigPct = (coachBigBigSeconds / coachTotalRideSeconds) * 100;
+            const coachSmallSmallPct = (coachSmallSmallSeconds / coachTotalRideSeconds) * 100;
+            const coachAvgBigBigPower = coachBigBigPowerCount > 0 ? Math.round(coachBigBigPowerSum / coachBigBigPowerCount) : 0;
+            const coachAvgBigBigCadence = coachBigBigCadenceCount > 0 ? Math.round(coachBigBigCadenceSum / coachBigBigCadenceCount) : 0;
+            const coachAvgBigBigGrade = coachBigBigGradeCount > 0 ? (coachBigBigGradeSum / coachBigBigGradeCount) : 0;
+            const coachAvgSmallSmallPower = coachSmallSmallPowerCount > 0 ? Math.round(coachSmallSmallPowerSum / coachSmallSmallPowerCount) : 0;
+            const coachAvgSmallSmallCadence = coachSmallSmallCadenceCount > 0 ? Math.round(coachSmallSmallCadenceSum / coachSmallSmallCadenceCount) : 0;
+            const coachAvgSmallSmallGrade = coachSmallSmallGradeCount > 0 ? (coachSmallSmallGradeSum / coachSmallSmallGradeCount) : 0;
+
             // Step 2: Packaging
             setStep('step-downsample', 'done');
             setStep('step-prompt', 'active');
@@ -5076,6 +5993,7 @@ func getDashboardTemplate() string {
             const model = coachModelSelect.value;
             const ftp = athleteFTP;
             const intensityFactor = (rideData.summary.normalized_power / ftp).toFixed(2);
+            const tssVal = Math.round((rideData.summary.duration_seconds * rideData.summary.normalized_power * (rideData.summary.normalized_power / ftp)) / (ftp * 36));
             
             // Build Plan and History Context
             let planContext = "";
@@ -5202,6 +6120,7 @@ func getDashboardTemplate() string {
                 '- Average Power: ' + Math.round(rideData.summary.average_power) + ' W\n' +
                 '- Normalized Power (NP): ' + rideData.summary.normalized_power + ' W\n' +
                 '- Intensity Factor (IF): ' + intensityFactor + ' (FTP ' + ftp + 'W)\n' +
+                '- Training Stress Score (TSS): ' + (isNaN(tssVal) ? '0' : tssVal) + '\n' +
                 '- Max Power: ' + rideData.summary.max_power + ' W\n' +
                 '- Avg Heart Rate: ' + Math.round(rideData.summary.average_heart_rate) + ' bpm\n' +
                 '- Max Heart Rate: ' + rideData.summary.max_heart_rate + ' bpm\n' +
@@ -5212,7 +6131,11 @@ func getDashboardTemplate() string {
                 '- Pedalling Cadence Variability (Standard Deviation): ' + cadStDev.toFixed(1) + ' rpm\n' +
                 '- Max Cadence: ' + rideData.summary.max_cadence + ' rpm\n' +
                 '- Elevation Gain: ' + Math.round(rideData.summary.total_elevation_gain_meters) + ' m\n' +
-                '- Total Shifts: ' + rideData.summary.total_shifts + ' (Front: ' + rideData.summary.total_front_shifts + ', Rear: ' + rideData.summary.total_rear_shifts + ')\n\n' +
+                '- Total Shifts: ' + rideData.summary.total_shifts + ' (Front: ' + rideData.summary.total_front_shifts + ', Rear: ' + rideData.summary.total_rear_shifts + ')\n' +
+                (coachDrivetrain.isDouble ? (
+                    '- Big-Big Cross-Chaining: ' + coachBigBigSeconds + ' seconds (' + coachBigBigPct.toFixed(1) + '% of ride), Avg Power: ' + coachAvgBigBigPower + ' W, Avg Cadence: ' + coachAvgBigBigCadence + ' rpm, Avg Grade: ' + coachAvgBigBigGrade.toFixed(1) + '%\n' +
+                    '- Small-Small Cross-Chaining: ' + coachSmallSmallSeconds + ' seconds (' + coachSmallSmallPct.toFixed(1) + '% of ride), Avg Power: ' + coachAvgSmallSmallPower + ' W, Avg Cadence: ' + coachAvgSmallSmallCadence + ' rpm, Avg Grade: ' + coachAvgSmallSmallGrade.toFixed(1) + '%\n'
+                ) : '- Bike setup is a 1x single ring; cross-chaining is not applicable.\n') + '\n' +
                 'Normalised Cadence Context:\n' +
                 '- Normalised Cadence evaluates the athlete\'s cadence ONLY when they are actively pedalling (cadence > 0), filtering out descents, cornering, or coasting.\n' +
                 '- Standard Average Cadence is ' + Math.round(rideData.summary.average_cadence) + ' rpm because it includes coasting periods. The difference between standard average cadence and Normalised Cadence shows the proportion of time spent coasting.\n' +
@@ -6534,7 +7457,7 @@ func getDashboardTemplate() string {
             reader.readAsText(file);
         });
 
-    </script>
+    </script>    </div> <!-- End dashboard-view -->
 </body>
 </html>`
 }
