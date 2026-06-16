@@ -2288,10 +2288,30 @@
             const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
             document.getElementById('ride-date-sub').innerText = startDate.toLocaleDateString('en-US', dateOptions);
 
-        
-        document.getElementById('val-np').innerHTML = rideData.summary.normalized_power + ' <span class="stat-unit">W</span>';
-        document.getElementById('val-avg-power').innerText = 'Avg: ' + Math.round(rideData.summary.average_power) + ' W';
-        document.getElementById('val-max-power').innerHTML = rideData.summary.max_power + ' <span class="stat-unit">W</span>';
+            
+            const hasPower = rideData.summary.max_power > 0 || rideData.summary.average_power > 0;
+            const powerElements = [
+                'card-np',
+                'card-max-power',
+                'card-tss',
+                'card-quadrant',
+                'card-ftp-history',
+                'container-chart-power-zones',
+                'container-power-zones-table',
+                'card-power-timeline',
+                'card-power-curve'
+            ];
+            powerElements.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.style.display = hasPower ? '' : 'none';
+                }
+            });
+
+            
+            document.getElementById('val-np').innerHTML = rideData.summary.normalized_power + ' <span class="stat-unit">W</span>';
+            document.getElementById('val-avg-power').innerText = 'Avg: ' + Math.round(rideData.summary.average_power) + ' W';
+            document.getElementById('val-max-power').innerHTML = rideData.summary.max_power + ' <span class="stat-unit">W</span>';
         
         
         const updateIFDisplay = () => {
@@ -2904,47 +2924,49 @@
         });
 
         
-        const curveLabels = ["1s", "3s", "5s", "30s", "1m", "3m", "5m", "20m", "1h"];
-        const curveData = curveLabels.map(label => rideData.summary.power_curve[label] || 0);
+        if (hasPower) {
+            const curveLabels = ["1s", "3s", "5s", "30s", "1m", "3m", "5m", "20m", "1h"];
+            const curveData = curveLabels.map(label => rideData.summary.power_curve[label] || 0);
 
-        powerCurveChart = new Chart(document.getElementById('chart-power-curve').getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: curveLabels,
-                datasets: [{
-                    label: 'Peak Power (W)',
-                    data: curveData,
-                    backgroundColor: currentAccentColor,
-                    borderColor: 'rgba(255,255,255,0.1)',
-                    borderWidth: 1,
-                    borderRadius: 6,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                indexAxis: 'y', 
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: '#1b1b26',
-                        titleFont: { family: 'Outfit' },
-                        bodyFont: { family: 'Outfit' }
-                    }
+            powerCurveChart = new Chart(document.getElementById('chart-power-curve').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: curveLabels,
+                    datasets: [{
+                        label: 'Peak Power (W)',
+                        data: curveData,
+                        backgroundColor: currentAccentColor,
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1,
+                        borderRadius: 6,
+                    }]
                 },
-                scales: {
-                    x: {
-                        grid: { color: 'rgba(255, 255, 255, 0.02)' },
-                        ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
-                        title: { display: true, text: 'Watts (W)', color: '#94a3b8', font: { family: 'Outfit' } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y', 
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1b1b26',
+                            titleFont: { family: 'Outfit' },
+                            bodyFont: { family: 'Outfit' }
+                        }
                     },
-                    y: {
-                        grid: { display: false },
-                        ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.02)' },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
+                            title: { display: true, text: 'Watts (W)', color: '#94a3b8', font: { family: 'Outfit' } }
+                        },
+                        y: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
 
         
         
@@ -2976,9 +2998,11 @@
 
             records.forEach(r => {
                 totalSecs++;
-                const power = r.power;
-                const pz = pZones.find(z => power >= z.min && power <= z.max);
-                if (pz) pz.secs++;
+                if (hasPower) {
+                    const power = r.power;
+                    const pz = pZones.find(z => power >= z.min && power <= z.max);
+                    if (pz) pz.secs++;
+                }
 
                 const hr = r.heart_rate;
                 const hz = hZones.find(z => hr >= z.min && hr <= z.max);
@@ -2992,19 +3016,21 @@
             };
 
             
-            const pBody = document.getElementById('power-zones-tbody');
-            if (pBody) {
-                pBody.innerHTML = '';
-                pZones.forEach(z => {
-                    const pct = totalSecs ? ((z.secs / totalSecs) * 100).toFixed(1) : '0.0';
-                    const rangeStr = z.max === 9999 ? '> ' + z.min + 'W' : z.min + ' - ' + z.max + 'W';
-                    pBody.innerHTML += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.02);">' +
-                        '<td style="padding: 0.35rem 0; font-weight: 500; color: #ffffff;">' + z.name + '</td>' +
-                        '<td style="padding: 0.35rem 0;">' + rangeStr + '</td>' +
-                        '<td style="padding: 0.35rem 0; text-align: right; font-family: monospace;">' + formatSecs(z.secs) + '</td>' +
-                        '<td style="padding: 0.35rem 0; text-align: right; font-weight: 600; color: ' + z.color.replace('0.65', '1') + ';">' + pct + '%</td>' +
-                        '</tr>';
-                });
+            if (hasPower) {
+                const pBody = document.getElementById('power-zones-tbody');
+                if (pBody) {
+                    pBody.innerHTML = '';
+                    pZones.forEach(z => {
+                        const pct = totalSecs ? ((z.secs / totalSecs) * 100).toFixed(1) : '0.0';
+                        const rangeStr = z.max === 9999 ? '> ' + z.min + 'W' : z.min + ' - ' + z.max + 'W';
+                        pBody.innerHTML += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.02);">' +
+                            '<td style="padding: 0.35rem 0; font-weight: 500; color: #ffffff;">' + z.name + '</td>' +
+                            '<td style="padding: 0.35rem 0;">' + rangeStr + '</td>' +
+                            '<td style="padding: 0.35rem 0; text-align: right; font-family: monospace;">' + formatSecs(z.secs) + '</td>' +
+                            '<td style="padding: 0.35rem 0; text-align: right; font-weight: 600; color: ' + z.color.replace('0.65', '1') + ';">' + pct + '%</td>' +
+                            '</tr>';
+                    });
+                }
             }
 
             
@@ -3024,54 +3050,56 @@
             }
 
             
-            if (chartPZones) {
-                chartPZones.destroy();
-            }
-            chartPZones = new Chart(document.getElementById('chart-power-zones').getContext('2d'), {
-                type: 'bar',
-                data: {
-                    labels: pZones.map(z => z.name.split(' - ')[0]),
-                    datasets: [{
-                        label: 'Power Zones Time (seconds)',
-                        data: pZones.map(z => z.secs),
-                        backgroundColor: pZones.map(z => z.color),
-                        borderColor: pZones.map(z => z.color.replace('0.65', '1')),
-                        borderWidth: 1,
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const secs = context.parsed.y;
-                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                    const pct = total ? ((secs / total) * 100).toFixed(1) : 0;
-                                    return pZones[context.dataIndex].name + ': ' + formatSecs(secs) + ' (' + pct + '%)';
+            if (hasPower) {
+                if (chartPZones) {
+                    chartPZones.destroy();
+                }
+                chartPZones = new Chart(document.getElementById('chart-power-zones').getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: pZones.map(z => z.name.split(' - ')[0]),
+                        datasets: [{
+                            label: 'Power Zones Time (seconds)',
+                            data: pZones.map(z => z.secs),
+                            backgroundColor: pZones.map(z => z.color),
+                            borderColor: pZones.map(z => z.color.replace('0.65', '1')),
+                            borderWidth: 1,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const secs = context.parsed.y;
+                                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                        const pct = total ? ((secs / total) * 100).toFixed(1) : 0;
+                                        return pZones[context.dataIndex].name + ': ' + formatSecs(secs) + ' (' + pct + '%)';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
+                            },
+                            y: {
+                                grid: { color: 'rgba(255,255,255,0.02)' },
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { family: 'Outfit', size: 10 },
+                                    callback: function(val) { return formatSecs(val).split(' ')[0] + 'm'; }
                                 }
                             }
                         }
-                    },
-                    scales: {
-                        x: {
-                            grid: { display: false },
-                            ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } }
-                        },
-                        y: {
-                            grid: { color: 'rgba(255,255,255,0.02)' },
-                            ticks: {
-                                color: '#94a3b8',
-                                font: { family: 'Outfit', size: 10 },
-                                callback: function(val) { return formatSecs(val).split(' ')[0] + 'm'; }
-                            }
-                        }
                     }
-                }
-            });
+                });
+            }
 
             
             if (chartHZones) {
