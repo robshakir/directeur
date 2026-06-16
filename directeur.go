@@ -2679,17 +2679,17 @@ func getDashboardTemplate() string {
 
     <!-- Stats Grid -->
     <div class="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card" id="card-np">
             <div class="stat-label">Power (NP)</div>
             <div class="stat-value" id="val-np">- <span class="stat-unit">W</span></div>
             <div class="stat-subtext" id="val-avg-power">Avg: - W</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="card-max-power">
             <div class="stat-label">Max Power</div>
             <div class="stat-value" id="val-max-power">- <span class="stat-unit">W</span></div>
             <div class="stat-subtext" id="val-max-power-sub">-</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="card-tss">
             <div class="stat-label">Training Stress (TSS)</div>
             <div class="stat-value" id="val-tss">-</div>
             <div class="stat-subtext" id="val-tss-details">IF: - (FTP -W)</div>
@@ -2731,7 +2731,7 @@ func getDashboardTemplate() string {
             </div>
 
             <!-- Power & 30s Power Chart -->
-            <div class="card">
+            <div class="card" id="card-power-timeline">
                 <div class="card-header">
                     <div class="card-title">Power Timeline</div>
                 </div>
@@ -2829,7 +2829,7 @@ func getDashboardTemplate() string {
                     <div class="card-title">Training Zones Distribution</div>
                 </div>
                 <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; padding: 1rem 0;">
-                    <div style="flex: 1; min-width: 280px; height: 260px;">
+                    <div id="container-chart-power-zones" style="flex: 1; min-width: 280px; height: 260px;">
                         <canvas id="chart-power-zones"></canvas>
                     </div>
                     <div style="flex: 1; min-width: 280px; height: 260px;">
@@ -2838,7 +2838,7 @@ func getDashboardTemplate() string {
                 </div>
                 <div style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                        <div>
+                        <div id="container-power-zones-table">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
                                 <h4 style="color: var(--accent); margin: 0; font-family: 'Outfit'; font-weight: 600;">Power Zones</h4>
                                 <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.25rem;">
@@ -2880,7 +2880,7 @@ func getDashboardTemplate() string {
             </div>
 
             <!-- Neuromuscular vs. Aerobic Load (Quadrant Analysis) -->
-            <div class="card">
+            <div class="card" id="card-quadrant">
                 <div class="card-header">
                     <div class="card-title">Neuromuscular vs. Aerobic Load (Quadrant Analysis)</div>
                 </div>
@@ -2944,7 +2944,7 @@ func getDashboardTemplate() string {
             </div>
 
             <!-- FTP History & Estimation Card -->
-            <div class="card">
+            <div class="card" id="card-ftp-history">
                 <div class="card-header">
                     <div class="card-title">FTP History & Estimation</div>
                 </div>
@@ -3007,7 +3007,7 @@ func getDashboardTemplate() string {
             </div>
 
             <!-- Peak Power Profile (MMP) Card -->
-            <div class="card">
+            <div class="card" id="card-power-curve">
                 <div class="card-header">
                     <div class="card-title">Peak Power Profile (MMP)</div>
                 </div>
