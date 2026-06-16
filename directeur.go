@@ -4971,12 +4971,17 @@ func getDashboardTemplate() string {
 
                 let dateDisplay = '';
                 let shortDateStr = '';
-                const weekdayOffsets = {
-                    'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
-                    'friday': 4, 'saturday': 5, 'sunday': 6
+                const weekdayIndices = {
+                    'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+                    'thursday': 4, 'friday': 5, 'saturday': 6
                 };
+                const startDayOfWeek = startDate ? startDate.getDay() : 0;
                 const dayName = (d.day || '').toLowerCase().trim();
-                const offset = weekdayOffsets[dayName] !== undefined ? weekdayOffsets[dayName] : idx;
+                let offset = idx;
+                if (startDate && weekdayIndices[dayName] !== undefined) {
+                    const targetDayOfWeek = weekdayIndices[dayName];
+                    offset = (targetDayOfWeek - startDayOfWeek + 7) % 7;
+                }
 
                 if (startDate) {
                     const dayDate = new Date(startDate);
@@ -5118,48 +5123,58 @@ func getDashboardTemplate() string {
                 }
             }
 
+            // Retrieve last generated training program from localStorage for context
+            let lastPlanText = "No previous training plan found in local storage.";
+            const lastPlanData = localStorage.getItem('fit_training_program');
+            if (lastPlanData) {
+                try {
+                    const parsed = JSON.parse(lastPlanData);
+                    if (parsed) {
+                        const lastSummary = parsed.weekly_summary || "No weekly focus available.";
+                        const lastDays = (parsed.days || []).map(d => 
+                            "- " + d.day + ": " + d.title + " (" + d.workout_type + ", " + d.duration_mins + " mins) - " + d.description
+                        ).join('\n');
+                        lastPlanText = "Weekly Summary: " + lastSummary + "\n" + lastDays;
+                    }
+                } catch(e) {
+                    console.error("Error loading previous plan for prompt context:", e);
+                }
+            }
+
             // Calculate current date context and training week dates
             const today = new Date();
-            const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            
-            let startMonday = new Date(today);
-            if (dayOfWeek >= 1 && dayOfWeek <= 3) {
-                // Mon-Wed: plan for this week (starting this week's Monday)
-                startMonday.setDate(today.getDate() - (dayOfWeek - 1));
-            } else {
-                // Thu-Sun: plan for next week (starting next week's Monday)
-                const daysToMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-                startMonday.setDate(today.getDate() + daysToMonday);
-            }
-            
             const formatDate = (d) => d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-            
             const todayStr = formatDate(today);
             
             const tomorrow = new Date(today);
             tomorrow.setDate(today.getDate() + 1);
             const tomorrowStr = formatDate(tomorrow);
             
-            const startMondayStr = formatDate(startMonday);
-            
+            // Generate list of next 7 days starting today
             let weekDaysText = "";
+            let weekDaysList = [];
             for (let i = 0; i < 7; i++) {
-                const d = new Date(startMonday);
-                d.setDate(startMonday.getDate() + i);
+                const d = new Date(today);
+                d.setDate(today.getDate() + i);
+                const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+                weekDaysList.push(dayName);
                 weekDaysText += "- " + d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }) + "\n";
             }
+            const startDayName = weekDaysList[0];
+            const chronologicalDaysGuide = weekDaysList.join(', ');
 
-            const promptText = "You are an elite cycling coach and exercise physiologist. Design a structured weekly training program (7 days, Monday to Sunday) for an athlete based on their recent ride history, current FTP, training goals, and constraints.\n\n" +
+            const promptText = "You are an elite cycling coach and exercise physiologist. Design a structured training program for the next 7 days, starting today (" + todayStr + "), for an athlete based on their recent ride history, current FTP, training goals, constraints, and their last generated training plan.\n\n" +
                 "Date Context:\n" +
-                "- Today is: " + todayStr + "\n" +
-                "- Tomorrow is: " + tomorrowStr + "\n" +
-                "- The training program is for the week starting on: " + startMondayStr + "\n" +
-                "- The specific days of this training week are:\n" + weekDaysText + "\n" +
+                "- Today (Day 1) is: " + todayStr + "\n" +
+                "- Tomorrow (Day 2) is: " + tomorrowStr + "\n" +
+                "- The 7 specific days of this training program are:\n" + weekDaysText + "\n" +
                 "IMPORTANT RULES FOR HANDLING DAYS/DATES:\n" +
                 "1. Today's date and day of the week is " + todayStr + ". Use this exact date context to interpret relative days/dates mentioned in the constraints (e.g. if today is Tuesday, then 'yesterday' is Monday, 'tomorrow' is Wednesday, 'this Friday' is Friday, etc.).\n" +
-                "2. If the athlete says they 'just finished' or 'completed' a workout today or on any day in the past, you MUST record that specific completed workout on that day in your training plan. DO NOT prescribe 'Rest' or a different workout for a day when a workout has already been completed.\n" +
-                "3. Align all other planned workouts and rest days exactly with the dates/weekdays mentioned in the athlete's constraints (e.g. if they say they will ride 100km on Friday, place that ride on the corresponding Friday date; if they suggest rides for Saturday and Sunday, schedule appropriate workouts on those weekend days).\n" +
-                "4. Make sure that any prior days in the current week that have already passed (relative to today's date) are set to 'Rest' or to the actual workouts completed if specified by the athlete.\n\n" +
+                "2. If the athlete says they 'just finished' or 'completed' a workout today, you MUST record that specific completed workout on today (" + startDayName + ") in your training plan. DO NOT prescribe 'Rest' or a different workout for today if a workout has already been completed.\n" +
+                "3. Align all other planned workouts and rest days exactly with the dates/weekdays mentioned in the athlete's constraints (e.g. if they say they will ride 100km on Friday, place that ride on the corresponding Friday date; if they suggest rides for Saturday and Sunday, schedule appropriate workouts on those weekend days within the 7-day program).\n" +
+                "4. You must output the days in chronological order starting from today: " + chronologicalDaysGuide + ".\n" +
+                "5. Consider the Last Generated Training Plan Context (if available) when planning the next 7 days. Use it to ensure continuity in training load, progression, recovery, and to understand what workouts were previously scheduled.\n\n" +
+                "Last Generated Training Plan Context:\n" + lastPlanText + "\n\n" +
                 "Athlete FTP: " + athleteFTP + " W\n\n" +
                 "Recent Ride History:\n" + historyText + "\n\n" +
                 "Athlete's Training Goals:\n" + goals + "\n\n" +
@@ -5169,7 +5184,7 @@ func getDashboardTemplate() string {
                 "  \"weekly_summary\": \"Provide a 2-3 sentence overview of the week's physiological focus and progression.\",\n" +
                 "  \"days\": [\n" +
                 "    {\n" +
-                "      \"day\": \"Monday\",\n" +
+                "      \"day\": \"" + startDayName + "\",\n" +
                 "      \"workout_type\": \"Rest Day / Recovery / Endurance / Tempo / Sweet Spot / Threshold / VO2 Max / Anaerobic\",\n" +
                 "      \"title\": \"Workout Name\",\n" +
                 "      \"duration_mins\": 60,\n" +
@@ -5178,7 +5193,7 @@ func getDashboardTemplate() string {
                 "      \"description\": \"Overview of the workout focus.\",\n" +
                 "      \"structure\": \"Warm Up: 10m easy spinning. Main Set: 3x8m at Sweet Spot (200-215W) with 4m recovery. Cool Down: 10m easy spinning.\"\n" +
                 "    },\n" +
-                "    ... (continue for Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)\n" +
+                "    ... (continue in chronological order for the next 6 days: " + weekDaysList.slice(1).join(', ') + ")\n" +
                 "  ]\n" +
                 "}\n\n" +
                 "Ensure the output is valid JSON. Do not wrap it in anything other than the JSON block. Do not include markdown code block syntax outside the raw JSON text.";
@@ -5230,7 +5245,7 @@ func getDashboardTemplate() string {
                     const parsedProgram = JSON.parse(jsonText);
                     
                     // Attach the start_date of the training week to the program object
-                    parsedProgram.start_date = startMonday.toISOString();
+                    parsedProgram.start_date = today.toISOString();
                     
                     localStorage.setItem('fit_training_program', JSON.stringify(parsedProgram));
                     renderTrainingCalendar(parsedProgram);
