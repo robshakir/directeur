@@ -2565,9 +2565,12 @@ func getDashboardTemplate() string {
                     <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                         <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Gemini AI Model</label>
                         <select id="calendar-model-select" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%;">
-                            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Default)</option>
+                            <option value="gemini-3.5-flash" selected>Gemini 3.5 Flash (Default)</option>
+                            <option value="gemini-3.5-pro">Gemini 3.5 Pro</option>
+                            <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
                             <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            <option value="gemini-1.5-pro">Gemini 1.5 Pro (Legacy)</option>
                         </select>
                     </div>
 
@@ -3165,7 +3168,9 @@ func getDashboardTemplate() string {
                 </div>
                 <div style="display: flex; gap: 0.75rem; align-items: center;">
                     <select id="coach-model-select" class="btn-action" style="font-size: 0.85rem; padding: 0.25rem 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 6px; outline: none;">
-                        <option value="gemini-3.5-flash">Gemini 3.5 Flash (Default)</option>
+                        <option value="gemini-3.5-flash" selected>Gemini 3.5 Flash (Default)</option>
+                        <option value="gemini-3.5-pro">Gemini 3.5 Pro</option>
+                        <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
                         <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
                         <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                         <option value="gemini-1.5-pro">Gemini 1.5 Pro (Legacy)</option>
