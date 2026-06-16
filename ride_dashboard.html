@@ -3647,7 +3647,11 @@
                 "- Tomorrow is: " + tomorrowStr + "\n" +
                 "- The training program is for the week starting on: " + startMondayStr + "\n" +
                 "- The specific days of this training week are:\n" + weekDaysText + "\n" +
-                "IMPORTANT: Today's date and day of the week is " + todayStr + ". Use this exact date context to correctly interpret any relative days/dates mentioned in the athlete's constraints (e.g. if today is Friday and they say 'tomorrow' or 'this Saturday', it refers to Saturday, " + tomorrowStr + ", which is before the training week, but if they say 'next week' or refer to days within the training week, align them correctly with the training week dates above).\n\n" +
+                "IMPORTANT RULES FOR HANDLING DAYS/DATES:\n" +
+                "1. Today's date and day of the week is " + todayStr + ". Use this exact date context to interpret relative days/dates mentioned in the constraints (e.g. if today is Tuesday, then 'yesterday' is Monday, 'tomorrow' is Wednesday, 'this Friday' is Friday, etc.).\n" +
+                "2. If the athlete says they 'just finished' or 'completed' a workout today or on any day in the past, you MUST record that specific completed workout on that day in your training plan. DO NOT prescribe 'Rest' or a different workout for a day when a workout has already been completed.\n" +
+                "3. Align all other planned workouts and rest days exactly with the dates/weekdays mentioned in the athlete's constraints (e.g. if they say they will ride 100km on Friday, place that ride on the corresponding Friday date; if they suggest rides for Saturday and Sunday, schedule appropriate workouts on those weekend days).\n" +
+                "4. Make sure that any prior days in the current week that have already passed (relative to today's date) are set to 'Rest' or to the actual workouts completed if specified by the athlete.\n\n" +
                 "Athlete FTP: " + athleteFTP + " W\n\n" +
                 "Recent Ride History:\n" + historyText + "\n\n" +
                 "Athlete's Training Goals:\n" + goals + "\n\n" +
