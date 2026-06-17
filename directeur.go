@@ -5014,18 +5014,47 @@ func getDashboardTemplate() string {
         };
         window.showDashboardView = showDashboardView;
 
-        const viewRideAnalysis = (source, param, param2, rideId) => {
-            if (source && param) {
-                loadRideData(source, param, param2 || '');
-                showDashboardView();
-                return;
+        const viewRideAnalysis = (rideId) => {
+            if (!rideId) return;
+
+            // 1. Check history for this ride to get metadata
+            const historyData = localStorage.getItem('fit_ride_history');
+            if (historyData) {
+                try {
+                    const history = JSON.parse(historyData);
+                    const ride = history.find(r => r.id === rideId);
+                    if (ride && ride.source && ride.param) {
+                        loadRideData(ride.source, ride.param, ride.param2 || '');
+                        showDashboardView();
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Error checking history in viewRideAnalysis:", e);
+                }
             }
 
-            // Fallback: Try to resolve using rideId (start_time) and window.allRidesData
-            if (rideId && window.allRidesData) {
+            // 2. Fallback: Try to resolve using rideId (start_time) and window.allRidesData
+            if (window.allRidesData) {
                 const targetTime = new Date(rideId).getTime();
                 if (!isNaN(targetTime)) {
-                    // 1. Check Hammerhead rides
+                    // Check local rides by parsing their filename dates
+                    if (window.allRidesData.local) {
+                        const match = window.allRidesData.local.find(file => {
+                            if (!file.filename) return false;
+                            const parts = file.filename.match(/^(\d{4}-\d{2}-\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
+                            if (parts) {
+                                const fileTime = new Date(parts[1] + 'T' + parts[2] + ':' + parts[3] + ':' + parts[4] + 'Z').getTime();
+                                return !isNaN(fileTime) && Math.abs(fileTime - targetTime) <= 300000;
+                            }
+                            return false;
+                        });
+                        if (match) {
+                            loadRideData('local', match.filename, '');
+                            showDashboardView();
+                            return;
+                        }
+                    }
+                    // Check Hammerhead rides
                     if (window.allRidesData.hammerhead) {
                         const match = window.allRidesData.hammerhead.find(act => {
                             if (!act.startTime) return false;
@@ -5038,7 +5067,7 @@ func getDashboardTemplate() string {
                             return;
                         }
                     }
-                    // 2. Check Wahoo rides
+                    // Check Wahoo rides
                     if (window.allRidesData.wahoo) {
                         const match = window.allRidesData.wahoo.find(act => {
                             if (!act.starts) return false;
@@ -5209,6 +5238,56 @@ func getDashboardTemplate() string {
                     });
                 }
 
+                if (completedRide && (!completedRide.source || !completedRide.param)) {
+                    const targetTime = new Date(completedRide.id).getTime();
+                    if (!isNaN(targetTime)) {
+                        // 1. Check local files
+                        if (window.allRidesData && window.allRidesData.local) {
+                            const match = window.allRidesData.local.find(file => {
+                                if (!file.filename) return false;
+                                const parts = file.filename.match(/^(\d{4}-\d{2}-\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
+                                if (parts) {
+                                    const fileTime = new Date(parts[1] + 'T' + parts[2] + ':' + parts[3] + ':' + parts[4] + 'Z').getTime();
+                                    return !isNaN(fileTime) && Math.abs(fileTime - targetTime) <= 300000;
+                                }
+                                return false;
+                            });
+                            if (match) {
+                                completedRide.source = 'local';
+                                completedRide.param = match.filename;
+                                needsHistorySave = true;
+                            }
+                        }
+                        // 2. Check Hammerhead
+                        if ((!completedRide.source || !completedRide.param) && window.allRidesData && window.allRidesData.hammerhead) {
+                            const match = window.allRidesData.hammerhead.find(act => {
+                                if (!act.startTime) return false;
+                                const actTime = new Date(act.startTime).getTime();
+                                return !isNaN(actTime) && Math.abs(actTime - targetTime) <= 300000;
+                            });
+                            if (match) {
+                                completedRide.source = 'hammerhead';
+                                completedRide.param = match.id;
+                                needsHistorySave = true;
+                            }
+                        }
+                        // 3. Check Wahoo
+                        if ((!completedRide.source || !completedRide.param) && window.allRidesData && window.allRidesData.wahoo) {
+                            const match = window.allRidesData.wahoo.find(act => {
+                                if (!act.starts) return false;
+                                const actTime = new Date(act.starts).getTime();
+                                return !isNaN(actTime) && Math.abs(actTime - targetTime) <= 300000;
+                            });
+                            if (match) {
+                                completedRide.source = 'wahoo';
+                                completedRide.param = match.id;
+                                completedRide.param2 = match.file ? match.file.url : '';
+                                needsHistorySave = true;
+                            }
+                        }
+                    }
+                }
+
                 // Create the top bar overview capsule
                 const overviewCard = document.createElement('div');
                 overviewCard.style.background = 'var(--bg-tertiary)';
@@ -5320,6 +5399,15 @@ func getDashboardTemplate() string {
                     '</div>';
                 grid.appendChild(row);
             });
+
+            if (needsHistorySave) {
+                try {
+                    localStorage.setItem('fit_ride_history', JSON.stringify(history));
+                } catch (e) {
+                    console.error("Failed to update history with resolved metadata:", e);
+                }
+            }
+
             grid.style.display = 'flex';
         };
         window.renderTrainingCalendar = renderTrainingCalendar;
