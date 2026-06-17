@@ -3298,7 +3298,9 @@ func getDashboardTemplate() string {
 
     <!-- Data Injection & Logic -->
     <script>
-        let rideData = {{.JSONStr}};
+        const initialRideData = {{.JSONStr}};
+        window.initialRideData = initialRideData;
+        let rideData = initialRideData;
         const schemaData = {{.SchemaStr}};
         const configBikes = {{.BikesStr}};
         console.log("Loaded Ride Data:", rideData);
@@ -4898,6 +4900,19 @@ func getDashboardTemplate() string {
         };
         window.showDashboardView = showDashboardView;
 
+        const viewRideAnalysis = (source, param, param2) => {
+            if (source && param) {
+                loadRideData(source, param, param2 || '');
+                showDashboardView();
+            } else {
+                if (window.initialRideData) {
+                    renderDashboard(window.initialRideData);
+                }
+                showDashboardView();
+            }
+        };
+        window.viewRideAnalysis = viewRideAnalysis;
+
         const showLandingView = () => {
             document.getElementById('dashboard-view').style.display = 'none';
             document.getElementById('calendar-view').style.display = 'none';
@@ -4968,6 +4983,17 @@ func getDashboardTemplate() string {
             if (data && data.start_date) {
                 startDate = new Date(data.start_date);
             }
+
+            // Retrieve local ride history for matching completed rides
+            const historyData = localStorage.getItem('fit_ride_history');
+            let history = [];
+            if (historyData) {
+                try {
+                    history = JSON.parse(historyData);
+                } catch (e) {
+                    console.error("Error parsing ride history for calendar:", e);
+                }
+            }
             
             data.days.forEach((d, idx) => {
                 let badgeColor = 'rgba(255,255,255,0.08)';
@@ -5011,11 +5037,28 @@ func getDashboardTemplate() string {
                     offset = (targetDayOfWeek - startDayOfWeek + 7) % 7;
                 }
 
+                let dayDate = null;
                 if (startDate) {
-                    const dayDate = new Date(startDate);
+                    dayDate = new Date(startDate);
                     dayDate.setDate(startDate.getDate() + offset);
                     shortDateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                     dateDisplay = '<span style="font-size: 0.85rem; color: var(--text-secondary); margin-top: -0.2rem; margin-bottom: 0.2rem; font-weight: 500;">' + shortDateStr + '</span>';
+                }
+
+                // Check if there is an analyzed ride matching this dayDate (local time comparison)
+                let completedRide = null;
+                if (dayDate) {
+                    const dYear = dayDate.getFullYear();
+                    const dMonth = dayDate.getMonth();
+                    const dDay = dayDate.getDate();
+                    
+                    completedRide = history.find(ride => {
+                        if (!ride.id) return false;
+                        const rDate = new Date(ride.id);
+                        return rDate.getFullYear() === dYear &&
+                               rDate.getMonth() === dMonth &&
+                               rDate.getDate() === dDay;
+                    });
                 }
 
                 // Create the top bar overview capsule
@@ -5060,13 +5103,19 @@ func getDashboardTemplate() string {
 
                 const titleText = d.title || 'Workout';
                 const durationText = d.duration_mins ? d.duration_mins + ' mins' : 'Rest Day';
+                const completionBadge = completedRide 
+                    ? '<span class="badge" style="background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); font-size: 0.65rem; font-weight: bold; border-radius: 4px; padding: 0.05rem 0.2rem; text-transform: uppercase; margin-top: 0.1rem; width: fit-content; display: inline-flex; align-items: center; gap: 0.15rem;">✓ Complete</span>'
+                    : '';
 
                 overviewCard.innerHTML = 
                     '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 0.25rem;">' +
                         '<strong style="font-size: 0.85rem; color: #ffffff; font-family: \'Outfit\';">' + d.day.substring(0, 3) + '</strong>' +
                         '<span style="font-size: 0.75rem; color: var(--text-secondary);">' + shortDateStr + '</span>' +
                     '</div>' +
-                    '<span class="badge" style="background: ' + badgeColor + '; color: ' + textColor + '; border: 1px solid ' + borderColor + '; font-size: 0.65rem; text-align: center; border-radius: 4px; padding: 0.05rem 0.25rem; text-transform: uppercase; width: fit-content; font-weight: 600; font-family: var(--font-family);">' + (type.includes('rest') ? 'REST' : d.workout_type) + '</span>' +
+                    '<div style="display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 0.1rem;">' +
+                        '<span class="badge" style="background: ' + badgeColor + '; color: ' + textColor + '; border: 1px solid ' + borderColor + '; font-size: 0.65rem; text-align: center; border-radius: 4px; padding: 0.05rem 0.25rem; text-transform: uppercase; width: fit-content; font-weight: 600; font-family: var(--font-family);">' + (type.includes('rest') ? 'REST' : d.workout_type) + '</span>' +
+                        completionBadge +
+                    '</div>' +
                     '<div style="font-size: 0.75rem; font-weight: 500; color: #ffffff; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; margin-top: 0.1rem;" title="' + titleText + '">' + titleText + '</div>' +
                     '<div style="font-size: 0.7rem; color: var(--text-secondary);">' + durationText + '</div>';
 
@@ -5084,12 +5133,26 @@ func getDashboardTemplate() string {
                 row.style.padding = '1.25rem';
                 row.style.alignItems = 'start';
                 row.style.transition = 'all 0.3s ease';
+
+                const completionBadgeRow = completedRide
+                    ? '<span class="badge" style="background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); font-size: 0.75rem; text-align: center; border-radius: 4px; padding: 0.15rem 0.4rem; text-transform: uppercase; width: fit-content; font-weight: 700; display: inline-flex; align-items: center; gap: 0.2rem; margin-top: 0.25rem;">✓ Complete</span>'
+                    : '';
+
+                let analysisLinkHtml = '';
+                if (completedRide) {
+                    analysisLinkHtml = '<div style="margin-top: 0.75rem; display: flex; align-items: center;">' +
+                        '<a href="#" class="view-analysis-link" style="color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--accent); border-radius: 6px; padding: 0.4rem 0.8rem; background: rgba(228, 92, 134, 0.05); transition: all 0.2s;" onmouseover="this.style.background=\'rgba(228, 92, 134, 0.15)\'; this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'rgba(228, 92, 134, 0.05)\'; this.style.transform=\'translateY(0)\'" onclick="event.preventDefault(); viewRideAnalysis(\'' + (completedRide.source || '') + '\', \'' + (completedRide.param || '') + '\', \'' + (completedRide.param2 || '') + '\')">' +
+                            '📊 View Ride Analysis (' + completedRide.distance_km + ' km)' +
+                        '</a>' +
+                    '</div>';
+                }
                 
                 row.innerHTML = 
                     '<div style="flex: 0 0 160px; min-width: 160px; display: flex; flex-direction: column; gap: 0.4rem;">' +
                         '<span style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">' + d.day + '</span>' +
                         dateDisplay +
                         '<span class="badge" style="background: ' + badgeColor + '; color: ' + textColor + '; border: 1px solid ' + borderColor + '; font-size: 0.75rem; text-align: center; border-radius: 4px; padding: 0.15rem 0.4rem; text-transform: uppercase; width: fit-content; font-weight: 600;">' + d.workout_type + '</span>' +
+                        completionBadgeRow +
                     '</div>' +
                     '<div style="flex: 3 1 0px; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; padding-right: 0.5rem;">' +
                         '<span style="font-size: 1rem; font-weight: 600; color: #ffffff; font-family: \'Outfit\';">' + d.title + '</span>' +
@@ -5104,6 +5167,7 @@ func getDashboardTemplate() string {
                         '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: var(--font-family); line-height: 1.4; color: var(--text-primary);">' +
                             d.structure +
                         '</div>' +
+                        analysisLinkHtml +
                     '</div>';
                 grid.appendChild(row);
             });
@@ -6479,7 +6543,10 @@ func getDashboardTemplate() string {
                             plan: planText,
                             notes: rideNotesText,
                             model: model,
-                            power_curve: rideData.summary.power_curve
+                            power_curve: rideData.summary.power_curve,
+                            source: currentRideSource || '',
+                            param: currentRideParam || '',
+                            param2: currentRideParam2 || ''
                         };
                         
                         if (existingIdx !== -1) {
