@@ -3378,6 +3378,7 @@ func getDashboardTemplate() string {
         let currentRideParam2 = initialRideParam2 || '';
 
         const getRideQueryString = (source, param, param2) => {
+            if (!param) return 'javascript:void(0)';
             let q = '?source=' + encodeURIComponent(source);
             if (source === 'local') {
                 q += '&file=' + encodeURIComponent(param);
@@ -3594,6 +3595,16 @@ func getDashboardTemplate() string {
                         window.allRidesData = data;
                         if (data.bikes && data.bikes.length > 0) {
                             populateSelectorOptions(data.bikes);
+                        }
+                        
+                        // Re-render training calendar to resolve/heal completed rides on load
+                        const cachedProgram = localStorage.getItem('fit_training_program');
+                        if (cachedProgram) {
+                            try {
+                                renderTrainingCalendar(JSON.parse(cachedProgram));
+                            } catch(e) {
+                                console.error("Error re-rendering calendar on rides fetch:", e);
+                            }
                         }
                         
                         // Handle connection error banner at the top of the page
