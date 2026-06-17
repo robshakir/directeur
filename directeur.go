@@ -3487,6 +3487,7 @@ func getDashboardTemplate() string {
                 fetch('/api/rides')
                     .then(res => res.json())
                     .then(data => {
+                        window.allRidesData = data;
                         if (data.bikes && data.bikes.length > 0) {
                             populateSelectorOptions(data.bikes);
                         }
@@ -4900,16 +4901,39 @@ func getDashboardTemplate() string {
         };
         window.showDashboardView = showDashboardView;
 
-        const viewRideAnalysis = (source, param, param2) => {
+        const viewRideAnalysis = (source, param, param2, rideId) => {
             if (source && param) {
                 loadRideData(source, param, param2 || '');
                 showDashboardView();
-            } else {
-                if (window.initialRideData) {
-                    renderDashboard(window.initialRideData);
-                }
-                showDashboardView();
+                return;
             }
+
+            // Fallback: Try to resolve using rideId (start_time) and window.allRidesData
+            if (rideId && window.allRidesData) {
+                // 1. Check Hammerhead rides
+                if (window.allRidesData.hammerhead) {
+                    const match = window.allRidesData.hammerhead.find(act => act.startTime === rideId || new Date(act.startTime).getTime() === new Date(rideId).getTime());
+                    if (match) {
+                        loadRideData('hammerhead', match.id, '');
+                        showDashboardView();
+                        return;
+                    }
+                }
+                // 2. Check Wahoo rides
+                if (window.allRidesData.wahoo) {
+                    const match = window.allRidesData.wahoo.find(act => act.starts === rideId || new Date(act.starts).getTime() === new Date(rideId).getTime());
+                    if (match) {
+                        loadRideData('wahoo', match.id, match.file ? match.file.url : '');
+                        showDashboardView();
+                        return;
+                    }
+                }
+            }
+
+            if (window.initialRideData) {
+                renderDashboard(window.initialRideData);
+            }
+            showDashboardView();
         };
         window.viewRideAnalysis = viewRideAnalysis;
 
@@ -5141,7 +5165,7 @@ func getDashboardTemplate() string {
                 let analysisLinkHtml = '';
                 if (completedRide) {
                     analysisLinkHtml = '<div style="margin-top: 0.75rem; display: flex; align-items: center;">' +
-                        '<a href="#" class="view-analysis-link" style="color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--accent); border-radius: 6px; padding: 0.4rem 0.8rem; background: rgba(228, 92, 134, 0.05); transition: all 0.2s;" onmouseover="this.style.background=\'rgba(228, 92, 134, 0.15)\'; this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'rgba(228, 92, 134, 0.05)\'; this.style.transform=\'translateY(0)\'" onclick="event.preventDefault(); viewRideAnalysis(\'' + (completedRide.source || '') + '\', \'' + (completedRide.param || '') + '\', \'' + (completedRide.param2 || '') + '\')">' +
+                        '<a href="#" class="view-analysis-link" style="color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--accent); border-radius: 6px; padding: 0.4rem 0.8rem; background: rgba(228, 92, 134, 0.05); transition: all 0.2s;" onmouseover="this.style.background=\'rgba(228, 92, 134, 0.15)\'; this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'rgba(228, 92, 134, 0.05)\'; this.style.transform=\'translateY(0)\'" onclick="event.preventDefault(); viewRideAnalysis(\'' + (completedRide.source || '') + '\', \'' + (completedRide.param || '') + '\', \'' + (completedRide.param2 || '') + '\', \'' + completedRide.id + '\')">' +
                             '📊 View Ride Analysis (' + completedRide.distance_km + ' km)' +
                         '</a>' +
                     '</div>';
@@ -6893,6 +6917,7 @@ func getDashboardTemplate() string {
                     return res.json();
                 })
                 .then(data => {
+                    window.allRidesData = data;
                     selectRideLoading.style.display = 'none';
 
                     // Toggle connection error banner
