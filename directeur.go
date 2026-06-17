@@ -114,6 +114,9 @@ type RideAnalysis struct {
 	Summary    RideSummary       `json:"summary"`
 	GearUsage  []GearStats       `json:"gear_usage"`
 	Records    []TelemetryRecord `json:"records"`
+	Source     string            `json:"source,omitempty"`
+	Param      string            `json:"param,omitempty"`
+	Param2     string            `json:"param2,omitempty"`
 }
 
 // GearState tracks shifting status
@@ -222,6 +225,9 @@ func main() {
 	var resolvedAnalysis RideAnalysis
 	var resolveErr error
 	var hasData bool
+	var startupSource string = "local"
+	var startupParam string = ""
+	var startupParam2 string = ""
 
 	inputPassed := false
 	flag.Visit(func(f *flag.Flag) {
@@ -233,6 +239,8 @@ func main() {
 	if inputPassed {
 		resolvedInputFile = *inputFile
 		hasData = true
+		startupSource = "local"
+		startupParam = filepath.Base(*inputFile)
 	} else {
 		// Try Hammerhead if enabled
 		if config.HammerheadAPI.Enabled && (config.HammerheadAPI.AuthToken != "" || config.HammerheadAPI.RefreshToken != "") {
@@ -244,6 +252,8 @@ func main() {
 				if err == nil {
 					resolvedInputFile = filePath
 					hasData = true
+					startupSource = "hammerhead"
+					startupParam = activities[0].ID
 				} else {
 					fmt.Printf("Error downloading Hammerhead activity: %v\n", err)
 				}
@@ -262,6 +272,9 @@ func main() {
 				if err == nil {
 					resolvedInputFile = filePath
 					hasData = true
+					startupSource = "wahoo"
+					startupParam = strconv.FormatInt(workouts[0].ID, 10)
+					startupParam2 = workouts[0].File.URL
 				} else {
 					fmt.Printf("Error downloading Wahoo activity: %v\n", err)
 				}
@@ -277,6 +290,8 @@ func main() {
 			if err == nil && len(localRides) > 0 {
 				resolvedInputFile = filepath.Join(config.LocalDirectory, localRides[0].Filename)
 				hasData = true
+				startupSource = "local"
+				startupParam = localRides[0].Filename
 			} else if err != nil {
 				fmt.Printf("Error listing local directory: %v\n", err)
 			}
@@ -287,6 +302,8 @@ func main() {
 			if _, err := os.Stat(*inputFile); err == nil {
 				resolvedInputFile = *inputFile
 				hasData = true
+				startupSource = "local"
+				startupParam = filepath.Base(*inputFile)
 			}
 		}
 	}
@@ -309,16 +326,20 @@ func main() {
 
 	// Write JSON Output if parsed successfully
 	if hasData && resolveErr == nil {
+		resolvedAnalysis.Source = startupSource
+		resolvedAnalysis.Param = startupParam
+		resolvedAnalysis.Param2 = startupParam2
+
 		fmt.Printf("Writing JSON analysis to %s...\n", *outputJSON)
 		writeJSON(*outputJSON, resolvedAnalysis)
 
 		// Generate HTML Dashboard
 		fmt.Printf("Generating HTML dashboard to %s...\n", *outputHTML)
-		writeHTML(*outputHTML, resolvedAnalysis, config)
+		writeHTML(*outputHTML, resolvedAnalysis, config, startupSource, startupParam, startupParam2)
 		fmt.Println("Analysis completed successfully!")
 	} else {
 		// Generate blank dashboard to serve as base if in serveMode but no initial data found
-		writeHTML(*outputHTML, RideAnalysis{}, config)
+		writeHTML(*outputHTML, RideAnalysis{}, config, "", "", "")
 	}
 
 	// Serve Mode if requested
@@ -1355,7 +1376,7 @@ func writeJSON(path string, analysis RideAnalysis) {
 	}
 }
 
-func writeHTML(path string, analysis RideAnalysis, config Config) {
+func writeHTML(path string, analysis RideAnalysis, config Config, source string, param string, param2 string) {
 	tmplSrc := getDashboardTemplate()
 	tmpl, err := template.New("dashboard").Parse(tmplSrc)
 	if err != nil {
@@ -1396,6 +1417,9 @@ func writeHTML(path string, analysis RideAnalysis, config Config) {
 		Summary   RideSummary
 		GearUsage []GearStats
 		FTP       int
+		Source    string
+		Param     string
+		Param2    string
 	}
 
 	data := TmplData{
@@ -1405,6 +1429,9 @@ func writeHTML(path string, analysis RideAnalysis, config Config) {
 		Summary:   analysis.Summary,
 		GearUsage: analysis.GearUsage,
 		FTP:       config.FTP,
+		Source:    source,
+		Param:     param,
+		Param2:    param2,
 	}
 
 	if err := tmpl.Execute(f, data); err != nil {
@@ -1737,6 +1764,24 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			}
 			cleanFile := filepath.Base(file)
 			filePath = filepath.Join(cfg.LocalDirectory, cleanFile)
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				// Try Hammerhead download cache
+				if cfg.HammerheadAPI.DownloadDir != "" {
+					hhPath := filepath.Join(cfg.HammerheadAPI.DownloadDir, cleanFile)
+					if _, err := os.Stat(hhPath); err == nil {
+						filePath = hhPath
+					}
+				}
+			}
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				// Try Wahoo download cache
+				if cfg.WahooAPI.DownloadDir != "" {
+					wahooPath := filepath.Join(cfg.WahooAPI.DownloadDir, cleanFile)
+					if _, err := os.Stat(wahooPath); err == nil {
+						filePath = wahooPath
+					}
+				}
+			}
 		} else if source == "hammerhead" {
 			id := r.URL.Query().Get("id")
 			if id == "" {
@@ -1791,6 +1836,16 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		if err != nil {
 			http.Error(w, fmt.Sprintf(`{"error": "failed to analyze FIT file: %s"}`, err.Error()), http.StatusInternalServerError)
 			return
+		}
+
+		analysis.Source = source
+		if source == "local" {
+			analysis.Param = r.URL.Query().Get("file")
+		} else if source == "hammerhead" {
+			analysis.Param = r.URL.Query().Get("id")
+		} else if source == "wahoo" {
+			analysis.Param = r.URL.Query().Get("id")
+			analysis.Param2 = r.URL.Query().Get("url")
 		}
 
 		json.NewEncoder(w).Encode(analysis)
@@ -3314,9 +3369,13 @@ func getDashboardTemplate() string {
         let fullJSONString = "";
         const fullSchemaString = JSON.stringify(schemaData, null, 2);
 
-        let currentRideSource = 'local';
-        let currentRideParam = rideData ? (rideData.source_file || '') : '';
-        let currentRideParam2 = '';
+        const initialRideSource = "{{.Source}}";
+        const initialRideParam = "{{.Param}}";
+        const initialRideParam2 = "{{.Param2}}";
+
+        let currentRideSource = initialRideSource || 'local';
+        let currentRideParam = initialRideParam || (rideData ? (rideData.source_file || '') : '');
+        let currentRideParam2 = initialRideParam2 || '';
 
         // Apply Theme based on Month of the ride or user selection
         let defaultThemeClass = 'theme-carbon';
@@ -4910,22 +4969,33 @@ func getDashboardTemplate() string {
 
             // Fallback: Try to resolve using rideId (start_time) and window.allRidesData
             if (rideId && window.allRidesData) {
-                // 1. Check Hammerhead rides
-                if (window.allRidesData.hammerhead) {
-                    const match = window.allRidesData.hammerhead.find(act => act.startTime === rideId || new Date(act.startTime).getTime() === new Date(rideId).getTime());
-                    if (match) {
-                        loadRideData('hammerhead', match.id, '');
-                        showDashboardView();
-                        return;
+                const targetTime = new Date(rideId).getTime();
+                if (!isNaN(targetTime)) {
+                    // 1. Check Hammerhead rides
+                    if (window.allRidesData.hammerhead) {
+                        const match = window.allRidesData.hammerhead.find(act => {
+                            if (!act.startTime) return false;
+                            const actTime = new Date(act.startTime).getTime();
+                            return !isNaN(actTime) && Math.abs(actTime - targetTime) <= 300000; // 5 minutes window
+                        });
+                        if (match) {
+                            loadRideData('hammerhead', match.id, '');
+                            showDashboardView();
+                            return;
+                        }
                     }
-                }
-                // 2. Check Wahoo rides
-                if (window.allRidesData.wahoo) {
-                    const match = window.allRidesData.wahoo.find(act => act.starts === rideId || new Date(act.starts).getTime() === new Date(rideId).getTime());
-                    if (match) {
-                        loadRideData('wahoo', match.id, match.file ? match.file.url : '');
-                        showDashboardView();
-                        return;
+                    // 2. Check Wahoo rides
+                    if (window.allRidesData.wahoo) {
+                        const match = window.allRidesData.wahoo.find(act => {
+                            if (!act.starts) return false;
+                            const actTime = new Date(act.starts).getTime();
+                            return !isNaN(actTime) && Math.abs(actTime - targetTime) <= 300000; // 5 minutes window
+                        });
+                        if (match) {
+                            loadRideData('wahoo', match.id, match.file ? match.file.url : '');
+                            showDashboardView();
+                            return;
+                        }
                     }
                 }
             }
@@ -5890,7 +5960,8 @@ func getDashboardTemplate() string {
                 const sortedHistory = [...history].reverse();
                 
                 historyList.innerHTML = sortedHistory.map(ride => {
-                    return '<div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 0.6rem; font-family: sans-serif; line-height: 1.4; text-align: left;">' +
+                    const onclickAttr = 'onclick="event.preventDefault(); window.viewRideAnalysis(\'' + (ride.source || '') + '\', \'' + (ride.param || '') + '\', \'' + (ride.param2 || '') + '\', \'' + ride.id + '\')"';
+                    return '<div ' + onclickAttr + ' style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 0.6rem; font-family: sans-serif; line-height: 1.4; text-align: left; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background=\'rgba(255,255,255,0.08)\'; this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.03)\'; this.style.borderColor=\'rgba(255,255,255,0.05)\'">' +
                         '<div style="display: flex; justify-content: space-between; font-weight: 600; color: #ffffff; font-size: 0.8rem; margin-bottom: 0.25rem;">' +
                             '<span>📅 ' + ride.date + '</span>' +
                             '<span style="color: var(--accent);">' + ride.distance_km + ' km</span>' +
