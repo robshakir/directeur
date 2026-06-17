@@ -3574,15 +3574,6 @@ func getDashboardTemplate() string {
                 showDashboardView();
             } else {
                 renderDashboard(rideData);
-                window.history.replaceState({
-                    source: initialRideSource || 'local',
-                    param: initialRideParam || (rideData ? (rideData.source_file || '') : ''),
-                    param2: initialRideParam2 || ''
-                }, '', getRideQueryString(
-                    initialRideSource || 'local',
-                    initialRideParam || (rideData ? (rideData.source_file || '') : ''),
-                    initialRideParam2 || ''
-                ));
             }
         });
 
@@ -5094,6 +5085,14 @@ func getDashboardTemplate() string {
             document.getElementById('dashboard-view').style.display = 'none';
             document.getElementById('calendar-view').style.display = 'none';
             document.getElementById('landing-view').style.display = 'flex';
+
+            // Clear ride query parameters when going home
+            const url = new URL(window.location.origin + window.location.pathname);
+            const bike = new URL(window.location.href).searchParams.get('bike');
+            if (bike) {
+                url.searchParams.set('bike', bike);
+            }
+            window.history.pushState({}, '', url.toString());
         };
         window.showLandingView = showLandingView;
 
@@ -5101,6 +5100,14 @@ func getDashboardTemplate() string {
             document.getElementById('landing-view').style.display = 'none';
             document.getElementById('dashboard-view').style.display = 'none';
             document.getElementById('calendar-view').style.display = 'block';
+
+            // Clear ride query parameters when going to calendar
+            const url = new URL(window.location.origin + window.location.pathname);
+            const bike = new URL(window.location.href).searchParams.get('bike');
+            if (bike) {
+                url.searchParams.set('bike', bike);
+            }
+            window.history.pushState({}, '', url.toString());
             
             // Load custom inputs from local storage if saved
             const savedGoals = localStorage.getItem('fit_calendar_goals');
