@@ -5140,6 +5140,7 @@ func getDashboardTemplate() string {
         window.showCalendarView = showCalendarView;
 
         const renderTrainingCalendar = (data) => {
+            let needsHistorySave = false;
             const grid = document.getElementById('calendar-grid');
             const summaryBox = document.getElementById('calendar-summary-box');
             const summaryText = document.getElementById('calendar-summary-text');
