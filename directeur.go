@@ -5169,6 +5169,30 @@ func getDashboardTemplate() string {
                 startDate = new Date(data.start_date);
             }
 
+            // Fallback: estimate start_date for legacy plans missing it
+            if (!startDate && data && data.days) {
+                const today = new Date();
+                const currentDay = today.getDay();
+                let estStart = new Date(today);
+                let daysToMonday = 0;
+                if (currentDay >= 1 && currentDay <= 3) {
+                    daysToMonday = 1 - currentDay;
+                } else {
+                    daysToMonday = (8 - currentDay) % 7;
+                    if (daysToMonday === 0) daysToMonday = 7;
+                }
+                estStart.setDate(today.getDate() + daysToMonday);
+                estStart.setHours(0,0,0,0);
+                startDate = estStart;
+
+                data.start_date = startDate.toISOString();
+                try {
+                    localStorage.setItem('fit_training_program', JSON.stringify(data));
+                } catch (e) {
+                    console.error("Failed to save healed legacy training program:", e);
+                }
+            }
+
             // Retrieve local ride history for matching completed rides
             const historyData = localStorage.getItem('fit_ride_history');
             let history = [];
