@@ -5043,9 +5043,9 @@ func getDashboardTemplate() string {
                     if (window.allRidesData.local) {
                         const match = window.allRidesData.local.find(file => {
                             if (!file.filename) return false;
-                            const parts = file.filename.match(/^(\d{4}-\d{2}-\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
+                            const parts = file.filename.match(/^(\d{4})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
                             if (parts) {
-                                const fileTime = new Date(parts[1] + 'T' + parts[2] + ':' + parts[3] + ':' + parts[4] + 'Z').getTime();
+                                const fileTime = new Date(parseInt(parts[1]), parseInt(parts[2]) - 1, parseInt(parts[3]), parseInt(parts[4]), parseInt(parts[5]), parseInt(parts[6])).getTime();
                                 return !isNaN(fileTime) && Math.abs(fileTime - targetTime) <= 300000;
                             }
                             return false;
@@ -5289,9 +5289,9 @@ func getDashboardTemplate() string {
                             if (window.allRidesData && window.allRidesData.local) {
                                 const match = window.allRidesData.local.find(file => {
                                     if (!file.filename) return false;
-                                    const parts = file.filename.match(/^(\d{4}-\d{2}-\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
+                                    const parts = file.filename.match(/^(\d{4})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
                                     if (parts) {
-                                        const fileTime = new Date(parts[1] + 'T' + parts[2] + ':' + parts[3] + ':' + parts[4] + 'Z').getTime();
+                                        const fileTime = new Date(parseInt(parts[1]), parseInt(parts[2]) - 1, parseInt(parts[3]), parseInt(parts[4]), parseInt(parts[5]), parseInt(parts[6])).getTime();
                                         return !isNaN(fileTime) && Math.abs(fileTime - targetTime) <= 300000;
                                     }
                                     return false;
