@@ -604,7 +604,7 @@ func fetchHammerheadActivities(cfg HammerheadConfig, configPath string, page int
 
 	makeRequest := func(token string) ([]HammerheadActivity, int, int, int, error) {
 		client := &http.Client{Timeout: 10 * time.Second}
-		url := fmt.Sprintf("https://api.hammerhead.io/v1/api/activities?page=%d&perPage=10", page)
+		url := fmt.Sprintf("https://api.hammerhead.io/v1/api/activities?page=%d&perPage=50", page)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, 0, 0, 0, err
@@ -848,7 +848,7 @@ func fetchWahooWorkouts(cfg WahooConfig, configPath string, page int) ([]WahooWo
 
 	makeRequest := func(token string) ([]WahooWorkout, int, int, int, error) {
 		client := &http.Client{Timeout: 10 * time.Second}
-		u := fmt.Sprintf("https://api.wahooligan.com/v1/workouts?page=%d&per_page=10", page)
+		u := fmt.Sprintf("https://api.wahooligan.com/v1/workouts?page=%d&per_page=50", page)
 		req, err := http.NewRequest("GET", u, nil)
 		if err != nil {
 			return nil, 0, 0, 0, err
@@ -3377,6 +3377,39 @@ func getDashboardTemplate() string {
         let currentRideParam = initialRideParam || (rideData ? (rideData.source_file || '') : '');
         let currentRideParam2 = initialRideParam2 || '';
 
+        const getRideQueryString = (source, param, param2) => {
+            let q = '?source=' + encodeURIComponent(source);
+            if (source === 'local') {
+                q += '&file=' + encodeURIComponent(param);
+            } else {
+                q += '&id=' + encodeURIComponent(param);
+                if (param2) {
+                    q += '&url=' + encodeURIComponent(param2);
+                }
+            }
+            const currentUrl = new URL(window.location.href);
+            const bike = currentUrl.searchParams.get('bike');
+            if (bike) {
+                q += '&bike=' + encodeURIComponent(bike);
+            }
+            return q;
+        };
+
+        window.getRideQueryString = getRideQueryString;
+
+        window.addEventListener('popstate', (event) => {
+            if (event.state && event.state.source && event.state.param) {
+                loadRideData(event.state.source, event.state.param, event.state.param2 || '', false);
+            } else {
+                if (window.initialRideData) {
+                    renderDashboard(window.initialRideData);
+                    currentRideSource = initialRideSource || 'local';
+                    currentRideParam = initialRideParam || (window.initialRideData.source_file || '');
+                    currentRideParam2 = initialRideParam2 || '';
+                }
+            }
+        });
+
         // Apply Theme based on Month of the ride or user selection
         let defaultThemeClass = 'theme-carbon';
         if (rideData && rideData.summary) {
@@ -3528,8 +3561,29 @@ func getDashboardTemplate() string {
                 });
             }
 
-            // Initial render
-            renderDashboard(rideData);
+            // Initial render - check query parameters first!
+            const urlParams = new URLSearchParams(window.location.search);
+            const qSource = urlParams.get('source');
+            const qFile = urlParams.get('file');
+            const qId = urlParams.get('id');
+            const qUrl = urlParams.get('url');
+
+            if (qSource && (qFile || qId)) {
+                const param = qSource === 'local' ? qFile : qId;
+                loadRideData(qSource, param, qUrl || '', false);
+                showDashboardView();
+            } else {
+                renderDashboard(rideData);
+                window.history.replaceState({
+                    source: initialRideSource || 'local',
+                    param: initialRideParam || (rideData ? (rideData.source_file || '') : ''),
+                    param2: initialRideParam2 || ''
+                }, '', getRideQueryString(
+                    initialRideSource || 'local',
+                    initialRideParam || (rideData ? (rideData.source_file || '') : ''),
+                    initialRideParam2 || ''
+                ));
+            }
         });
 
         function initializeBikeSelector() {
@@ -5234,8 +5288,9 @@ func getDashboardTemplate() string {
 
                 let analysisLinkHtml = '';
                 if (completedRide) {
+                    const rideUrl = getRideQueryString(completedRide.source || 'local', completedRide.param || '', completedRide.param2 || '');
                     analysisLinkHtml = '<div style="margin-top: 0.75rem; display: flex; align-items: center;">' +
-                        '<a href="#" class="view-analysis-link" style="color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--accent); border-radius: 6px; padding: 0.4rem 0.8rem; background: rgba(228, 92, 134, 0.05); transition: all 0.2s;" onmouseover="this.style.background=\'rgba(228, 92, 134, 0.15)\'; this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'rgba(228, 92, 134, 0.05)\'; this.style.transform=\'translateY(0)\'" onclick="event.preventDefault(); viewRideAnalysis(\'' + (completedRide.source || '') + '\', \'' + (completedRide.param || '') + '\', \'' + (completedRide.param2 || '') + '\', \'' + completedRide.id + '\')">' +
+                        '<a href="' + rideUrl + '" class="view-analysis-link" style="color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--accent); border-radius: 6px; padding: 0.4rem 0.8rem; background: rgba(228, 92, 134, 0.05); transition: all 0.2s;" onmouseover="this.style.background=\'rgba(228, 92, 134, 0.15)\'; this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'rgba(228, 92, 134, 0.05)\'; this.style.transform=\'translateY(0)\'" onclick="event.preventDefault(); viewRideAnalysis(\'' + completedRide.id + '\')">' +
                             '📊 View Ride Analysis (' + completedRide.distance_km + ' km)' +
                         '</a>' +
                     '</div>';
@@ -5960,10 +6015,11 @@ func getDashboardTemplate() string {
                 const sortedHistory = [...history].reverse();
                 
                 historyList.innerHTML = sortedHistory.map(ride => {
-                    const onclickAttr = 'onclick="event.preventDefault(); window.viewRideAnalysis(\'' + (ride.source || '') + '\', \'' + (ride.param || '') + '\', \'' + (ride.param2 || '') + '\', \'' + ride.id + '\')"';
-                    return '<div ' + onclickAttr + ' style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 0.6rem; font-family: sans-serif; line-height: 1.4; text-align: left; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background=\'rgba(255,255,255,0.08)\'; this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.03)\'; this.style.borderColor=\'rgba(255,255,255,0.05)\'">' +
+                    const rideUrl = getRideQueryString(ride.source || 'local', ride.param || '', ride.param2 || '');
+                    const onclickAttr = 'onclick="event.preventDefault(); window.viewRideAnalysis(\'' + ride.id + '\')"';
+                    return '<a href="' + rideUrl + '" ' + onclickAttr + ' style="display: block; text-decoration: none; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 0.6rem; font-family: sans-serif; line-height: 1.4; text-align: left; cursor: pointer; transition: all 0.2s; margin-bottom: 0.5rem;" onmouseover="this.style.background=\'rgba(255,255,255,0.08)\'; this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.03)\'; this.style.borderColor=\'rgba(255,255,255,0.05)\'">' +
                         '<div style="display: flex; justify-content: space-between; font-weight: 600; color: #ffffff; font-size: 0.8rem; margin-bottom: 0.25rem;">' +
-                            '<span>📅 ' + ride.date + '</span>' +
+                            '<span style="color: #ffffff;">📅 ' + ride.date + '</span>' +
                             '<span style="color: var(--accent);">' + ride.distance_km + ' km</span>' +
                         '</div>' +
                         '<div style="font-size: 0.72rem; color: #a0aec0; margin-bottom: 0.35rem;">' +
@@ -5972,7 +6028,7 @@ func getDashboardTemplate() string {
                         '<div style="font-size: 0.72rem; color: #e2e8f0; font-style: italic; border-left: 2px solid rgba(155, 89, 182, 0.5); padding-left: 0.4rem; margin-top: 0.25rem;">' +
                             ride.summary +
                         '</div>' +
-                    '</div>';
+                    '</a>';
                 }).join('');
             } catch (e) {
                 console.error("Error rendering history:", e);
@@ -6921,7 +6977,7 @@ func getDashboardTemplate() string {
             }
         };
 
-        const loadRideData = (source, param, param2) => {
+        const loadRideData = (source, param, param2, pushToHistory = true) => {
             selectRideModal.style.display = 'none';
             analysisLoadingOverlay.style.display = 'flex';
 
@@ -6955,6 +7011,11 @@ func getDashboardTemplate() string {
                 })
                 .then(newData => {
                     renderDashboard(newData);
+
+                    if (pushToHistory && typeof getRideQueryString === 'function') {
+                        const q = getRideQueryString(source, param, param2);
+                        window.history.pushState({source, param, param2}, '', q);
+                    }
                     
                     forceSetupView = true;
                     if (document.getElementById('coach-plan-input')) {
