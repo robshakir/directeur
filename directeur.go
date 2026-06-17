@@ -5230,14 +5230,14 @@ func getDashboardTemplate() string {
                     dateDisplay = '<span style="font-size: 0.85rem; color: var(--text-secondary); margin-top: -0.2rem; margin-bottom: 0.2rem; font-weight: 500;">' + shortDateStr + '</span>';
                 }
 
-                // Check if there is an analyzed ride matching this dayDate (local time comparison)
-                let completedRide = null;
+                // Check if there are analyzed rides matching this dayDate (local time comparison)
+                let completedRides = [];
                 if (dayDate) {
                     const dYear = dayDate.getFullYear();
                     const dMonth = dayDate.getMonth();
                     const dDay = dayDate.getDate();
                     
-                    completedRide = history.find(ride => {
+                    completedRides = history.filter(ride => {
                         if (!ride.id) return false;
                         const rDate = new Date(ride.id);
                         return rDate.getFullYear() === dYear &&
@@ -5246,55 +5246,57 @@ func getDashboardTemplate() string {
                     });
                 }
 
-                if (completedRide && (!completedRide.source || !completedRide.param)) {
-                    const targetTime = new Date(completedRide.id).getTime();
-                    if (!isNaN(targetTime)) {
-                        // 1. Check local files
-                        if (window.allRidesData && window.allRidesData.local) {
-                            const match = window.allRidesData.local.find(file => {
-                                if (!file.filename) return false;
-                                const parts = file.filename.match(/^(\d{4}-\d{2}-\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
-                                if (parts) {
-                                    const fileTime = new Date(parts[1] + 'T' + parts[2] + ':' + parts[3] + ':' + parts[4] + 'Z').getTime();
-                                    return !isNaN(fileTime) && Math.abs(fileTime - targetTime) <= 300000;
+                completedRides.forEach(completedRide => {
+                    if (completedRide && (!completedRide.source || !completedRide.param)) {
+                        const targetTime = new Date(completedRide.id).getTime();
+                        if (!isNaN(targetTime)) {
+                            // 1. Check local files
+                            if (window.allRidesData && window.allRidesData.local) {
+                                const match = window.allRidesData.local.find(file => {
+                                    if (!file.filename) return false;
+                                    const parts = file.filename.match(/^(\d{4}-\d{2}-\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
+                                    if (parts) {
+                                        const fileTime = new Date(parts[1] + 'T' + parts[2] + ':' + parts[3] + ':' + parts[4] + 'Z').getTime();
+                                        return !isNaN(fileTime) && Math.abs(fileTime - targetTime) <= 300000;
+                                    }
+                                    return false;
+                                });
+                                if (match) {
+                                    completedRide.source = 'local';
+                                    completedRide.param = match.filename;
+                                    needsHistorySave = true;
                                 }
-                                return false;
-                            });
-                            if (match) {
-                                completedRide.source = 'local';
-                                completedRide.param = match.filename;
-                                needsHistorySave = true;
                             }
-                        }
-                        // 2. Check Hammerhead
-                        if ((!completedRide.source || !completedRide.param) && window.allRidesData && window.allRidesData.hammerhead) {
-                            const match = window.allRidesData.hammerhead.find(act => {
-                                if (!act.startTime) return false;
-                                const actTime = new Date(act.startTime).getTime();
-                                return !isNaN(actTime) && Math.abs(actTime - targetTime) <= 300000;
-                            });
-                            if (match) {
-                                completedRide.source = 'hammerhead';
-                                completedRide.param = match.id;
-                                needsHistorySave = true;
+                            // 2. Check Hammerhead
+                            if ((!completedRide.source || !completedRide.param) && window.allRidesData && window.allRidesData.hammerhead) {
+                                const match = window.allRidesData.hammerhead.find(act => {
+                                    if (!act.startTime) return false;
+                                    const actTime = new Date(act.startTime).getTime();
+                                    return !isNaN(actTime) && Math.abs(actTime - targetTime) <= 300000;
+                                });
+                                if (match) {
+                                    completedRide.source = 'hammerhead';
+                                    completedRide.param = match.id;
+                                    needsHistorySave = true;
+                                }
                             }
-                        }
-                        // 3. Check Wahoo
-                        if ((!completedRide.source || !completedRide.param) && window.allRidesData && window.allRidesData.wahoo) {
-                            const match = window.allRidesData.wahoo.find(act => {
-                                if (!act.starts) return false;
-                                const actTime = new Date(act.starts).getTime();
-                                return !isNaN(actTime) && Math.abs(actTime - targetTime) <= 300000;
-                            });
-                            if (match) {
-                                completedRide.source = 'wahoo';
-                                completedRide.param = match.id;
-                                completedRide.param2 = match.file ? match.file.url : '';
-                                needsHistorySave = true;
+                            // 3. Check Wahoo
+                            if ((!completedRide.source || !completedRide.param) && window.allRidesData && window.allRidesData.wahoo) {
+                                const match = window.allRidesData.wahoo.find(act => {
+                                    if (!act.starts) return false;
+                                    const actTime = new Date(act.starts).getTime();
+                                    return !isNaN(actTime) && Math.abs(actTime - targetTime) <= 300000;
+                                });
+                                if (match) {
+                                    completedRide.source = 'wahoo';
+                                    completedRide.param = match.id;
+                                    completedRide.param2 = match.file ? match.file.url : '';
+                                    needsHistorySave = true;
+                                }
                             }
                         }
                     }
-                }
+                });
 
                 // Create the top bar overview capsule
                 const overviewCard = document.createElement('div');
@@ -5338,7 +5340,7 @@ func getDashboardTemplate() string {
 
                 const titleText = d.title || 'Workout';
                 const durationText = d.duration_mins ? d.duration_mins + ' mins' : 'Rest Day';
-                const completionBadge = completedRide 
+                const completionBadge = completedRides.length > 0 
                     ? '<span class="badge" style="background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); font-size: 0.65rem; font-weight: bold; border-radius: 4px; padding: 0.05rem 0.2rem; text-transform: uppercase; margin-top: 0.1rem; width: fit-content; display: inline-flex; align-items: center; gap: 0.15rem;">✓ Complete</span>'
                     : '';
 
@@ -5369,17 +5371,34 @@ func getDashboardTemplate() string {
                 row.style.alignItems = 'start';
                 row.style.transition = 'all 0.3s ease';
 
-                const completionBadgeRow = completedRide
-                    ? '<span class="badge" style="background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); font-size: 0.75rem; text-align: center; border-radius: 4px; padding: 0.15rem 0.4rem; text-transform: uppercase; width: fit-content; font-weight: 700; display: inline-flex; align-items: center; gap: 0.2rem; margin-top: 0.25rem;">✓ Complete</span>'
+                const completionBadgeRow = completedRides.length > 0
+                    ? (completedRides.length > 1
+                        ? '<span class="badge" style="background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); font-size: 0.75rem; text-align: center; border-radius: 4px; padding: 0.15rem 0.4rem; text-transform: uppercase; width: fit-content; font-weight: 700; display: inline-flex; align-items: center; gap: 0.2rem; margin-top: 0.25rem;">✓ ' + completedRides.length + ' Complete</span>'
+                        : '<span class="badge" style="background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); font-size: 0.75rem; text-align: center; border-radius: 4px; padding: 0.15rem 0.4rem; text-transform: uppercase; width: fit-content; font-weight: 700; display: inline-flex; align-items: center; gap: 0.2rem; margin-top: 0.25rem;">✓ Complete</span>')
                     : '';
 
                 let analysisLinkHtml = '';
-                if (completedRide) {
+                if (completedRides.length === 1) {
+                    const completedRide = completedRides[0];
                     const rideUrl = getRideQueryString(completedRide.source || 'local', completedRide.param || '', completedRide.param2 || '');
                     analysisLinkHtml = '<div style="margin-top: 0.75rem; display: flex; align-items: center;">' +
-                        '<a href="' + rideUrl + '" class="view-analysis-link" style="color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--accent); border-radius: 6px; padding: 0.4rem 0.8rem; background: rgba(228, 92, 134, 0.05); transition: all 0.2s;" onmouseover="this.style.background=\'rgba(228, 92, 134, 0.15)\'; this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'rgba(228, 92, 134, 0.05)\'; this.style.transform=\'translateY(0)\'" onclick="event.preventDefault(); viewRideAnalysis(\'' + completedRide.id + '\')">' +
+                        '<a href="' + rideUrl + '" class="view-analysis-link" style="color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--accent); border-radius: 6px; padding: 0.4rem 0.8rem; background: rgba(228, 92, 134, 0.05); transition: all 0.2s;" onmouseover="this.style.background=\'rgba(228, 92, 134, 0.15)\'; this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'rgba(228, 92, 134, 0.05)\'; this.style.transform=\'translateY(0)\'" onclick="event.preventDefault(); window.viewRideAnalysis(\'' + completedRide.id + '\')">' +
                             '📊 View Ride Analysis (' + completedRide.distance_km + ' km)' +
                         '</a>' +
+                    '</div>';
+                } else if (completedRides.length > 1) {
+                    let optionsHtml = '<option value="" disabled selected style="background: var(--bg-secondary); color: var(--text-secondary);">Select completed ride...</option>';
+                    completedRides.forEach((ride, rIdx) => {
+                        optionsHtml += '<option value="' + ride.id + '" style="background: var(--bg-secondary); color: #ffffff;">' +
+                            'Ride ' + (rIdx + 1) + ': ' + ride.distance_km + ' km (' + ride.duration + ')' +
+                        '</option>';
+                    });
+
+                    analysisLinkHtml = '<div style="margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.35rem;">' +
+                        '<label style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">Multiple rides completed on this day:</label>' +
+                        '<select class="ride-select-dropdown" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: #ffffff; border-radius: 6px; padding: 0.4rem 0.6rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; outline: none; width: fit-content; transition: all 0.2s;" onchange="if(this.value) { window.viewRideAnalysis(this.value); this.value=\'\'; }" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border-color)\'">' +
+                            optionsHtml +
+                        '</select>' +
                     '</div>';
                 }
                 
