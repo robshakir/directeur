@@ -6028,7 +6028,7 @@ func getDashboardTemplate() string {
                             '<span>⚡ Target TSS: <strong>' + (d.target_tss || 0) + '</strong></span>' +
                             '<span>📈 Target IF: <strong>' + (d.target_if || 0) + '</strong></span>' +
                         '</div>' +
-                        '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: var(--font-family); line-height: 1.4; color: var(--text-primary);">' +
+                        '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: monospace; line-height: 1.4; color: var(--text-primary); white-space: pre-wrap;">' +
                             d.structure +
                         '</div>' +
                         analysisLinkHtml +
