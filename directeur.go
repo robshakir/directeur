@@ -6411,7 +6411,65 @@ func getDashboardTemplate() string {
         };
         window.updateIntervalsSyncUI = updateIntervalsSyncUI;
 
-        const exportCalendarToIntervals = () => {
+        const distillWorkoutStructure = async (title, description, oldStructure) => {
+            const key = localStorage.getItem('gemini_api_key');
+            if (!key) return oldStructure;
+
+            const modelSelect = document.getElementById('calendar-model-select');
+            const model = modelSelect ? modelSelect.value : 'gemini-3.5-flash';
+            const apiVersion = model.indexOf('gemini-3') === 0 ? 'v1beta' : 'v1';
+            
+            const prompt = "You are a workout structure converter. Convert the following workout details into the strict Intervals.icu plain-text workout formatting language.\n\n" +
+                "Workout Name: " + title + "\n" +
+                "Description: " + description + "\n" +
+                "Current Text Structure: " + oldStructure + "\n\n" +
+                "Strict Format Rules:\n" +
+                "- Every interval step must start with a hyphen and a space (e.g. '- 10m ramp 50-75%')\n" +
+                "- Use 'm' for minutes and 's' for seconds\n" +
+                "- Target intensity must be either % of FTP (e.g. '85%'), target watts (e.g. '150w'), or recovery (e.g. '50% recovery')\n" +
+                "- Repeats must use 'Nx' on a line, followed by indented steps on next lines (e.g. '3x\\n- 5m 85%\\n- 3m 50% recovery')\n" +
+                "- Do not include any conversational text, headers (like 'Warm Up:'), or explanation. Return ONLY the formatted steps.\n\n" +
+                "Example Format:\n" +
+                "- 10m ramp 50-75%\n\n" +
+                "3x\n" +
+                "- 5m 140w 95-100rpm\n" +
+                "- 3m 80w recovery\n\n" +
+                "- 10m 50%";
+
+            try {
+                const url = 'https://generativelanguage.googleapis.com/' + apiVersion + '/models/' + model + ':generateContent?key=' + key;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            role: 'user',
+                            parts: [{ text: prompt }]
+                        }]
+                    })
+                });
+                if (!response.ok) return oldStructure;
+                const result = await response.json();
+                let text = (result.candidates && result.candidates[0] && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts[0]) ? result.candidates[0].content.parts[0].text : '';
+                text = text.trim();
+                var ticks = String.fromCharCode(96, 96, 96);
+                if (text.indexOf(ticks) === 0) {
+                    text = text.substring(3);
+                    if (text.indexOf("json") === 0) {
+                        text = text.substring(4);
+                    }
+                    if (text.lastIndexOf(ticks) === text.length - 3) {
+                        text = text.substring(0, text.length - 3);
+                    }
+                }
+                return text.trim() || oldStructure;
+            } catch (err) {
+                console.error("Error distilling workout structure:", err);
+                return oldStructure;
+            }
+        };
+
+        const exportCalendarToIntervals = async () => {
             if (!window.currentCalendarProgram) {
                 alert('No training plan week active to export!');
                 return;
@@ -6420,6 +6478,54 @@ func getDashboardTemplate() string {
             if (btn) {
                 btn.disabled = true;
                 btn.innerHTML = '<span style="width:12px; height:12px; border:2px solid #fff; border-top:2px solid transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; margin-right:4px;"></span> Exporting...';
+            }
+
+            const isIntervalsFormat = (str) => {
+                if (!str) return false;
+                return /^\s*-\s+\d+/m.test(str) || /^\s*\d+x/m.test(str);
+            };
+
+            const program = window.currentCalendarProgram;
+            let updated = false;
+            const workoutsCopy = JSON.parse(JSON.stringify(program.days));
+
+            for (let i = 0; i < workoutsCopy.length; i++) {
+                const w = workoutsCopy[i];
+                if (w.duration_mins > 0 && w.workout_type.toLowerCase() !== 'rest' && w.workout_type.toLowerCase() !== 'rest day') {
+                    if (w.structure && !isIntervalsFormat(w.structure)) {
+                        if (btn) {
+                            btn.innerHTML = '<span style="width:12px; height:12px; border:2px solid #fff; border-top:2px solid transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; margin-right:4px;"></span> Distilling ' + w.day + '...';
+                        }
+                        const distilled = await distillWorkoutStructure(w.title, w.description, w.structure);
+                        if (distilled && distilled !== w.structure) {
+                            w.structure = distilled;
+                            updated = true;
+                        }
+                    }
+                }
+            }
+
+            if (updated) {
+                window.currentCalendarProgram.days = workoutsCopy;
+                localStorage.setItem('fit_training_program', JSON.stringify(window.currentCalendarProgram));
+                try {
+                    const historyData = localStorage.getItem('fit_training_programs_history');
+                    if (historyData) {
+                        const historyList = JSON.parse(historyData);
+                        const idx = historyList.findIndex(p => p.start_date === window.currentCalendarProgram.start_date);
+                        if (idx !== -1) {
+                            historyList[idx] = window.currentCalendarProgram;
+                            localStorage.setItem('fit_training_programs_history', JSON.stringify(historyList));
+                        }
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+                renderTrainingCalendar(window.currentCalendarProgram);
+            }
+
+            if (btn) {
+                btn.innerHTML = '<span style="width:12px; height:12px; border:2px solid #fff; border-top:2px solid transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; margin-right:4px;"></span> Syncing...';
             }
 
             fetch('/api/intervals/export', {
