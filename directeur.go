@@ -89,6 +89,7 @@ type RideSummary struct {
 	TotalShifts              int            `json:"total_shifts"`
 	ThemeName                string         `json:"theme_name"`
 	PowerCurve               map[string]int `json:"power_curve"`
+	IsZwift                  bool           `json:"is_zwift"`
 }
 
 // TelemetryRecord represents a single data point in time
@@ -166,6 +167,14 @@ func analyzeFITFile(filePath string, config Config) (RideAnalysis, error) {
 
 	// Process Telemetry Records
 	analysis = processRecords(activity.Records, gearTimeline)
+
+	isZwift := false
+	if fitFile.FileId.Manufacturer.String() == "Zwift" ||
+		strings.Contains(strings.ToLower(fitFile.FileId.ProductName), "zwift") ||
+		strings.Contains(strings.ToLower(filepath.Base(filePath)), "zwift") {
+		isZwift = true
+	}
+	analysis.Summary.IsZwift = isZwift
 
 	// Select Theme Name based on ride start month
 	analysis.Summary.ThemeName = selectThemeName(analysis.Summary.StartTime)
@@ -7803,8 +7812,10 @@ func getDashboardTemplate() string {
                 historyContext +
                 rideNotesContext +
                 quadContext +
+                (rideData.summary.is_zwift ? 'IMPORTANT: This is a Zwift virtual indoor ride. In your analysis, note that shifting is simulated/virtual or done on a stationary smart trainer/smart bike. Do not focus on physical real-world mechanical chain wear or derailleur strain, but analyze shifting/cadence as it relates to keeping a steady virtual training pacing.\n\n' : '') +
                 'Here is the telemetry data for the CURRENT ride:\n' +
                 bikeLine +
+                '- Ride Environment: ' + (rideData.summary.is_zwift ? 'Zwift Indoor Ride (Virtual Environment)' : 'Outdoor Ride') + '\n' +
                 '- Start Time: ' + rideData.summary.start_time + '\n' +
                 '- Total Distance: ' + (rideData.summary.distance_meters / 1000).toFixed(2) + ' km\n' +
                 '- Total Duration: ' + formatDuration(rideData.summary.duration_seconds) + '\n' +
