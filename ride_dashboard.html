@@ -734,8 +734,16 @@
                     directeur<span style="color: var(--accent); font-weight: 800;">AI</span> <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.8; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase;">dsAI</span>
                 </h1>
                 <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.2rem;">Elite Training Programme Planner</p>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <div id="calendar-week-nav" style="display: none; align-items: center; gap: 0.5rem; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.35rem 0.5rem;">
+                    <button class="btn-action" onclick="navigateWeek('prev')" style="padding: 0.15rem 0.35rem; border: none; background: transparent; font-size: 0.9rem;" title="Previous Week">⬅️</button>
+                    <select id="calendar-week-select" class="btn-action" style="background: transparent; border: none; color: #ffffff; font-size: 0.85rem; font-weight: 600; padding: 0 1.5rem 0 0.5rem; outline: none; cursor: pointer; text-align-last: center;" onchange="loadWeekFromSelect(this.value)">
+                        <option value="" disabled selected>Select Week</option>
+                    </select>
+                    <button class="btn-action" onclick="navigateWeek('next')" style="padding: 0.15rem 0.35rem; border: none; background: transparent; font-size: 0.9rem;" title="Next Week">➡️</button>
+                </div>
+                <button class="btn-action" onclick="showLandingView()" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;" title="Return to Landing Page">🏠 Home</button>
             </div>
-            <button class="btn-action" onclick="showLandingView()" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;" title="Return to Landing Page">🏠 Home</button>
         </header>
 
         <div style="display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: start; margin-top: 1rem;">
@@ -2035,10 +2043,9 @@
                         }
                         
                         
-                        const cachedProgram = localStorage.getItem('fit_training_program');
-                        if (cachedProgram) {
+                        if (window.currentCalendarProgram) {
                             try {
-                                renderTrainingCalendar(JSON.parse(cachedProgram));
+                                renderTrainingCalendar(window.currentCalendarProgram);
                             } catch(e) {
                                 console.error("Error re-rendering calendar on rides fetch:", e);
                             }
@@ -3572,22 +3579,151 @@
             }
 
             
-            const cached = localStorage.getItem('fit_training_program');
-            if (cached) {
-                try {
-                    const parsed = JSON.parse(cached);
-                    renderTrainingCalendar(parsed);
-                } catch(e) {
-                    console.error("Error loading cached calendar:", e);
-                    renderTrainingCalendar(null);
+            let historyList = [];
+            try {
+                const historyData = localStorage.getItem('fit_training_programs_history');
+                if (historyData) {
+                    historyList = JSON.parse(historyData);
                 }
+            } catch (e) {
+                console.error(e);
+            }
+
+            const currentProgram = localStorage.getItem('fit_training_program');
+            if (currentProgram && historyList.length === 0) {
+                try {
+                    const parsed = JSON.parse(currentProgram);
+                    if (parsed) {
+                        
+                        if (!parsed.start_date) {
+                            const today = new Date();
+                            const currentDay = today.getDay();
+                            let estStart = new Date(today);
+                            let daysToMonday = 0;
+                            if (currentDay >= 1 && currentDay <= 3) {
+                                daysToMonday = 1 - currentDay;
+                            } else {
+                                daysToMonday = (8 - currentDay) % 7;
+                                if (daysToMonday === 0) daysToMonday = 7;
+                            }
+                            estStart.setDate(today.getDate() + daysToMonday);
+                            estStart.setHours(0,0,0,0);
+                            parsed.start_date = estStart.toISOString();
+                        }
+                        historyList.push(parsed);
+                        localStorage.setItem('fit_training_programs_history', JSON.stringify(historyList));
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            
+            if (historyList.length > 0) {
+                const latestPlan = historyList[historyList.length - 1];
+                window.currentCalendarProgram = latestPlan;
+                renderTrainingCalendar(latestPlan);
             } else {
+                window.currentCalendarProgram = null;
                 renderTrainingCalendar(null);
             }
         };
         window.showCalendarView = showCalendarView;
 
+        const getWeekOptionLabel = (dateStr) => {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return "Unknown Week";
+            return "Week of " + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        };
+
+        const updateWeekSelector = (historyList, activeDateStr) => {
+            const selectEl = document.getElementById('calendar-week-select');
+            const navEl = document.getElementById('calendar-week-nav');
+            if (!selectEl || !navEl) return;
+            
+            if (!historyList || historyList.length === 0) {
+                navEl.style.display = 'none';
+                return;
+            }
+            
+            navEl.style.display = 'flex';
+            selectEl.innerHTML = '';
+            
+            historyList.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.start_date;
+                opt.textContent = getWeekOptionLabel(p.start_date);
+                opt.style.background = 'var(--bg-secondary)';
+                opt.style.color = '#ffffff';
+                if (activeDateStr && p.start_date === activeDateStr) {
+                    opt.selected = true;
+                }
+                selectEl.appendChild(opt);
+            });
+        };
+
+        const saveProgramToHistory = (program) => {
+            if (!program || !program.start_date) return;
+            try {
+                const historyData = localStorage.getItem('fit_training_programs_history');
+                let history = [];
+                if (historyData) {
+                    history = JSON.parse(historyData);
+                }
+                const targetTime = new Date(program.start_date).getTime();
+                const existingIdx = history.findIndex(p => {
+                    if (!p.start_date) return false;
+                    const pTime = new Date(p.start_date).getTime();
+                    return Math.abs(pTime - targetTime) <= 5 * 24 * 60 * 60 * 1000; 
+                });
+                
+                if (existingIdx !== -1) {
+                    history[existingIdx] = program;
+                } else {
+                    history.push(program);
+                }
+                
+                history.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+                localStorage.setItem('fit_training_programs_history', JSON.stringify(history));
+            } catch (e) {
+                console.error("Failed to save training program to history:", e);
+            }
+        };
+
+        const loadWeekFromSelect = (startDateStr) => {
+            try {
+                const historyData = localStorage.getItem('fit_training_programs_history');
+                if (!historyData) return;
+                const history = JSON.parse(historyData);
+                const match = history.find(p => p.start_date === startDateStr);
+                if (match) {
+                    window.currentCalendarProgram = match;
+                    renderTrainingCalendar(match);
+                }
+            } catch(e) {
+                console.error("Failed to load selected week:", e);
+            }
+        };
+        window.loadWeekFromSelect = loadWeekFromSelect;
+
+        const navigateWeek = (dir) => {
+            const selectEl = document.getElementById('calendar-week-select');
+            if (!selectEl || selectEl.options.length <= 1) return;
+            let idx = selectEl.selectedIndex;
+            if (dir === 'prev') {
+                idx--;
+            } else if (dir === 'next') {
+                idx++;
+            }
+            if (idx >= 0 && idx < selectEl.options.length) {
+                selectEl.selectedIndex = idx;
+                loadWeekFromSelect(selectEl.options[idx].value);
+            }
+        };
+        window.navigateWeek = navigateWeek;
+
         const renderTrainingCalendar = (data) => {
+            window.currentCalendarProgram = data;
             let needsHistorySave = false;
             const grid = document.getElementById('calendar-grid');
             const summaryBox = document.getElementById('calendar-summary-box');
@@ -3601,6 +3737,8 @@
                 summaryBox.style.display = 'none';
                 overviewBox.style.display = 'none';
                 emptyState.style.display = 'flex';
+                const navEl = document.getElementById('calendar-week-nav');
+                if (navEl) navEl.style.display = 'none';
                 return;
             }
 
@@ -3608,6 +3746,17 @@
             summaryText.innerText = data.weekly_summary || 'Weekly training plan focus.';
             summaryBox.style.display = 'block';
             overviewBox.style.display = 'block';
+
+            let historyList = [];
+            try {
+                const historyData = localStorage.getItem('fit_training_programs_history');
+                if (historyData) {
+                    historyList = JSON.parse(historyData);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+            updateWeekSelector(historyList, data.start_date);
 
             grid.innerHTML = '';
             overviewGrid.innerHTML = '';
@@ -4075,6 +4224,7 @@
                     
                     parsedProgram.start_date = today.toISOString();
                     
+                    saveProgramToHistory(parsedProgram);
                     localStorage.setItem('fit_training_program', JSON.stringify(parsedProgram));
                     renderTrainingCalendar(parsedProgram);
                 })
