@@ -5,3 +5,8 @@ config.json
 
 # OS generated files
 .DS_Store
+
+# Cache Download Folders
+fit_downloads/
+wahoo_downloads/
+intervals_downloads/

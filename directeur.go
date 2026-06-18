@@ -7962,7 +7962,14 @@ func getDashboardTemplate() string {
                         }
                         
                         const rideId = rideData.summary.start_time;
-                        const existingIdx = history.findIndex(r => r.id === rideId);
+                        const rideDate = new Date(rideId);
+                        const existingIdx = history.findIndex(r => {
+                            if (r.id === rideId) return true;
+                            const d1 = new Date(r.id);
+                            const d2 = rideDate;
+                            if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return false;
+                            return Math.abs(d1.getTime() - d2.getTime()) <= 300000;
+                        });
                         
                         const newRecord = {
                             id: rideId,
@@ -8144,7 +8151,14 @@ func getDashboardTemplate() string {
                         if (historyData) {
                             const history = JSON.parse(historyData);
                             const rideId = rideData.summary.start_time;
-                            const idx = history.findIndex(r => r.id === rideId);
+                            const rideDate = new Date(rideId);
+                            const idx = history.findIndex(r => {
+                                if (r.id === rideId) return true;
+                                const d1 = new Date(r.id);
+                                const d2 = rideDate;
+                                if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return false;
+                                return Math.abs(d1.getTime() - d2.getTime()) <= 300000;
+                            });
                             if (idx !== -1) {
                                 history[idx].chatHistory = coachChatHistory;
                                 localStorage.setItem('fit_ride_history', JSON.stringify(history));
