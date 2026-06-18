@@ -2134,10 +2134,11 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 				wktType = "VirtualRide"
 			}
 
-			fullDescription := wkt.Description
+			fullDescription := ""
 			if wkt.Structure != "" {
-				fullDescription += "\n\n" + wkt.Structure
+				fullDescription += wkt.Structure + "\n\n"
 			}
+			fullDescription += wkt.Description
 			fullDescription += fmt.Sprintf("\n\nIF=%d%%\nTSS=%d", int(wkt.TargetIF*100), wkt.TargetTSS)
 
 			type IntervalsCreatePayload struct {
@@ -6155,11 +6156,18 @@ func getDashboardTemplate() string {
                 "      \"target_tss\": 55,\n" +
                 "      \"target_if\": 0.72,\n" +
                 "      \"description\": \"Overview of the workout focus.\",\n" +
-                "      \"structure\": \"Warm Up: 10m easy spinning. Main Set: 3x8m at Sweet Spot (200-215W) with 4m recovery. Cool Down: 10m easy spinning.\"\n" +
+                "      \"structure\": \"- 10m ramp 50-75%\\n\\n3x\\n- 8m 85% 90rpm\\n- 4m 50% recovery\\n\\n- 10m 50%\"\n" +
                 "    },\n" +
                 "    ... (continue in chronological order for the next 6 days: " + weekDaysList.slice(1).join(', ') + ")\n" +
                 "  ]\n" +
                 "}\n\n" +
+                "The \"structure\" field MUST be written in the specific plain-text formatting language that Intervals.icu parses to generate structured workout graphs. Use this exact syntax:\n" +
+                "- Each interval step starts with a hyphen and space (e.g. \"- 10m ramp 50-75%\", \"- 5m 140w 95-100rpm\", or \"- 20m 85%\").\n" +
+                "- Specify duration using \"m\" (minutes) or \"s\" (seconds).\n" +
+                "- Specify intensity target as either absolute wattage (e.g., \"140w\"), target percentage of FTP (e.g., \"85%\"), or percentage ramp (e.g., \"50-75%\").\n" +
+                "- Specify target cadences if any using rpm (e.g., \"95-100rpm\").\n" +
+                "- Repeats must use \"Nx\" (e.g. \"3x\") followed by a newline and indented interval steps.\n" +
+                "- Separate major blocks (like Warm Up, Main Set, Cool Down) with empty lines.\n" +
                 "Ensure the output is valid JSON. Do not wrap it in anything other than the JSON block. Do not include markdown code block syntax outside the raw JSON text.";
 
             const callGemini = (apiVersion) => {
