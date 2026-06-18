@@ -6014,6 +6014,15 @@ func getDashboardTemplate() string {
                     '</div>';
                 }
                 
+                let displayStructure = d.structure || '';
+                if (displayStructure && (/^\s*-\s+\d+/m.test(displayStructure) || /^\s*\d+x/m.test(displayStructure))) {
+                    displayStructure = displayStructure
+                        .replace(/^-\s+/gm, '') // Remove leading hyphens
+                        .replace(/\n+/g, ' | ') // Replace newlines with dividers
+                        .replace(/\s*\|\s*\|\s*/g, ' | ') // Remove duplicate dividers
+                        .trim();
+                }
+
                 row.innerHTML = 
                     '<div style="flex: 0 0 160px; min-width: 160px; display: flex; flex-direction: column; gap: 0.4rem;">' +
                         '<span style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">' + d.day + '</span>' +
@@ -6032,7 +6041,7 @@ func getDashboardTemplate() string {
                             '<span>📈 Target IF: <strong>' + (d.target_if || 0) + '</strong></span>' +
                         '</div>' +
                         '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: var(--font-family); line-height: 1.4; color: var(--text-primary);">' +
-                            d.structure +
+                            displayStructure +
                         '</div>' +
                         analysisLinkHtml +
                     '</div>';
