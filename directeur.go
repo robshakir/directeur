@@ -1991,14 +1991,15 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		}
 
 		type PlannedWorkout struct {
-			Day          string  `json:"day"`
-			WorkoutType  string  `json:"workout_type"`
-			Title        string  `json:"title"`
-			Description  string  `json:"description"`
-			DurationMins int     `json:"duration_mins"`
-			TargetTSS    int     `json:"target_tss"`
-			TargetIF     float64 `json:"target_if"`
-			Structure    string  `json:"structure"`
+			Day                   string  `json:"day"`
+			WorkoutType           string  `json:"workout_type"`
+			Title                 string  `json:"title"`
+			Description           string  `json:"description"`
+			DurationMins          int     `json:"duration_mins"`
+			TargetTSS             int     `json:"target_tss"`
+			TargetIF              float64 `json:"target_if"`
+			Structure             string  `json:"structure"`
+			IntervalsIcuStructure string  `json:"intervals_icu_structure"`
 		}
 
 		var req struct {
@@ -2135,7 +2136,9 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			}
 
 			fullDescription := ""
-			if wkt.Structure != "" {
+			if wkt.IntervalsIcuStructure != "" {
+				fullDescription += wkt.IntervalsIcuStructure + "\n\n"
+			} else if wkt.Structure != "" {
 				fullDescription += wkt.Structure + "\n\n"
 			}
 			fullDescription += wkt.Description
@@ -6028,7 +6031,7 @@ func getDashboardTemplate() string {
                             '<span>⚡ Target TSS: <strong>' + (d.target_tss || 0) + '</strong></span>' +
                             '<span>📈 Target IF: <strong>' + (d.target_if || 0) + '</strong></span>' +
                         '</div>' +
-                        '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: monospace; line-height: 1.4; color: var(--text-primary); white-space: pre-wrap;">' +
+                        '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: var(--font-family); line-height: 1.4; color: var(--text-primary);">' +
                             d.structure +
                         '</div>' +
                         analysisLinkHtml +
@@ -6156,12 +6159,15 @@ func getDashboardTemplate() string {
                 "      \"target_tss\": 55,\n" +
                 "      \"target_if\": 0.72,\n" +
                 "      \"description\": \"Overview of the workout focus.\",\n" +
-                "      \"structure\": \"- 10m ramp 50-75%\\n\\n3x\\n- 8m 85% 90rpm\\n- 4m 50% recovery\\n\\n- 10m 50%\"\n" +
+                "      \"structure\": \"Warm Up: 10m easy spinning. Main Set: 3x8m at Sweet Spot (200-215W) with 4m recovery. Cool Down: 10m easy spinning.\",\n" +
+                "      \"intervals_icu_structure\": \"- 10m ramp 50-75%\\n\\n3x\\n- 8m 85% 90rpm\\n- 4m 50% recovery\\n\\n- 10m 50%\"\n" +
                 "    },\n" +
                 "    ... (continue in chronological order for the next 6 days: " + weekDaysList.slice(1).join(', ') + ")\n" +
                 "  ]\n" +
                 "}\n\n" +
-                "The \"structure\" field MUST be written in the specific plain-text formatting language that Intervals.icu parses to generate structured workout graphs. Use this exact syntax:\n" +
+                "Please output two structure fields for each day:\n" +
+                "1. \"structure\": a friendly, human-readable summary of the workout steps, suitable for displaying to the athlete.\n" +
+                "2. \"intervals_icu_structure\": MUST be written in the specific plain-text formatting language that Intervals.icu parses to generate structured workout graphs. Use this exact syntax:\n" +
                 "- Each interval step starts with a hyphen and space (e.g. \"- 10m ramp 50-75%\", \"- 5m 140w 95-100rpm\", or \"- 20m 85%\").\n" +
                 "- Specify duration using \"m\" (minutes) or \"s\" (seconds).\n" +
                 "- Specify intensity target as either absolute wattage (e.g., \"140w\"), target percentage of FTP (e.g., \"85%\"), or percentage ramp (e.g., \"50-75%\").\n" +
@@ -6492,13 +6498,17 @@ func getDashboardTemplate() string {
             for (let i = 0; i < workoutsCopy.length; i++) {
                 const w = workoutsCopy[i];
                 if (w.duration_mins > 0 && w.workout_type.toLowerCase() !== 'rest' && w.workout_type.toLowerCase() !== 'rest day') {
-                    if (w.structure && !isIntervalsFormat(w.structure)) {
-                        if (btn) {
-                            btn.innerHTML = '<span style="width:12px; height:12px; border:2px solid #fff; border-top:2px solid transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; margin-right:4px;"></span> Distilling ' + w.day + '...';
-                        }
-                        const distilled = await distillWorkoutStructure(w.title, w.description, w.structure);
-                        if (distilled && distilled !== w.structure) {
-                            w.structure = distilled;
+                    if (!w.intervals_icu_structure || !isIntervalsFormat(w.intervals_icu_structure)) {
+                        const sourceText = w.intervals_icu_structure || w.structure || '';
+                        if (!isIntervalsFormat(sourceText)) {
+                            if (btn) {
+                                btn.innerHTML = '<span style="width:12px; height:12px; border:2px solid #fff; border-top:2px solid transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; margin-right:4px;"></span> Distilling ' + w.day + '...';
+                            }
+                            const distilled = await distillWorkoutStructure(w.title, w.description, sourceText);
+                            w.intervals_icu_structure = distilled;
+                            updated = true;
+                        } else {
+                            w.intervals_icu_structure = sourceText;
                             updated = true;
                         }
                     }
