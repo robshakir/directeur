@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -42,9 +43,10 @@ type Config struct {
 
 // IntervalsConfig represents authentication and connection details for Intervals.icu API integration
 type IntervalsConfig struct {
-	Enabled   bool   `json:"enabled"`
-	AthleteID string `json:"athlete_id"`
-	APIKey    string `json:"api_key"`
+	Enabled     bool   `json:"enabled"`
+	AthleteID   string `json:"athlete_id"`
+	APIKey      string `json:"api_key"`
+	DownloadDir string `json:"download_dir"`
 }
 
 // HammerheadConfig represents authentication and caching details for Hammerhead Dashboard API integration
@@ -385,6 +387,9 @@ func loadConfig(path string) Config {
 	}
 	if config.WahooAPI.DownloadDir == "" {
 		config.WahooAPI.DownloadDir = "./wahoo_downloads"
+	}
+	if config.IntervalsAPI.DownloadDir == "" {
+		config.IntervalsAPI.DownloadDir = "./intervals_downloads"
 	}
 	return config
 }
@@ -954,6 +959,191 @@ func downloadWahooFITFile(cfg WahooConfig, cdnURL string, workoutID int64) (stri
 	defer out.Close()
 
 	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return filePath, nil
+}
+
+type IntervalsActivity struct {
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Type           string    `json:"type"`
+	StartDateLocal string    `json:"start_date_local"`
+	StartTime      time.Time `json:"start_time"`
+	DistanceKM     float64   `json:"distance_km"`
+	Duration       string    `json:"duration"`
+}
+
+func fetchIntervalsActivities(cfg IntervalsConfig) ([]IntervalsActivity, error) {
+	if !cfg.Enabled || cfg.APIKey == "" {
+		return nil, nil
+	}
+
+	athleteID := cfg.AthleteID
+	if athleteID == "" {
+		athleteID = "0"
+	}
+
+	// Fetch last 50 activities in the last 60 days
+	oldest := time.Now().AddDate(0, 0, -60).Format("2006-01-02")
+	newest := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+
+	reqURL := fmt.Sprintf("https://intervals.icu/api/v1/athlete/%s/activities?oldest=%s&newest=%s&limit=50", athleteID, oldest, newest)
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.SetBasicAuth("API_KEY", cfg.APIKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var rawActivities []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&rawActivities); err != nil {
+		return nil, err
+	}
+
+	var list []IntervalsActivity
+	for _, act := range rawActivities {
+		actType, _ := act["type"].(string)
+		if !strings.Contains(strings.ToLower(actType), "ride") {
+			continue
+		}
+
+		idVal := ""
+		if idNum, ok := act["id"].(float64); ok {
+			idVal = fmt.Sprintf("%.0f", idNum)
+		} else if idStr, ok := act["id"].(string); ok {
+			idVal = idStr
+		}
+		if idVal == "" {
+			continue
+		}
+
+		name, _ := act["name"].(string)
+		if name == "" {
+			name = "Intervals.icu Activity"
+		}
+		startDateStr, _ := act["start_date_local"].(string)
+		
+		var startTime time.Time
+		if startDateStr != "" {
+			t, parseErr := time.Parse("2006-01-02T15:04:05", startDateStr)
+			if parseErr == nil {
+				startTime = t
+			} else {
+				t, parseErr = time.Parse(time.RFC3339, startDateStr)
+				if parseErr == nil {
+					startTime = t
+				}
+			}
+		}
+
+		distanceM := 0.0
+		if distVal, ok := act["distance"].(float64); ok {
+			distanceM = distVal
+		}
+		distanceKM := distanceM / 1000.0
+
+		movingSecs := 0.0
+		if movVal, ok := act["moving_time"].(float64); ok {
+			movingSecs = movVal
+		} else if movValInt, ok := act["moving_time"].(int); ok {
+			movingSecs = float64(movValInt)
+		}
+
+		durStr := ""
+		if movingSecs > 0 {
+			h := int(movingSecs) / 3600
+			m := (int(movingSecs) % 3600) / 60
+			s := int(movingSecs) % 60
+			if h > 0 {
+				durStr = fmt.Sprintf("%dh %dm", h, m)
+			} else {
+				durStr = fmt.Sprintf("%dm %ds", m, s)
+			}
+		}
+
+		list = append(list, IntervalsActivity{
+			ID:             idVal,
+			Name:           name,
+			Type:           actType,
+			StartDateLocal: startDateStr,
+			StartTime:      startTime,
+			DistanceKM:     math.Round(distanceKM*10.0) / 10.0,
+			Duration:       durStr,
+		})
+	}
+
+	return list, nil
+}
+
+func downloadIntervalsFITFile(cfg IntervalsConfig, activityID string) (string, error) {
+	if activityID == "" {
+		return "", fmt.Errorf("empty activity ID")
+	}
+
+	if err := os.MkdirAll(cfg.DownloadDir, 0755); err != nil {
+		return "", err
+	}
+
+	filePath := filepath.Join(cfg.DownloadDir, activityID+".fit")
+	if _, err := os.Stat(filePath); err == nil {
+		return filePath, nil
+	}
+
+	url := fmt.Sprintf("https://intervals.icu/api/v1/activity/%s/file", activityID)
+	client := &http.Client{Timeout: 60 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.SetBasicAuth("API_KEY", cfg.APIKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("Intervals.icu returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var fitBytes []byte
+	if len(bodyBytes) > 2 && bodyBytes[0] == 0x1f && bodyBytes[1] == 0x8b {
+		gr, err := gzip.NewReader(bytes.NewReader(bodyBytes))
+		if err != nil {
+			return "", fmt.Errorf("failed to create gzip reader: %w", err)
+		}
+		defer gr.Close()
+		decompressed, err := io.ReadAll(gr)
+		if err != nil {
+			return "", fmt.Errorf("failed to decompress gzip content: %w", err)
+		}
+		fitBytes = decompressed
+	} else {
+		fitBytes = bodyBytes
+	}
+
+	err = os.WriteFile(filePath, fitBytes, 0644)
 	if err != nil {
 		return "", err
 	}
@@ -1704,6 +1894,11 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			fmt.Printf("Error fetching Wahoo workouts: %v\n", wahooErr)
 		}
 
+		intervalsRides, intervalsErr := fetchIntervalsActivities(cfg.IntervalsAPI)
+		if intervalsErr != nil {
+			fmt.Printf("Error fetching Intervals activities: %v\n", intervalsErr)
+		}
+
 		type RidesResponse struct {
 			Local                []RideFile           `json:"local"`
 			Hammerhead           []HammerheadActivity `json:"hammerhead"`
@@ -1721,6 +1916,9 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			WahooClientID        string               `json:"wahoo_client_id,omitempty"`
 			WahooCurrentPage     int                  `json:"wahoo_current_page"`
 			WahooTotalPages      int                  `json:"wahoo_total_pages"`
+
+			Intervals            []IntervalsActivity  `json:"intervals"`
+			IntervalsConfigured  bool                 `json:"intervals_configured"`
 
 			Bikes                []BikeProfile        `json:"bikes"`
 		}
@@ -1752,6 +1950,9 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			WahooClientID:        cfg.WahooAPI.ClientID,
 			WahooCurrentPage:     wahooCurrentPage,
 			WahooTotalPages:      wahooTotalPages,
+
+			Intervals:           intervalsRides,
+			IntervalsConfigured: cfg.IntervalsAPI.Enabled && cfg.IntervalsAPI.APIKey != "",
 
 			Bikes:                cfg.Bikes,
 		}
@@ -1817,6 +2018,17 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			filePath, err = downloadWahooFITFile(cfg.WahooAPI, cdnURL, id)
 			if err != nil {
 				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity from Wahoo: %s"}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+		} else if source == "intervals" {
+			id := r.URL.Query().Get("id")
+			if id == "" {
+				http.Error(w, `{"error": "missing id parameter"}`, http.StatusBadRequest)
+				return
+			}
+			filePath, err = downloadIntervalsFITFile(cfg.IntervalsAPI, id)
+			if err != nil {
+				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity from Intervals.icu: %s"}`, err.Error()), http.StatusInternalServerError)
 				return
 			}
 		} else {
@@ -3544,6 +3756,7 @@ func getDashboardTemplate() string {
                 <button id="tab-local" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid var(--accent); background: none; font-size: 0.95rem; font-weight: 600; padding: 0.75rem 1.5rem; color: var(--accent); cursor: pointer;">📂 Local Files</button>
                 <button id="tab-hammerhead" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid transparent; background: none; font-size: 0.95rem; font-weight: 500; padding: 0.75rem 1.5rem; color: var(--text-secondary); cursor: pointer;">🚲 Hammerhead Karoo</button>
                 <button id="tab-wahoo" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid transparent; background: none; font-size: 0.95rem; font-weight: 500; padding: 0.75rem 1.5rem; color: var(--text-secondary); cursor: pointer;">⚡ Wahoo Fitness</button>
+                <button id="tab-intervals" class="btn-action" style="border-radius: 0; border: none; border-bottom: 2px solid transparent; background: none; font-size: 0.95rem; font-weight: 500; padding: 0.75rem 1.5rem; color: var(--text-secondary); cursor: pointer;">🌐 Intervals.icu</button>
             </div>
 
             <!-- Modal Content Lists Container -->
@@ -3572,6 +3785,11 @@ func getDashboardTemplate() string {
 
                 <!-- Wahoo Activities List -->
                 <div id="list-wahoo-container" style="display: none; flex-direction: column; gap: 0.75rem;">
+                    <!-- Filled dynamically -->
+                </div>
+
+                <!-- Intervals.icu Activities List -->
+                <div id="list-intervals-container" style="display: none; flex-direction: column; gap: 0.75rem;">
                     <!-- Filled dynamically -->
                 </div>
 
@@ -7969,9 +8187,11 @@ func getDashboardTemplate() string {
         const tabLocal = document.getElementById('tab-local');
         const tabHammerhead = document.getElementById('tab-hammerhead');
         const tabWahoo = document.getElementById('tab-wahoo');
+        const tabIntervals = document.getElementById('tab-intervals');
         const listLocalContainer = document.getElementById('list-local-container');
         const listHammerheadContainer = document.getElementById('list-hammerhead-container');
         const listWahooContainer = document.getElementById('list-wahoo-container');
+        const listIntervalsContainer = document.getElementById('list-intervals-container');
         const selectRideLoading = document.getElementById('select-ride-loading');
         const selectRideEmpty = document.getElementById('select-ride-empty');
         const analysisLoadingOverlay = document.getElementById('analysis-loading-overlay');
@@ -7992,9 +8212,14 @@ func getDashboardTemplate() string {
             tabWahoo.style.borderBottomColor = 'transparent';
             tabWahoo.style.fontWeight = '500';
 
+            tabIntervals.style.color = 'var(--text-secondary)';
+            tabIntervals.style.borderBottomColor = 'transparent';
+            tabIntervals.style.fontWeight = '500';
+
             listLocalContainer.style.display = 'none';
             listHammerheadContainer.style.display = 'none';
             listWahooContainer.style.display = 'none';
+            listIntervalsContainer.style.display = 'none';
 
             if (selectRideActiveTab === 'local') {
                 tabLocal.style.color = 'var(--accent)';
@@ -8011,6 +8236,11 @@ func getDashboardTemplate() string {
                 tabWahoo.style.borderBottomColor = 'var(--accent)';
                 tabWahoo.style.fontWeight = '600';
                 listWahooContainer.style.display = 'flex';
+            } else if (selectRideActiveTab === 'intervals') {
+                tabIntervals.style.color = 'var(--accent)';
+                tabIntervals.style.borderBottomColor = 'var(--accent)';
+                tabIntervals.style.fontWeight = '600';
+                listIntervalsContainer.style.display = 'flex';
             }
         };
 
@@ -8032,16 +8262,25 @@ func getDashboardTemplate() string {
             checkEmptyState();
         });
 
+        tabIntervals.addEventListener('click', () => {
+            selectRideActiveTab = 'intervals';
+            updateTabUI();
+            checkEmptyState();
+        });
+
         const checkEmptyState = () => {
             const hasLocal = listLocalContainer.children.length > 0;
             const hasHammerhead = listHammerheadContainer.children.length > 0;
             const hasWahoo = listWahooContainer.children.length > 0;
+            const hasIntervals = listIntervalsContainer.children.length > 0;
             if (selectRideActiveTab === 'local') {
                 selectRideEmpty.style.display = hasLocal ? 'none' : 'block';
             } else if (selectRideActiveTab === 'hammerhead') {
                 selectRideEmpty.style.display = hasHammerhead ? 'none' : 'block';
             } else if (selectRideActiveTab === 'wahoo') {
                 selectRideEmpty.style.display = hasWahoo ? 'none' : 'block';
+            } else if (selectRideActiveTab === 'intervals') {
+                selectRideEmpty.style.display = hasIntervals ? 'none' : 'block';
             }
         };
 
@@ -8060,6 +8299,8 @@ func getDashboardTemplate() string {
                 url += '&id=' + encodeURIComponent(param);
             } else if (source === 'wahoo') {
                 url += '&id=' + encodeURIComponent(param) + '&url=' + encodeURIComponent(param2);
+            } else if (source === 'intervals') {
+                url += '&id=' + encodeURIComponent(param);
             }
 
             const bikeSelector = document.getElementById('bike-selector');
@@ -8109,6 +8350,7 @@ func getDashboardTemplate() string {
             listLocalContainer.innerHTML = '';
             listHammerheadContainer.innerHTML = '';
             listWahooContainer.innerHTML = '';
+            listIntervalsContainer.innerHTML = '';
             selectRideEmpty.style.display = 'none';
 
             fetch('/api/rides?hh_page=' + hhPage + '&wahoo_page=' + wahooPage)
@@ -8520,6 +8762,62 @@ func getDashboardTemplate() string {
                             emptyItem.style.fontSize = '0.9rem';
                             emptyItem.innerText = 'No Wahoo activities found.';
                             listWahooContainer.appendChild(emptyItem);
+                        }
+                    }
+
+                    // ==========================================
+                    // Intervals List Rendering
+                    // ==========================================
+                    if (!data.intervals_configured) {
+                        const promptCard = document.createElement('div');
+                        promptCard.style.background = 'rgba(255, 255, 255, 0.02)';
+                        promptCard.style.border = '1px solid var(--border-color)';
+                        promptCard.style.borderRadius = '16px';
+                        promptCard.style.padding = '1.5rem';
+                        promptCard.style.color = 'var(--text-secondary)';
+                        promptCard.style.lineHeight = '1.6';
+                        promptCard.style.fontSize = '0.9rem';
+                        promptCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
+                        
+                        promptCard.innerHTML = '<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; color: var(--accent); font-weight: 700; font-family: \'Outfit\'; font-size: 1.05rem;">' +
+                            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' +
+                            'Intervals.icu Connection Not Configured' +
+                            '</div>' +
+                            '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary);">Connect your Intervals.icu account to directeurAI to view and import your activities. Go to the Settings panel to configure your credentials.</p>';
+                        listIntervalsContainer.appendChild(promptCard);
+                    } else {
+                        if (data.intervals && data.intervals.length > 0) {
+                            data.intervals.forEach(act => {
+                                const dateStr = act.start_time ? new Date(act.start_time).toLocaleString() : 'N/A';
+                                const distStr = act.distance_km + ' km';
+                                const durStr = act.duration || 'N/A';
+                                const item = document.createElement('div');
+                                item.className = 'ride-list-item';
+                                item.innerHTML = '<div>' +
+                                    '<div style="font-weight: 600; color: #ffffff; font-size: 0.95rem; margin-bottom: 0.2rem;">' + (act.name || 'Unnamed Activity') + '</div>' +
+                                    '<div style="font-size: 0.8rem; color: var(--text-secondary);">Date: ' + dateStr + '</div>' +
+                                    '</div>' +
+                                    '<div style="display: flex; align-items: center; gap: 1rem;">' +
+                                    '<div style="text-align: right;">' +
+                                    '<div style="font-weight: 600; color: var(--accent); font-size: 0.9rem;">' + distStr + '</div>' +
+                                    '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + durStr + '</div>' +
+                                    '</div>' +
+                                    '<span class="badge" style="font-size: 0.7rem; padding: 0.25rem 0.5rem; background: rgba(228, 92, 134, 0.15); border-color: var(--accent); color: var(--accent);">INTERVALS</span>' +
+                                    '</div>';
+                                item.addEventListener('click', () => {
+                                    loadRideData('intervals', act.id);
+                                });
+                                listIntervalsContainer.appendChild(item);
+                            });
+                        } else {
+                            const emptyItem = document.createElement('div');
+                            emptyItem.style.textAlign = 'center';
+                            emptyItem.style.color = 'var(--text-secondary)';
+                            emptyItem.style.padding = '3rem 0';
+                            emptyItem.style.fontStyle = 'italic';
+                            emptyItem.style.fontSize = '0.9rem';
+                            emptyItem.innerText = 'No Intervals.icu activities found.';
+                            listIntervalsContainer.appendChild(emptyItem);
                         }
                     }
 
