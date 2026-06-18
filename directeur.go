@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -35,7 +36,15 @@ type Config struct {
 	LocalDirectory string           `json:"local_directory"`
 	HammerheadAPI  HammerheadConfig `json:"hammerhead_api"`
 	WahooAPI       WahooConfig      `json:"wahoo_api"`
+	IntervalsAPI   IntervalsConfig  `json:"intervals_api"`
 	FTP            int              `json:"ftp"`
+}
+
+// IntervalsConfig represents authentication and connection details for Intervals.icu API integration
+type IntervalsConfig struct {
+	Enabled   bool   `json:"enabled"`
+	AthleteID string `json:"athlete_id"`
+	APIKey    string `json:"api_key"`
 }
 
 // HammerheadConfig represents authentication and caching details for Hammerhead Dashboard API integration
@@ -1851,6 +1860,349 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		json.NewEncoder(w).Encode(analysis)
 	})
 
+	http.HandleFunc("/api/intervals/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		cfg := loadConfig(configPath)
+
+		if r.Method == http.MethodGet {
+			type ConfigResp struct {
+				Enabled   bool   `json:"enabled"`
+				AthleteID string `json:"athlete_id"`
+				HasAPIKey bool   `json:"has_api_key"`
+			}
+			json.NewEncoder(w).Encode(ConfigResp{
+				Enabled:   cfg.IntervalsAPI.Enabled,
+				AthleteID: cfg.IntervalsAPI.AthleteID,
+				HasAPIKey: cfg.IntervalsAPI.APIKey != "",
+			})
+			return
+		}
+
+		if r.Method == http.MethodPost {
+			var req struct {
+				Enabled   bool   `json:"enabled"`
+				AthleteID string `json:"athlete_id"`
+				APIKey    string `json:"api_key"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, `{"error": "invalid request body"}`, http.StatusBadRequest)
+				return
+			}
+
+			cfg.IntervalsAPI.Enabled = req.Enabled
+			cfg.IntervalsAPI.AthleteID = strings.TrimSpace(req.AthleteID)
+			if req.APIKey != "" {
+				cfg.IntervalsAPI.APIKey = strings.TrimSpace(req.APIKey)
+			}
+
+			if err := saveConfig(configPath, cfg); err != nil {
+				http.Error(w, fmt.Sprintf(`{"error": "failed to save config: %s"}`, err.Error()), http.StatusInternalServerError)
+				return
+			}
+
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status": "success"}`))
+			return
+		}
+
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+	})
+
+	http.HandleFunc("/api/intervals/test", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			AthleteID string `json:"athlete_id"`
+			APIKey    string `json:"api_key"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error": "invalid request body"}`, http.StatusBadRequest)
+			return
+		}
+
+		athleteID := strings.TrimSpace(req.AthleteID)
+		apiKey := strings.TrimSpace(req.APIKey)
+		if athleteID == "" {
+			athleteID = "0"
+		}
+
+		if apiKey == "" {
+			cfg := loadConfig(configPath)
+			apiKey = cfg.IntervalsAPI.APIKey
+			if athleteID == "0" && cfg.IntervalsAPI.AthleteID != "" {
+				athleteID = cfg.IntervalsAPI.AthleteID
+			}
+		}
+
+		if apiKey == "" {
+			http.Error(w, `{"error": "API Key is required"}`, http.StatusBadRequest)
+			return
+		}
+
+		testURL := fmt.Sprintf("https://intervals.icu/api/v1/athlete/%s", athleteID)
+		client := &http.Client{Timeout: 10 * time.Second}
+		testReq, err := http.NewRequest("GET", testURL, nil)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to build request: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		testReq.SetBasicAuth("API_KEY", apiKey)
+
+		resp, err := client.Do(testReq)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "connection failed: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			var athleteInfo map[string]interface{}
+			if err := json.NewDecoder(resp.Body).Decode(&athleteInfo); err == nil {
+				if name, ok := athleteInfo["name"].(string); ok {
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"status":  "success",
+						"message": fmt.Sprintf("Connected successfully as %s!", name),
+					})
+					return
+				}
+			}
+			w.Write([]byte(`{"status": "success", "message": "Connected successfully!"}`))
+			return
+		}
+
+		http.Error(w, fmt.Sprintf(`{"error": "intervals.icu returned status %d"}`, resp.StatusCode), http.StatusBadRequest)
+	})
+
+	http.HandleFunc("/api/intervals/export", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		cfg := loadConfig(configPath)
+		if !cfg.IntervalsAPI.Enabled || cfg.IntervalsAPI.APIKey == "" {
+			http.Error(w, `{"error": "Intervals.icu integration is not configured or disabled"}`, http.StatusBadRequest)
+			return
+		}
+
+		type PlannedWorkout struct {
+			Day          string  `json:"day"`
+			WorkoutType  string  `json:"workout_type"`
+			Title        string  `json:"title"`
+			Description  string  `json:"description"`
+			DurationMins int     `json:"duration_mins"`
+			TargetTSS    int     `json:"target_tss"`
+			TargetIF     float64 `json:"target_if"`
+			Structure    string  `json:"structure"`
+		}
+
+		var req struct {
+			StartDate string           `json:"start_date"`
+			Workouts  []PlannedWorkout `json:"workouts"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error": "invalid request body"}`, http.StatusBadRequest)
+			return
+		}
+
+		if len(req.Workouts) == 0 {
+			http.Error(w, `{"error": "no workouts provided to export"}`, http.StatusBadRequest)
+			return
+		}
+
+		parsedStart, err := time.Parse(time.RFC3339, req.StartDate)
+		if err != nil {
+			parsedStart, err = time.Parse("2006-01-02T15:04:05Z", req.StartDate)
+			if err != nil {
+				http.Error(w, fmt.Sprintf(`{"error": "invalid start_date format: %s"}`, err.Error()), http.StatusBadRequest)
+				return
+			}
+		}
+
+		athleteID := cfg.IntervalsAPI.AthleteID
+		if athleteID == "" {
+			athleteID = "0"
+		}
+
+		oldest := parsedStart.Format("2006-01-02")
+		newest := parsedStart.AddDate(0, 0, 7).Format("2006-01-02")
+
+		getURL := fmt.Sprintf("https://intervals.icu/api/v1/athlete/%s/events?oldest=%s&newest=%s", athleteID, oldest, newest)
+		client := &http.Client{Timeout: 15 * time.Second}
+		getReq, err := http.NewRequest("GET", getURL, nil)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to build GET request: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		getReq.SetBasicAuth("API_KEY", cfg.IntervalsAPI.APIKey)
+
+		getResp, err := client.Do(getReq)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to retrieve calendar events: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		defer getResp.Body.Close()
+
+		if getResp.StatusCode != http.StatusOK {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to query intervals.icu calendar (status %d)"}`, getResp.StatusCode), http.StatusBadRequest)
+			return
+		}
+
+		type ExistingEvent struct {
+			ID             int64  `json:"id"`
+			StartDateLocal string `json:"start_date_local"`
+			Category       string `json:"category"`
+			Name           string `json:"name"`
+		}
+
+		var existingEvents []ExistingEvent
+		if err := json.NewDecoder(getResp.Body).Decode(&existingEvents); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to decode existing events: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		calculateDayOffset := func(startDay time.Weekday, targetDayStr string) int {
+			daysMap := map[string]int{
+				"Sunday": 0, "Monday": 1, "Tuesday": 2, "Wednesday": 3,
+				"Thursday": 4, "Friday": 5, "Saturday": 6,
+			}
+			targetOffset, ok := daysMap[targetDayStr]
+			if !ok {
+				return 0
+			}
+			startOffset := int(startDay)
+			diff := targetOffset - startOffset
+			return diff
+		}
+
+		type ExportResult struct {
+			Name   string `json:"name"`
+			Day    string `json:"day"`
+			Status string `json:"status"`
+		}
+		var results []ExportResult
+
+		for _, wkt := range req.Workouts {
+			if wkt.DurationMins <= 0 || strings.ToLower(wkt.WorkoutType) == "rest" || strings.ToLower(wkt.WorkoutType) == "rest day" {
+				results = append(results, ExportResult{
+					Name:   wkt.Title,
+					Day:    wkt.Day,
+					Status: "skipped",
+				})
+				continue
+			}
+
+			offset := calculateDayOffset(parsedStart.Weekday(), wkt.Day)
+			targetDate := parsedStart.AddDate(0, 0, offset)
+			targetDateStr := targetDate.Format("2006-01-02")
+
+			alreadyExists := false
+			targetWktNameLower := strings.TrimSpace(strings.ToLower(wkt.Title))
+
+			for _, ev := range existingEvents {
+				if len(ev.StartDateLocal) >= 10 && ev.StartDateLocal[:10] == targetDateStr {
+					if strings.TrimSpace(strings.ToLower(ev.Name)) == targetWktNameLower {
+						alreadyExists = true
+						break
+					}
+				}
+			}
+
+			if alreadyExists {
+				results = append(results, ExportResult{
+					Name:   wkt.Title,
+					Day:    wkt.Day,
+					Status: "already_exists",
+				})
+				continue
+			}
+
+			indoor := false
+			wktType := "Ride"
+			
+			titleLower := strings.ToLower(wkt.Title)
+			descLower := strings.ToLower(wkt.Description)
+			structLower := strings.ToLower(wkt.Structure)
+			if strings.Contains(titleLower, "zwift") || strings.Contains(descLower, "zwift") || strings.Contains(structLower, "zwift") {
+				indoor = true
+				wktType = "VirtualRide"
+			}
+
+			fullDescription := wkt.Description
+			if wkt.Structure != "" {
+				fullDescription += "\n\n" + wkt.Structure
+			}
+			fullDescription += fmt.Sprintf("\n\nIF=%d%%\nTSS=%d", int(wkt.TargetIF*100), wkt.TargetTSS)
+
+			type IntervalsCreatePayload struct {
+				StartDateLocal string `json:"start_date_local"`
+				Category       string `json:"category"`
+				Type           string `json:"type"`
+				Name           string `json:"name"`
+				Description    string `json:"description"`
+				Indoor         bool   `json:"indoor"`
+				MovingTime     int    `json:"moving_time"`
+			}
+
+			payload := IntervalsCreatePayload{
+				StartDateLocal: fmt.Sprintf("%sT08:00:00", targetDateStr),
+				Category:       "WORKOUT",
+				Type:           wktType,
+				Name:           wkt.Title,
+				Description:    fullDescription,
+				Indoor:         indoor,
+				MovingTime:     wkt.DurationMins * 60,
+			}
+
+			payloadBytes, _ := json.Marshal(payload)
+			postURL := fmt.Sprintf("https://intervals.icu/api/v1/athlete/%s/events", athleteID)
+			postReq, err := http.NewRequest("POST", postURL, bytes.NewBuffer(payloadBytes))
+			if err != nil {
+				results = append(results, ExportResult{
+					Name:   wkt.Title,
+					Day:    wkt.Day,
+					Status: fmt.Sprintf("failed: %s", err.Error()),
+				})
+				continue
+			}
+			postReq.Header.Set("Content-Type", "application/json")
+			postReq.SetBasicAuth("API_KEY", cfg.IntervalsAPI.APIKey)
+
+			postResp, err := client.Do(postReq)
+			if err != nil {
+				results = append(results, ExportResult{
+					Name:   wkt.Title,
+					Day:    wkt.Day,
+					Status: fmt.Sprintf("failed: %s", err.Error()),
+				})
+				continue
+			}
+			postResp.Body.Close()
+
+			if postResp.StatusCode == http.StatusOK || postResp.StatusCode == http.StatusCreated {
+				results = append(results, ExportResult{
+					Name:   wkt.Title,
+					Day:    wkt.Day,
+					Status: "created",
+				})
+			} else {
+				results = append(results, ExportResult{
+					Name:   wkt.Title,
+					Day:    wkt.Day,
+					Status: fmt.Sprintf("failed: status %d", postResp.StatusCode),
+				})
+			}
+		}
+
+		json.NewEncoder(w).Encode(results)
+	})
+
 	err = http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 	if err != nil {
 		fmt.Printf("Error starting HTTP server: %v\n", err)
@@ -2573,6 +2925,9 @@ func getDashboardTemplate() string {
                 <button class="landing-btn" onclick="promptAPIConfig()">
                     🔑 Configure Gemini Key
                 </button>
+                <button class="landing-btn" onclick="showIntervalsConfigModal()">
+                    🌐 Connect Intervals.icu
+                </button>
             </div>
             
             <div class="landing-footer">
@@ -2637,6 +2992,12 @@ func getDashboardTemplate() string {
                         </select>
                     </div>
 
+                     <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; margin-bottom: 0.25rem;">
+                        <button onclick="showIntervalsConfigModal()" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%; text-align: center; cursor: pointer; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-color)'">
+                            🌐 Intervals.icu Connection
+                        </button>
+                    </div>
+
                     <button id="btn-generate-calendar" onclick="generateTrainingCalendar()" class="landing-btn landing-btn-primary" style="width: 100%; justify-content: center; font-size: 0.9rem; padding: 0.75rem;">
                         🗓️ Generate Programme
                     </button>
@@ -2645,9 +3006,23 @@ func getDashboardTemplate() string {
                 <!-- Right Column: Outputs -->
                 <div style="flex: 3 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 1.5rem;">
                     <!-- Weekly Focus Box -->
-                    <div class="card" id="calendar-summary-box" style="display: none; background: linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.03) 100%); border-left: 4px solid var(--accent);">
-                        <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em;">Weekly Physiological Focus</h4>
-                        <p id="calendar-summary-text" style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; margin: 0;"></p>
+                    <div class="card" id="calendar-summary-box" style="display: none; background: linear-gradient(135deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.03) 100%); border-left: 4px solid var(--accent); flex-direction: column; gap: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem; flex-wrap: wrap;">
+                            <div style="flex: 1 1 300px;">
+                                <h4 style="color: var(--accent); margin: 0 0 0.5rem 0; font-family: 'Outfit'; font-weight: 600; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em;">Weekly Physiological Focus</h4>
+                                <p id="calendar-summary-text" style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; margin: 0;"></p>
+                            </div>
+                            <div id="intervals-export-container" style="flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.5rem; min-width: 210px; padding: 0.6rem 0.8rem; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                                    <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Intervals.icu Sync</span>
+                                    <span id="intervals-status-badge" style="background: rgba(255,255,255,0.08); color: var(--text-secondary); font-size: 0.65rem; border-radius: 4px; padding: 0.1rem 0.3rem; font-weight: bold; border: 1px solid var(--border-color); text-transform: uppercase;">Not Connected</span>
+                                </div>
+                                <button id="btn-intervals-export" onclick="exportCalendarToIntervals()" class="landing-btn landing-btn-primary" style="justify-content: center; font-size: 0.8rem; padding: 0.45rem 0.6rem; display: flex; align-items: center; gap: 0.35rem; width: 100%; font-weight: 600;" disabled>
+                                    📅 Add workouts to calendar
+                                </button>
+                                <a href="javascript:void(0)" onclick="showIntervalsConfigModal()" style="font-size: 0.7rem; color: var(--accent); text-align: center; text-decoration: none; font-weight: 600; margin-top: 0.1rem;">Configure Connection</a>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Calendar Overview Box -->
@@ -3104,6 +3479,51 @@ func getDashboardTemplate() string {
 
         </div>
 
+    </div>
+
+    <!-- Modal for Intervals.icu Configuration -->
+    <div id="intervals-config-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center; padding: 2rem;">
+        <div style="width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 1.25rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; padding: 1.75rem; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px var(--accent-glow);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                <div style="font-size: 1.3rem; font-weight: 700; background: linear-gradient(135deg, #ffffff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-family: 'Outfit';">🌐 Connect Intervals.icu</div>
+                <button onclick="hideIntervalsConfigModal()" class="btn-action" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">Close</button>
+            </div>
+            
+            <p style="color: var(--text-secondary); font-size: 0.85rem; line-height: 1.4; margin: 0;">
+                Export your structured training plan workouts directly to Intervals.icu. Enter your Athlete ID (or leave as 0 for main athlete) and API Key from developer settings.
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 0.25rem;">
+                <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                    <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Athlete ID</label>
+                    <input type="text" id="intervals-athlete-id" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none; transition: border-color 0.2s;" placeholder="e.g. i123456 or 0" value="0">
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                    <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">API Key</label>
+                    <input type="password" id="intervals-api-key" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none; transition: border-color 0.2s;" placeholder="Paste Intervals.icu API Key">
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin: 0.25rem 0;">
+                    <input type="checkbox" id="intervals-enabled" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent);">
+                    <label for="intervals-enabled" style="font-size: 0.85rem; color: #ffffff; cursor: pointer; font-weight: 500;">Enable Intervals.icu Export</label>
+                </div>
+            </div>
+
+            <!-- Connection Status -->
+            <div id="intervals-test-status" style="display: none; padding: 0.6rem 0.75rem; border-radius: 8px; font-size: 0.8rem; line-height: 1.4; font-weight: 500;">
+                <!-- Filled dynamically -->
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.5rem;">
+                <button onclick="testIntervalsConnection()" id="btn-intervals-test" class="landing-btn" style="flex: 1; justify-content: center; font-size: 0.85rem; padding: 0.6rem 0;">
+                    🔍 Test Connection
+                </button>
+                <button onclick="saveIntervalsConfig()" id="btn-intervals-save" class="landing-btn landing-btn-primary" style="flex: 1; justify-content: center; font-size: 0.85rem; padding: 0.6rem 0;">
+                    💾 Save Settings
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Modal for Select Ride -->
@@ -3584,6 +4004,7 @@ func getDashboardTemplate() string {
             } else {
                 renderDashboard(rideData);
             }
+            updateIntervalsSyncUI();
         });
 
         function initializeBikeSelector() {
@@ -5190,6 +5611,8 @@ func getDashboardTemplate() string {
                 window.currentCalendarProgram = null;
                 renderTrainingCalendar(null);
             }
+
+            updateIntervalsSyncUI();
         };
         window.showCalendarView = showCalendarView;
 
@@ -5830,6 +6253,217 @@ func getDashboardTemplate() string {
             }
         };
         window.promptAPIConfig = promptAPIConfig;
+
+        const showIntervalsConfigModal = () => {
+            const modal = document.getElementById('intervals-config-modal');
+            const statusEl = document.getElementById('intervals-test-status');
+            if (statusEl) {
+                statusEl.style.display = 'none';
+                statusEl.innerHTML = '';
+            }
+            if (modal) modal.style.display = 'flex';
+
+            fetch('/api/intervals/config')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('intervals-athlete-id').value = data.athlete_id || '0';
+                    document.getElementById('intervals-api-key').value = '';
+                    if (data.has_api_key) {
+                        document.getElementById('intervals-api-key').placeholder = '•••••••••••••••• (API Key is saved)';
+                    } else {
+                        document.getElementById('intervals-api-key').placeholder = 'Paste Intervals.icu API Key';
+                    }
+                    document.getElementById('intervals-enabled').checked = data.enabled || false;
+                })
+                .catch(err => {
+                    console.error("Error loading Intervals.icu config:", err);
+                });
+        };
+        window.showIntervalsConfigModal = showIntervalsConfigModal;
+
+        const hideIntervalsConfigModal = () => {
+            const modal = document.getElementById('intervals-config-modal');
+            if (modal) modal.style.display = 'none';
+        };
+        window.hideIntervalsConfigModal = hideIntervalsConfigModal;
+
+        const testIntervalsConnection = () => {
+            const athleteId = document.getElementById('intervals-athlete-id').value.trim();
+            const apiKey = document.getElementById('intervals-api-key').value.trim();
+            const statusEl = document.getElementById('intervals-test-status');
+            const btn = document.getElementById('btn-intervals-test');
+
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(255, 255, 255, 0.05)';
+                statusEl.style.color = 'var(--text-secondary)';
+                statusEl.style.border = '1px solid var(--border-color)';
+                statusEl.innerText = 'Testing connection...';
+            }
+            if (btn) btn.disabled = true;
+
+            fetch('/api/intervals/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ athlete_id: athleteId, api_key: apiKey })
+            })
+            .then(r => {
+                if (!r.ok) {
+                    return r.json().then(data => { throw new Error(data.error || 'Connection failed'); });
+                }
+                return r.json();
+            })
+            .then(data => {
+                if (statusEl) {
+                    statusEl.style.background = 'rgba(46, 204, 113, 0.1)';
+                    statusEl.style.color = '#2ecc71';
+                    statusEl.style.border = '1px solid rgba(46, 204, 113, 0.2)';
+                    statusEl.innerText = data.message || 'Connected successfully!';
+                }
+            })
+            .catch(err => {
+                if (statusEl) {
+                    statusEl.style.background = 'rgba(231, 76, 60, 0.1)';
+                    statusEl.style.color = '#e74c3c';
+                    statusEl.style.border = '1px solid rgba(231, 76, 60, 0.2)';
+                    statusEl.innerText = 'Error: ' + err.message;
+                }
+            })
+            .finally(() => {
+                if (btn) btn.disabled = false;
+            });
+        };
+        window.testIntervalsConnection = testIntervalsConnection;
+
+        const saveIntervalsConfig = () => {
+            const athleteId = document.getElementById('intervals-athlete-id').value.trim();
+            const apiKey = document.getElementById('intervals-api-key').value.trim();
+            const enabled = document.getElementById('intervals-enabled').checked;
+            const btn = document.getElementById('btn-intervals-save');
+
+            if (btn) btn.disabled = true;
+
+            fetch('/api/intervals/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ athlete_id: athleteId, api_key: apiKey, enabled: enabled })
+            })
+            .then(r => {
+                if (!r.ok) throw new Error('Failed to save connection settings');
+                return r.json();
+            })
+            .then(() => {
+                alert('Intervals.icu connection settings saved successfully!');
+                hideIntervalsConfigModal();
+                updateIntervalsSyncUI();
+            })
+            .catch(err => {
+                alert('Error: ' + err.message);
+            })
+            .finally(() => {
+                if (btn) btn.disabled = false;
+            });
+        };
+        window.saveIntervalsConfig = saveIntervalsConfig;
+
+        const updateIntervalsSyncUI = () => {
+            const badge = document.getElementById('intervals-status-badge');
+            const exportBtn = document.getElementById('btn-intervals-export');
+            if (!badge && !exportBtn) return;
+
+            fetch('/api/intervals/config')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.enabled && data.has_api_key) {
+                        if (badge) {
+                            badge.style.background = 'rgba(46, 204, 113, 0.15)';
+                            badge.style.color = '#2ecc71';
+                            badge.style.border = '1px solid rgba(46, 204, 113, 0.3)';
+                            badge.innerText = 'Connected';
+                        }
+                        if (exportBtn) {
+                            exportBtn.removeAttribute('disabled');
+                        }
+                    } else {
+                        if (badge) {
+                            badge.style.background = 'rgba(255,255,255,0.08)';
+                            badge.style.color = 'var(--text-secondary)';
+                            badge.style.border = '1px solid var(--border-color)';
+                            badge.innerText = data.enabled ? 'Missing Key' : 'Not Connected';
+                        }
+                        if (exportBtn) {
+                            exportBtn.setAttribute('disabled', 'true');
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.error("Error checking Intervals.icu sync status:", err);
+                });
+        };
+        window.updateIntervalsSyncUI = updateIntervalsSyncUI;
+
+        const exportCalendarToIntervals = () => {
+            if (!window.currentCalendarProgram) {
+                alert('No training plan week active to export!');
+                return;
+            }
+            const btn = document.getElementById('btn-intervals-export');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span style="width:12px; height:12px; border:2px solid #fff; border-top:2px solid transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; margin-right:4px;"></span> Exporting...';
+            }
+
+            fetch('/api/intervals/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    start_date: window.currentCalendarProgram.start_date,
+                    workouts: window.currentCalendarProgram.days
+                })
+            })
+            .then(r => {
+                if (!r.ok) {
+                    return r.json().then(data => { throw new Error(data.error || 'Export failed'); });
+                }
+                return r.json();
+            })
+            .then(results => {
+                var created = 0;
+                var exists = 0;
+                var skipped = 0;
+                var failed = 0;
+                var failedMsgs = [];
+
+                results.forEach(res => {
+                    if (res.status === 'created') created++;
+                    else if (res.status === 'already_exists') exists++;
+                    else if (res.status === 'skipped') skipped++;
+                    else {
+                        failed++;
+                        failedMsgs.push(res.name + ': ' + res.status);
+                    }
+                });
+
+                var msg = "Workouts Sync Results:\n";
+                if (created > 0) msg += "• " + created + " workouts successfully added to calendar\n";
+                if (exists > 0) msg += "• " + exists + " workouts already existed (skipped to prevent duplicates)\n";
+                if (skipped > 0) msg += "• " + skipped + " rest days/empty days skipped\n";
+                if (failed > 0) {
+                    msg += "• " + failed + " exports failed:\n  " + failedMsgs.join('\n  ') + "\n";
+                }
+
+                alert(msg);
+            })            .catch(err => {
+                alert('Export failed: ' + err.message);
+            })
+            .finally(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '📅 Add workouts to calendar';
+                }
+            });
+        };
+        window.exportCalendarToIntervals = exportCalendarToIntervals;
 
         // Initialize FTP input field and render lists
         const ftpInput = document.getElementById('ftp-input');

@@ -296,3 +296,33 @@ func TestCalculatePowerCurve(t *testing.T) {
 		t.Errorf("Peak 1m power = %d, expected 133", curve["1m"])
 	}
 }
+
+func TestIntervalsConfig(t *testing.T) {
+	tempFile := filepath.Join(os.TempDir(), "directeur_test_intervals_config.json")
+	defer os.Remove(tempFile)
+
+	mockConfig := Config{
+		FTP: 250,
+		IntervalsAPI: IntervalsConfig{
+			Enabled:   true,
+			AthleteID: "i987654",
+			APIKey:    "test_api_key_xyz",
+		},
+	}
+
+	err := saveConfig(tempFile, mockConfig)
+	if err != nil {
+		t.Fatalf("saveConfig failed: %v", err)
+	}
+
+	loaded := loadConfig(tempFile)
+	if !loaded.IntervalsAPI.Enabled {
+		t.Error("loadConfig IntervalsAPI.Enabled = false, expected true")
+	}
+	if loaded.IntervalsAPI.AthleteID != "i987654" {
+		t.Errorf("loadConfig IntervalsAPI.AthleteID = %q, expected %q", loaded.IntervalsAPI.AthleteID, "i987654")
+	}
+	if loaded.IntervalsAPI.APIKey != "test_api_key_xyz" {
+		t.Errorf("loadConfig IntervalsAPI.APIKey = %q, expected %q", loaded.IntervalsAPI.APIKey, "test_api_key_xyz")
+	}
+}
