@@ -3572,11 +3572,11 @@ func getDashboardTemplate() string {
                 <div class="card-header">
                     <div class="card-title">Training Zones Distribution</div>
                 </div>
-                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; padding: 1rem 0;">
-                    <div id="container-chart-power-zones" style="flex: 1; min-width: 280px; height: 260px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; padding: 1rem 0;">
+                    <div id="container-chart-power-zones" style="height: 260px;">
                         <canvas id="chart-power-zones"></canvas>
                     </div>
-                    <div style="flex: 1; min-width: 280px; height: 260px;">
+                    <div style="height: 260px;">
                         <canvas id="chart-hr-zones"></canvas>
                     </div>
                 </div>
