@@ -413,9 +413,11 @@ func saveConfig(path string, config Config) error {
 
 // RideFile represents a local FIT file details for list API
 type RideFile struct {
-	Filename  string    `json:"filename"`
-	ModTime   time.Time `json:"mod_time"`
-	SizeBytes int64     `json:"size_bytes"`
+	Filename        string    `json:"filename"`
+	ModTime         time.Time `json:"mod_time"`
+	SizeBytes       int64     `json:"size_bytes"`
+	DistanceMeters  float64   `json:"distance_meters,omitempty"`
+	DurationSeconds float64   `json:"duration_seconds,omitempty"`
 }
 
 // HammerheadActivity represents a ride event fetched from the Hammerhead Dashboard API
@@ -488,6 +490,49 @@ func (ha *HammerheadActivity) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func getFitFileSummary(filePath string) (distanceMeters float64, durationSeconds float64, err error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+
+	// Handle potential panics in external fit decoding library
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic during FIT decode: %v", r)
+		}
+	}()
+
+	fitFile, err := fit.Decode(f)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	activity, err := fitFile.Activity()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if len(activity.Records) == 0 {
+		return 0, 0, fmt.Errorf("no records in FIT file")
+	}
+
+	startTime := activity.Records[0].Timestamp
+	endTime := activity.Records[len(activity.Records)-1].Timestamp
+	durationSeconds = endTime.Sub(startTime).Seconds()
+
+	for i := len(activity.Records) - 1; i >= 0; i-- {
+		distVal := activity.Records[i].GetDistanceScaled()
+		if !math.IsNaN(distVal) && distVal > 0 {
+			distanceMeters = distVal
+			break
+		}
+	}
+
+	return distanceMeters, durationSeconds, nil
+}
+
 // listLocalRides scans the configured local directory for FIT files and returns them sorted by modification time
 func listLocalRides(dir string) ([]RideFile, error) {
 	var rides []RideFile
@@ -508,10 +553,14 @@ func listLocalRides(dir string) ([]RideFile, error) {
 			if err != nil {
 				continue
 			}
+			filePath := filepath.Join(dir, f.Name())
+			dist, dur, _ := getFitFileSummary(filePath)
 			rides = append(rides, RideFile{
-				Filename:  f.Name(),
-				ModTime:   info.ModTime(),
-				SizeBytes: info.Size(),
+				Filename:        f.Name(),
+				ModTime:         info.ModTime(),
+				SizeBytes:       info.Size(),
+				DistanceMeters:  dist,
+				DurationSeconds: dur,
 			})
 		}
 	}
@@ -1044,15 +1093,18 @@ func fetchIntervalsActivities(cfg IntervalsConfig) ([]IntervalsActivity, error) 
 		if name == "" {
 			name = "Intervals.icu Activity"
 		}
-		startDateStr, _ := act["start_date_local"].(string)
+		startDateStr, _ := act["start_date"].(string)
+		if startDateStr == "" {
+			startDateStr, _ = act["start_date_local"].(string)
+		}
 		
 		var startTime time.Time
 		if startDateStr != "" {
-			t, parseErr := time.Parse("2006-01-02T15:04:05", startDateStr)
+			t, parseErr := time.Parse(time.RFC3339, startDateStr)
 			if parseErr == nil {
 				startTime = t
 			} else {
-				t, parseErr = time.Parse(time.RFC3339, startDateStr)
+				t, parseErr = time.Parse("2006-01-02T15:04:05", startDateStr)
 				if parseErr == nil {
 					startTime = t
 				}
@@ -3341,11 +3393,17 @@ func getDashboardTemplate() string {
     </header>
 
     <!-- Collapsible Rides Calendar -->
-    <div id="rides-calendar-container" style="max-width: 1400px; margin: 1rem auto 0 auto; padding: 0 1.5rem;">
+    <div id="rides-calendar-container" style="margin-bottom: 1.5rem;">
         <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 0.75rem 1rem; box-shadow: 0 4px 25px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 0.5rem; transition: all 0.3s ease;">
             <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;" id="rides-calendar-header">
-                <div style="display: flex; align-items: center; gap: 0.5rem; font-family: 'Outfit'; font-weight: 700; font-size: 0.95rem; color: #ffffff;">
-                    <span>📅</span> Recent Ride Activity (Last 30 Days)
+                <div style="display: flex; align-items: center; gap: 0.8rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; font-family: 'Outfit'; font-weight: 700; font-size: 0.95rem; color: #ffffff;" id="rides-calendar-title">
+                        <span>📅</span> Recent Ride Activity (Last 7 Days)
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.35rem;" id="rides-calendar-nav">
+                        <button id="btn-prev-week" class="btn-action" style="padding: 0.15rem 0.4rem; font-size: 0.75rem; font-weight: bold; border-radius: 4px;" title="Previous Week">◀</button>
+                        <button id="btn-next-week" class="btn-action" style="padding: 0.15rem 0.4rem; font-size: 0.75rem; font-weight: bold; border-radius: 4px;" title="Next Week" disabled>▶</button>
+                    </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.75rem;">
                     <span id="rides-calendar-stats" style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 500;"></span>
@@ -3356,7 +3414,7 @@ func getDashboardTemplate() string {
             </div>
             
             <div id="rides-calendar-content" style="transition: max-height 0.3s ease-in-out, opacity 0.2s ease-in-out; overflow: hidden; max-height: 500px; opacity: 1;">
-                <div id="rides-calendar-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.5rem; margin-top: 0.25rem; padding-bottom: 0.25rem; overflow-x: auto;">
+                <div id="rides-calendar-grid" style="display: grid; grid-template-columns: repeat(7, minmax(130px, 1fr)); gap: 0.5rem; margin-top: 0.25rem; padding-bottom: 0.25rem; overflow-x: auto;">
                     <!-- Populated dynamically -->
                 </div>
             </div>
@@ -3663,6 +3721,11 @@ func getDashboardTemplate() string {
                 </div>
             </div>
 
+            <!-- Dynamic Custom Cards Container -->
+            <div id="dynamic-cards-container" style="display: flex; flex-direction: column; gap: 1.5rem; margin-top: 1.5rem;">
+                <!-- Dynamically generated cards will append here -->
+            </div>
+
         </div>
 
         <!-- Right Column: Sidebar Stats -->
@@ -3727,6 +3790,43 @@ func getDashboardTemplate() string {
 
         </div>
 
+    </div>
+
+
+    <!-- Evolve Control Panel -->
+    <div id="evolve-control-panel" class="card" style="margin-top: 1.5rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 1.25rem; box-shadow: 0 4px 25px rgba(0,0,0,0.3); transition: all 0.3s ease;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-family: 'Outfit'; font-weight: 700; font-size: 1.1rem; color: #ffffff; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+            <span>💡</span> Evolve directeurAI Dashboard
+        </div>
+        <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 1rem;">
+            Describe a custom graph, data table, or statistical analysis you want to see. directeurAI will query Gemini to generate sandboxed JavaScript charting code, execute it immediately on your current ride data, and add the new card to your dashboard. Custom cards are saved locally in your browser.
+        </div>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start;">
+            <div style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 0.5rem;">
+                <textarea id="evolve-prompt" placeholder="e.g. Draw a scatter plot of speed (X-axis) vs heart rate (Y-axis) color-coded by altitude, or show a summary of time spent in different cadence ranges." style="width: 100%; height: 90px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.75rem; font-family: inherit; font-size: 0.88rem; outline: none; resize: vertical; line-height: 1.4; transition: border-color 0.2s;"></textarea>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; min-width: 200px;">
+                <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                    <label style="font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Gemini AI Model</label>
+                    <select id="evolve-model-select" class="badge" style="cursor: pointer; font-family: inherit; font-size: 0.85rem; font-weight: 600; padding: 0.4rem 1.5rem 0.4rem 0.75rem; text-align: left; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-tertiary); width: 100%;">
+                        <option value="gemini-3.5-flash" selected>Gemini 3.5 Flash (Default)</option>
+                        <option value="gemini-3.5-pro">Gemini 3.5 Pro</option>
+                        <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
+                    </select>
+                </div>
+                <button id="btn-evolve-dashboard" class="btn-action" style="background: linear-gradient(135deg, rgba(46, 204, 113, 0.2), rgba(39, 174, 96, 0.2)); border-color: #2ecc71; color: #2ecc71; font-weight: 700; width: 100%; padding: 0.6rem 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; border-radius: 8px;">
+                    ⚡ Evolve Dashboard
+                </button>
+            </div>
+        </div>
+        
+        <!-- Loading State Indicator inside card -->
+        <div id="evolve-loading" style="display: none; align-items: center; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
+            <div style="width: 24px; height: 24px; border: 3px solid var(--border-color); border-top: 3px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                Querying Gemini for card design & code... (<span id="evolve-status-text">preparing prompt</span>)
+            </div>
+        </div>
     </div>
     </div> <!-- End dashboard-view -->
 
@@ -4245,21 +4345,50 @@ func getDashboardTemplate() string {
                 });
             }
 
+            let calendarWeekOffset = 0;
+
             // ==========================================
             // Collapsible Rides Calendar Logic
             // ==========================================
             const renderRidesCalendar = () => {
                 const container = document.getElementById('rides-calendar-grid');
                 const statsSpan = document.getElementById('rides-calendar-stats');
+                const titleDiv = document.getElementById('rides-calendar-title');
                 if (!container) return;
 
                 container.innerHTML = '';
 
-                // Gather rides from last 30 days
+                // Calculate date range based on offset
                 const today = new Date();
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(today.getDate() - 29); // last 30 days
-                thirtyDaysAgo.setHours(0, 0, 0, 0);
+                const startDay = new Date();
+                startDay.setDate(today.getDate() - 6 - (calendarWeekOffset * 7));
+                startDay.setHours(0, 0, 0, 0);
+
+                const endDayLimit = new Date(startDay);
+                endDayLimit.setDate(startDay.getDate() + 7);
+
+                // Update Title date range
+                if (titleDiv) {
+                    const options = { month: 'short', day: 'numeric' };
+                    const rangeEnd = new Date(startDay);
+                    rangeEnd.setDate(startDay.getDate() + 6);
+                    const dateRangeStr = startDay.toLocaleDateString('en-US', options) + ' - ' + rangeEnd.toLocaleDateString('en-US', options);
+                    
+                    if (calendarWeekOffset === 0) {
+                        titleDiv.innerHTML = '<span>📅</span> Recent Ride Activity (Last 7 Days)';
+                    } else if (calendarWeekOffset === 1) {
+                        titleDiv.innerHTML = '<span>📅</span> Recent Ride Activity (1 Week Ago: ' + dateRangeStr + ')';
+                    } else {
+                        titleDiv.innerHTML = '<span>📅</span> Recent Ride Activity (' + calendarWeekOffset + ' Weeks Ago: ' + dateRangeStr + ')';
+                    }
+                }
+
+                // Update Next button disabled state
+                const btnNext = document.getElementById('btn-next-week');
+                if (btnNext) {
+                    btnNext.disabled = (calendarWeekOffset === 0);
+                    btnNext.style.opacity = (calendarWeekOffset === 0) ? '0.5' : '1';
+                }
 
                 const ridesByDate = {};
                 let totalRideCount = 0;
@@ -4286,15 +4415,15 @@ func getDashboardTemplate() string {
                         const parts = file.filename.match(/^(\d{4})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
                         if (parts) {
                             const fileTime = new Date(parseInt(parts[1]), parseInt(parts[2]) - 1, parseInt(parts[3]), parseInt(parts[4]), parseInt(parts[5]), parseInt(parts[6]));
-                            if (!isNaN(fileTime.getTime()) && fileTime >= thirtyDaysAgo) {
+                            if (!isNaN(fileTime.getTime()) && fileTime >= startDay && fileTime < endDayLimit) {
                                 addRideToGroup(formatLocalDateKey(fileTime), {
                                     source: 'local',
-                                    param: file.filename,
-                                    param2: '',
-                                    label: 'Local: ' + file.filename,
-                                    distance: (file.size_bytes / 1024).toFixed(0) + ' KB',
-                                    timeStr: fileTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-                                    isFIT: true
+                                param: file.filename,
+                                param2: '',
+                                label: 'Local: ' + file.filename,
+                                distance: file.distance_meters ? (file.distance_meters / 1000).toFixed(1) + ' km' : 'FIT File',
+                                timeStr: fileTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                                isFIT: true
                                 });
                             }
                         }
@@ -4306,7 +4435,7 @@ func getDashboardTemplate() string {
                     window.allRidesData.hammerhead.forEach(act => {
                         if (!act.startTime) return;
                         const fileTime = new Date(act.startTime);
-                        if (!isNaN(fileTime.getTime()) && fileTime >= thirtyDaysAgo) {
+                        if (!isNaN(fileTime.getTime()) && fileTime >= startDay && fileTime < endDayLimit) {
                             addRideToGroup(formatLocalDateKey(fileTime), {
                                 source: 'hammerhead',
                                 param: act.id,
@@ -4324,7 +4453,7 @@ func getDashboardTemplate() string {
                     window.allRidesData.wahoo.forEach(act => {
                         if (!act.starts) return;
                         const fileTime = new Date(act.starts);
-                        if (!isNaN(fileTime.getTime()) && fileTime >= thirtyDaysAgo) {
+                        if (!isNaN(fileTime.getTime()) && fileTime >= startDay && fileTime < endDayLimit) {
                             addRideToGroup(formatLocalDateKey(fileTime), {
                                 source: 'wahoo',
                                 param: act.id,
@@ -4342,7 +4471,7 @@ func getDashboardTemplate() string {
                     window.allRidesData.intervals.forEach(act => {
                         if (!act.start_time) return;
                         const fileTime = new Date(act.start_time);
-                        if (!isNaN(fileTime.getTime()) && fileTime >= thirtyDaysAgo) {
+                        if (!isNaN(fileTime.getTime()) && fileTime >= startDay && fileTime < endDayLimit) {
                             addRideToGroup(formatLocalDateKey(fileTime), {
                                 source: 'intervals',
                                 param: act.id,
@@ -4358,12 +4487,20 @@ func getDashboardTemplate() string {
                 const historyData = localStorage.getItem('fit_ride_history');
                 const historyList = historyData ? JSON.parse(historyData) : [];
 
-                if (statsSpan) statsSpan.textContent = totalRideCount + ' ride(s) in last 30 days';
+                if (statsSpan) {
+                    if (calendarWeekOffset === 0) {
+                        statsSpan.textContent = totalRideCount + ' ride(s) in last 7 days';
+                    } else if (calendarWeekOffset === 1) {
+                        statsSpan.textContent = totalRideCount + ' ride(s) in week (1 week ago)';
+                    } else {
+                        statsSpan.textContent = totalRideCount + ' ride(s) in week (' + calendarWeekOffset + ' weeks ago)';
+                    }
+                }
 
-                // Render 30 day cards
-                for (let i = 0; i < 30; i++) {
-                    const currentDay = new Date(thirtyDaysAgo);
-                    currentDay.setDate(thirtyDaysAgo.getDate() + i);
+                // Render 7 day cards
+                for (let i = 0; i < 7; i++) {
+                    const currentDay = new Date(startDay);
+                    currentDay.setDate(startDay.getDate() + i);
 
                     const dateKey = formatLocalDateKey(currentDay);
                     const dayRides = ridesByDate[dateKey] || [];
@@ -4526,8 +4663,32 @@ func getDashboardTemplate() string {
                 toggleCalendar();
             });
             
-            const initialCollapsed = localStorage.getItem('directeur_calendar_collapsed') === 'true';
+            const initialCollapsed = localStorage.getItem('directeur_calendar_collapsed') !== 'false';
             setCalendarCollapsed(initialCollapsed);
+
+            const btnPrev = document.getElementById('btn-prev-week');
+            const btnNext = document.getElementById('btn-next-week');
+            if (btnPrev) {
+                btnPrev.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    calendarWeekOffset++;
+                    renderRidesCalendar();
+                });
+            }
+            if (btnNext) {
+                btnNext.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (calendarWeekOffset > 0) {
+                        calendarWeekOffset--;
+                        renderRidesCalendar();
+                    }
+                });
+            }
+
+            const btnEvolve = document.getElementById('btn-evolve-dashboard');
+            if (btnEvolve) {
+                btnEvolve.addEventListener('click', generateCustomChart);
+            }
 
             // Initial render - check query parameters first!
             const urlParams = new URLSearchParams(window.location.search);
@@ -4542,6 +4703,11 @@ func getDashboardTemplate() string {
                 showDashboardView();
             } else {
                 renderDashboard(rideData);
+            }
+            try {
+                initializeStaticCardsCollapse();
+            } catch(e) {
+                console.error("Error initializing static card collapse:", e);
             }
             updateIntervalsSyncUI();
         });
@@ -5972,22 +6138,6 @@ func getDashboardTemplate() string {
         // Expose updateFTP globally for inline onclick buttons
         window.updateFTP = updateFTP;
 
-        const showDashboardView = () => {
-            document.getElementById('landing-view').style.display = 'none';
-            document.getElementById('calendar-view').style.display = 'none';
-            document.getElementById('dashboard-view').style.display = 'block';
-            window.dispatchEvent(new Event('resize'));
-            
-            // Fix Leaflet map sizing/zooming when switching from hidden to visible
-            if (leafletMap) {
-                leafletMap.invalidateSize();
-                if (routePolyline) {
-                    leafletMap.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
-                }
-            }
-        };
-        window.showDashboardView = showDashboardView;
-
         const viewRideAnalysis = (rideId) => {
             if (!rideId) return;
 
@@ -6929,42 +7079,6 @@ func getDashboardTemplate() string {
         };
         window.saveIntervalsConfig = saveIntervalsConfig;
 
-        const updateIntervalsSyncUI = () => {
-            const badge = document.getElementById('intervals-status-badge');
-            const exportBtn = document.getElementById('btn-intervals-export');
-            if (!badge && !exportBtn) return;
-
-            fetch('/api/intervals/config')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.enabled && data.has_api_key) {
-                        if (badge) {
-                            badge.style.background = 'rgba(46, 204, 113, 0.15)';
-                            badge.style.color = '#2ecc71';
-                            badge.style.border = '1px solid rgba(46, 204, 113, 0.3)';
-                            badge.innerText = 'Connected';
-                        }
-                        if (exportBtn) {
-                            exportBtn.removeAttribute('disabled');
-                        }
-                    } else {
-                        if (badge) {
-                            badge.style.background = 'rgba(255,255,255,0.08)';
-                            badge.style.color = 'var(--text-secondary)';
-                            badge.style.border = '1px solid var(--border-color)';
-                            badge.innerText = data.enabled ? 'Missing Key' : 'Not Connected';
-                        }
-                        if (exportBtn) {
-                            exportBtn.setAttribute('disabled', 'true');
-                        }
-                    }
-                })
-                .catch(err => {
-                    console.error("Error checking Intervals.icu sync status:", err);
-                });
-        };
-        window.updateIntervalsSyncUI = updateIntervalsSyncUI;
-
         const distillWorkoutStructure = async (title, description, oldStructure) => {
             const key = localStorage.getItem('gemini_api_key');
             if (!key) return oldStructure;
@@ -7154,7 +7268,613 @@ func getDashboardTemplate() string {
             });
         }
         renderFtpEstimates();
+        try {
+            renderDynamicCards(data);
+        } catch(e) {
+            console.error("Error rendering dynamic cards:", e);
+        }
         } // End of renderDashboard function
+
+        function renderDynamicCards(data) {
+            const container = document.getElementById('dynamic-cards-container');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const savedCardsData = localStorage.getItem('directeur_custom_cards');
+            const savedCards = savedCardsData ? JSON.parse(savedCardsData) : [];
+
+            savedCards.forEach(card => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card';
+                cardEl.id = 'dynamic-card-' + card.id;
+                cardEl.style.marginTop = '1.5rem';
+
+                const headerEl = document.createElement('div');
+                headerEl.className = 'card-header';
+                headerEl.style.display = 'flex';
+                headerEl.style.justifyContent = 'space-between';
+                headerEl.style.alignItems = 'center';
+
+                const titleEl = document.createElement('div');
+                titleEl.className = 'card-title';
+                titleEl.textContent = card.title;
+
+                const actionsEl = document.createElement('div');
+                actionsEl.style.display = 'flex';
+                actionsEl.style.alignItems = 'center';
+                actionsEl.style.gap = '0.5rem';
+
+                const collapseBtn = document.createElement('button');
+                collapseBtn.className = 'btn-action';
+                collapseBtn.style.fontSize = '0.75rem';
+                collapseBtn.style.padding = '0.2rem 0.5rem';
+
+                const refineBtn = document.createElement('button');
+                refineBtn.className = 'btn-action';
+                refineBtn.style.fontSize = '0.75rem';
+                refineBtn.style.padding = '0.2rem 0.5rem';
+                refineBtn.innerHTML = '✏️ Refine';
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn-action';
+                deleteBtn.style.borderColor = 'rgba(231, 76, 60, 0.4)';
+                deleteBtn.style.color = '#fc8181';
+                deleteBtn.style.fontSize = '0.75rem';
+                deleteBtn.style.padding = '0.2rem 0.5rem';
+                deleteBtn.innerHTML = '🗑️ Delete';
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm('Are you sure you want to delete this custom chart?')) {
+                        deleteDynamicCard(card.id);
+                    }
+                });
+
+                actionsEl.appendChild(collapseBtn);
+                actionsEl.appendChild(refineBtn);
+                actionsEl.appendChild(deleteBtn);
+                headerEl.appendChild(titleEl);
+                headerEl.appendChild(actionsEl);
+                cardEl.appendChild(headerEl);
+
+                // Inline Refinement Panel
+                const refinePanel = document.createElement('div');
+                refinePanel.id = 'refine-panel-' + card.id;
+                refinePanel.style.display = 'none';
+                refinePanel.style.flexDirection = 'column';
+                refinePanel.style.gap = '0.5rem';
+                refinePanel.style.padding = '0.75rem';
+                refinePanel.style.marginTop = '0.5rem';
+                refinePanel.style.background = 'var(--bg-tertiary)';
+                refinePanel.style.border = '1px solid var(--border-color)';
+                refinePanel.style.borderRadius = '8px';
+
+                refinePanel.innerHTML = 
+                    '<div style="font-size: 0.8rem; font-weight: 600; color: var(--accent); margin-bottom: 0.25rem;">🔧 Adjust Card Functionality</div>' +
+                    '<textarea class="refine-feedback" placeholder="Describe the changes you want (e.g. change colors, fix layout alignment, or paste error messages to auto-heal)..." style="width: 100%; height: 65px; background: rgba(0,0,0,0.20); border: 1px solid var(--border-color); border-radius: 6px; color: #ffffff; padding: 0.5rem; font-family: inherit; font-size: 0.82rem; outline: none; resize: vertical; line-height: 1.4;"></textarea>' +
+                    '<div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.25rem;">' +
+                        '<div class="refine-status" style="font-size: 0.75rem; color: var(--text-secondary); margin-right: auto; display: flex; align-items: center; gap: 0.4rem;"></div>' +
+                        '<button class="btn-action btn-refine-cancel" style="padding: 0.2rem 0.6rem; font-size: 0.75rem;">Cancel</button>' +
+                        '<button class="btn-action btn-refine-submit" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-color: #2ecc71; color: #2ecc71;">⚡ Adjust</button>' +
+                    '</div>';
+
+                cardEl.appendChild(refinePanel);
+
+                const bodyEl = document.createElement('div');
+                bodyEl.style.padding = '1rem 0';
+                bodyEl.style.minHeight = '200px';
+                bodyEl.style.display = 'flex';
+                bodyEl.style.flexDirection = 'column';
+                bodyEl.style.gap = '1rem';
+                cardEl.appendChild(bodyEl);
+                container.appendChild(cardEl);
+
+                const updateCollapseState = (collapsed) => {
+                    if (collapsed) {
+                        bodyEl.style.display = 'none';
+                        refinePanel.style.display = 'none';
+                        collapseBtn.innerHTML = '▼ Show';
+                        localStorage.setItem('directeur_card_collapsed_' + card.id, 'true');
+                    } else {
+                        bodyEl.style.display = 'flex';
+                        collapseBtn.innerHTML = '▲ Collapse';
+                        localStorage.setItem('directeur_card_collapsed_' + card.id, 'false');
+                        setTimeout(() => {
+                            window.dispatchEvent(new Event('resize'));
+                        }, 50);
+                    }
+                };
+
+                collapseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const currentlyCollapsed = localStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
+                    updateCollapseState(!currentlyCollapsed);
+                });
+
+                refineBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const currentlyCollapsed = localStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
+                    if (currentlyCollapsed) {
+                        updateCollapseState(false);
+                    }
+                    const isHidden = refinePanel.style.display === 'none';
+                    refinePanel.style.display = isHidden ? 'flex' : 'none';
+                    if (isHidden) {
+                        refinePanel.querySelector('.refine-feedback').focus();
+                    }
+                });
+
+                refinePanel.querySelector('.btn-refine-cancel').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    refinePanel.style.display = 'none';
+                });
+
+                refinePanel.querySelector('.btn-refine-submit').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const feedbackText = refinePanel.querySelector('.refine-feedback').value.trim();
+                    if (!feedbackText) {
+                        alert('Please describe what to adjust.');
+                        return;
+                    }
+                    
+                    const submitBtn = refinePanel.querySelector('.btn-refine-submit');
+                    const cancelBtn = refinePanel.querySelector('.btn-refine-cancel');
+                    const statusText = refinePanel.querySelector('.refine-status');
+                    
+                    submitBtn.disabled = true;
+                    cancelBtn.disabled = true;
+                    statusText.innerHTML = '<div style="width: 12px; height: 12px; border: 2px solid var(--border-color); border-top: 2px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div> Asking Gemini...';
+
+                    const key = localStorage.getItem('gemini_api_key');
+                    if (!key) {
+                        alert('Please configure your Gemini API Key first (at the bottom of the page or in Settings).');
+                        submitBtn.disabled = false;
+                        cancelBtn.disabled = false;
+                        statusText.textContent = '';
+                        return;
+                    }
+
+                    const modelSelect = document.getElementById('evolve-model-select');
+                    const model = modelSelect ? modelSelect.value : 'gemini-3.5-flash';
+
+                    let cardError = '';
+                    const errorMsgEl = cardEl.querySelector('.card-error-msg');
+                    if (errorMsgEl) {
+                        cardError = errorMsgEl.textContent;
+                    }
+
+                    const bt = String.fromCharCode(96) + String.fromCharCode(96) + String.fromCharCode(96);
+                    const prompt = "You are a professional cycling data analyst and expert JavaScript developer.\n" +
+                        "You are tasked with ADJUSTING or FIXING an existing custom data analysis card in a cycling dashboard.\n\n" +
+                        "Here is the schema of the global 'rideData' object available in the context:\n" +
+                        "{\n" +
+                        "  \"summary\": {\n" +
+                        "    \"start_time\": \"2026-05-27T18:00:00Z\",\n" +
+                        "    \"duration_seconds\": 3600,\n" +
+                        "    \"distance_meters\": 32000,\n" +
+                        "    \"average_power\": 210,\n" +
+                        "    \"normalized_power\": 225,\n" +
+                        "    \"tss\": 65,\n" +
+                        "    \"if\": 0.85,\n" +
+                        "    \"calories\": 750,\n" +
+                        "    \"average_heartrate\": 145,\n" +
+                        "    \"average_cadence\": 90,\n" +
+                        "    \"source_file\": \"2026-05-27_18-00-00.fit\"\n" +
+                        "  },\n" +
+                        "  \"records\": [\n" +
+                        "    { \"timestamp\": \"2026-05-27T18:00:00Z\", \"power\": 200, \"heart_rate\": 130, \"cadence\": 85, \"speed\": 8.5, \"altitude\": 120, \"front_gear_teeth\": 50, \"rear_gear_teeth\": 17 }\n" +
+                        "  ],\n" +
+                        "  \"gear_usage\": [\n" +
+                        "    { \"combination\": \"50x17\", \"seconds\": 850, \"percentage\": 23.6 }\n" +
+                        "  ]\n" +
+                        "}\n\n" +
+                        "Here is the existing JavaScript code for the card:\n" +
+                        bt + "javascript\n" + card.jsCode + "\n" + bt + "\n\n" +
+                        (cardError ? "When executing this code, it failed with the following error:\n" + cardError + "\n\n" : "") +
+                        "The athlete has requested the following adjustments/fixes:\n" + feedbackText + "\n\n" +
+                        "Your output MUST be a valid JSON object matching the following structure and no other text (do NOT wrap in markdown code blocks, do NOT write explanations, just return raw JSON):\n" +
+                        "{\n" +
+                        "  \"id\": \"" + card.id + "\",\n" +
+                        "  \"title\": \"An updated title if needed, or keep the same: " + card.title.replace(/"/g, '\\"') + "\",\n" +
+                        "  \"jsCode\": \"// Updated JavaScript code\"\n" +
+                        "}\n\n" +
+                        "Rules for 'jsCode':\n" +
+                        "1. The code will be run as a function body with three parameters: 'data', 'container', and 'Chart'.\n" +
+                        "2. It must render its visual content inside the 'container' element (which is a standard HTML div).\n" +
+                        "3. If creating a chart, it must create a '<canvas>' element inside the 'container', style it to fit (e.g. style.height = '350px'), and instantiate a new Chart.js graph using the provided 'Chart' constructor.\n" +
+                        "4. All HTML elements (like legends, stat boxes, tables) must be generated dynamically using standard JS DOM manipulation methods (e.g. document.createElement, appendChild, innerHTML) and appended to 'container'.\n" +
+                        "5. Ensure the styling matches a premium dark mode theme (backgrounds should be transparent or dark, colors should be white/var(--text-primary)/var(--accent)/var(--text-secondary), borders should be var(--border-color)).\n" +
+                        "6. Do NOT load external libraries, CSS, or make API calls. Access all ride metrics exclusively from the 'data' parameter.\n" +
+                        "7. Calculate any required summaries from the 'data.records' array (e.g. averages, ranges, correlations, distributions) or retrieve them from 'data.summary'.\n" +
+                        "8. Ensure all variable names are locally scoped (e.g., const, let) and do not clash with global namespaces.";
+
+                    const apiVersion = model.indexOf('gemini-3') === 0 ? 'v1beta' : 'v1';
+                    
+                    const makeCall = (version) => {
+                        const callUrl = 'https://generativelanguage.googleapis.com/' + version + '/models/' + model + ':generateContent?key=' + key;
+                        return fetch(callUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{
+                                    role: 'user',
+                                    parts: [{ text: prompt }]
+                                }]
+                            })
+                        })
+                        .then(res => {
+                            if (!res.ok) {
+                                return res.json().then(errData => {
+                                    const errMsg = errData.error?.message || ('HTTP ' + res.status);
+                                    return { ok: false, status: res.status, message: errMsg };
+                                });
+                            }
+                            return res.json().then(resData => ({ ok: true, data: resData }));
+                        });
+                    };
+
+                    makeCall(apiVersion)
+                        .then(result => {
+                            if (result.ok) return result.data;
+                            if (result.status === 404) {
+                                if (statusText) statusText.innerHTML = '<div style="width: 12px; height: 12px; border: 2px solid var(--border-color); border-top: 2px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div> Retrying with v1beta...';
+                                return makeCall('v1beta').then(betaResult => {
+                                    if (betaResult.ok) return betaResult.data;
+                                    throw new Error(betaResult.message);
+                                });
+                            }
+                            throw new Error(result.message);
+                        })
+                        .then(resData => {
+                            const text = resData.candidates?.[0]?.content?.parts?.[0]?.text;
+                            if (!text) throw new Error("Empty response from Gemini API.");
+
+                            if (statusText) statusText.textContent = 'Parsing response...';
+
+                            let jsonText = text.trim();
+                            const jsonStart = jsonText.indexOf('{');
+                            const jsonEnd = jsonText.lastIndexOf('}');
+                            if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+                                jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
+                            }
+
+                            const resultCard = JSON.parse(jsonText);
+                            if (!resultCard.id || !resultCard.title || !resultCard.jsCode) {
+                                throw new Error("Invalid response schema: missing id, title, or jsCode.");
+                            }
+
+                            try {
+                                new Function('data', 'container', 'Chart', resultCard.jsCode);
+                            } catch(compileErr) {
+                                throw new Error("Syntax error in generated JavaScript: " + compileErr.message);
+                            }
+
+                            const savedCardsData = localStorage.getItem('directeur_custom_cards');
+                            let savedCards = savedCardsData ? JSON.parse(savedCardsData) : [];
+
+                            savedCards = savedCards.filter(c => c.id !== resultCard.id);
+                            savedCards.push(resultCard);
+                            localStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
+
+                            alert('Card adjusted successfully!');
+                            
+                            if (rideData) {
+                                renderDashboard(rideData);
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Card adjustment error:", err);
+                            alert("Failed to adjust card: " + err.message);
+                        })
+                        .finally(() => {
+                            submitBtn.disabled = false;
+                            cancelBtn.disabled = false;
+                            statusText.textContent = '';
+                        });
+                });
+
+                try {
+                    const renderFunc = new Function('data', 'container', 'Chart', card.jsCode);
+                    renderFunc(data, bodyEl, Chart);
+                } catch(err) {
+                    console.error("Error executing dynamic card " + card.id + ":", err);
+                    bodyEl.innerHTML = '<div class="card-error-msg" style="color: #ff6b6b; font-size: 0.85rem; padding: 1rem; border-left: 3px solid #ff6b6b; background: rgba(255, 107, 107, 0.05); border-radius: 4px;">' +
+                        '<strong>Render Error:</strong> ' + err.message + '<br>' +
+                        '<pre style="font-size:0.75rem; margin-top:0.5rem; overflow-x:auto; color:rgba(255,255,255,0.7);">' + err.stack + '</pre>' +
+                        '</div>';
+                }
+
+                const isCollapsed = localStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
+                updateCollapseState(isCollapsed);
+            });
+        }
+        window.renderDynamicCards = renderDynamicCards;
+
+        function deleteDynamicCard(id) {
+            const savedCardsData = localStorage.getItem('directeur_custom_cards');
+            let savedCards = savedCardsData ? JSON.parse(savedCardsData) : [];
+            savedCards = savedCards.filter(c => c.id !== id);
+            localStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
+            if (rideData) {
+                renderDashboard(rideData);
+            }
+        }
+        window.deleteDynamicCard = deleteDynamicCard;
+
+        function initializeStaticCardsCollapse() {
+            const dashboardCards = document.querySelectorAll('#dashboard-view .card');
+            dashboardCards.forEach(card => {
+                // Skip the evolve-control-panel and dynamic-cards-container cards
+                if (card.id === 'evolve-control-panel' || card.closest('#dynamic-cards-container')) return;
+                
+                const header = card.querySelector('.card-header');
+                if (!header) return;
+
+                const titleEl = header.querySelector('.card-title');
+                if (!titleEl) return;
+                
+                const titleText = titleEl.textContent.trim();
+                const storageKey = 'directeur_static_card_collapsed_' + titleText.replace(/\s+/g, '_');
+
+                // Add collapse button to card header
+                let collapseBtn = header.querySelector('.btn-collapse-static-card');
+                if (!collapseBtn) {
+                    collapseBtn = document.createElement('button');
+                    collapseBtn.className = 'btn-action btn-collapse-static-card';
+                    collapseBtn.style.fontSize = '0.75rem';
+                    collapseBtn.style.padding = '0.2rem 0.5rem';
+                    collapseBtn.style.marginLeft = 'auto'; // push to the right
+                    
+                    header.style.display = 'flex';
+                    header.style.alignItems = 'center';
+                    
+                    header.appendChild(collapseBtn);
+                }
+
+                const updateStaticCollapseState = (collapsed) => {
+                    const childrenToToggle = Array.from(card.children).filter(el => el !== header);
+                    if (collapsed) {
+                        childrenToToggle.forEach(el => {
+                            el.style.display = 'none';
+                        });
+                        collapseBtn.innerHTML = '▼ Show';
+                        localStorage.setItem(storageKey, 'true');
+                    } else {
+                        childrenToToggle.forEach(el => {
+                            el.style.display = '';
+                        });
+                        collapseBtn.innerHTML = '▲ Collapse';
+                        localStorage.setItem(storageKey, 'false');
+                        // Dispatch resize and Leaflet map size invalidation
+                        setTimeout(() => {
+                            window.dispatchEvent(new Event('resize'));
+                            if (typeof leafletMap !== 'undefined' && leafletMap) {
+                                leafletMap.invalidateSize();
+                            }
+                        }, 50);
+                    }
+                };
+
+                collapseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const currentlyCollapsed = localStorage.getItem(storageKey) === 'true';
+                    updateStaticCollapseState(!currentlyCollapsed);
+                });
+
+                // Apply initial state
+                const isCollapsed = localStorage.getItem(storageKey) === 'true';
+                updateStaticCollapseState(isCollapsed);
+            });
+        }
+        window.initializeStaticCardsCollapse = initializeStaticCardsCollapse;
+
+        function showDashboardView() {
+            document.getElementById('landing-view').style.display = 'none';
+            document.getElementById('calendar-view').style.display = 'none';
+            document.getElementById('dashboard-view').style.display = 'block';
+            window.dispatchEvent(new Event('resize'));
+            
+            // Fix Leaflet map sizing/zooming when switching from hidden to visible
+            if (leafletMap) {
+                leafletMap.invalidateSize();
+                if (routePolyline) {
+                    leafletMap.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
+                }
+            }
+        };
+        window.showDashboardView = showDashboardView;
+
+        function updateIntervalsSyncUI() {
+            const badge = document.getElementById('intervals-status-badge');
+            const exportBtn = document.getElementById('btn-intervals-export');
+            if (!badge && !exportBtn) return;
+
+            fetch('/api/intervals/config')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.enabled && data.has_api_key) {
+                        if (badge) {
+                            badge.style.background = 'rgba(46, 204, 113, 0.15)';
+                            badge.style.color = '#2ecc71';
+                            badge.style.border = '1px solid rgba(46, 204, 113, 0.3)';
+                            badge.innerText = 'Connected';
+                        }
+                        if (exportBtn) {
+                            exportBtn.removeAttribute('disabled');
+                        }
+                    } else {
+                        if (badge) {
+                            badge.style.background = 'rgba(255,255,255,0.08)';
+                            badge.style.color = 'var(--text-secondary)';
+                            badge.style.border = '1px solid var(--border-color)';
+                            badge.innerText = data.enabled ? 'Missing Key' : 'Not Connected';
+                        }
+                        if (exportBtn) {
+                            exportBtn.setAttribute('disabled', 'true');
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.error("Error checking Intervals.icu sync status:", err);
+                });
+        };
+        window.updateIntervalsSyncUI = updateIntervalsSyncUI;
+
+        function generateCustomChart() {
+            const promptInput = document.getElementById('evolve-prompt');
+            const evolvePrompt = promptInput ? promptInput.value.trim() : '';
+            if (!evolvePrompt) {
+                alert('Please enter a description of the chart or analysis you want to generate.');
+                return;
+            }
+
+            const key = localStorage.getItem('gemini_api_key');
+            if (!key) {
+                alert('Gemini API Key missing! Please configure your API key first.');
+                return;
+            }
+
+            const modelSelect = document.getElementById('evolve-model-select');
+            const model = modelSelect ? modelSelect.value : 'gemini-3.5-flash';
+
+            const evolveLoading = document.getElementById('evolve-loading');
+            const statusText = document.getElementById('evolve-status-text');
+            const btnEvolve = document.getElementById('btn-evolve-dashboard');
+
+            if (evolveLoading) evolveLoading.style.display = 'flex';
+            if (statusText) statusText.textContent = 'Contacting Gemini API...';
+            if (btnEvolve) btnEvolve.disabled = true;
+
+            const systemPrompt = "You are a professional cycling data analyst and expert JavaScript developer.\n" +
+                "You are tasked with generating a custom data analysis dashboard card for a cycling application.\n\n" +
+                "The application has access to a global variable 'rideData' which has the following structure:\n" +
+                "{\n" +
+                "  \"summary\": {\n" +
+                "    \"start_time\": \"2026-06-18T10:00:00Z\",\n" +
+                "    \"duration_seconds\": 3600,\n" +
+                "    \"distance_meters\": 32000,\n" +
+                "    \"average_power\": 210,\n" +
+                "    \"max_power\": 850,\n" +
+                "    \"normalized_power\": 230,\n" +
+                "    \"average_heart_rate\": 145,\n" +
+                "    \"max_heart_rate\": 178,\n" +
+                "    \"average_cadence\": 85,\n" +
+                "    \"max_cadence\": 110,\n" +
+                "    \"total_elevation_gain_meters\": 450,\n" +
+                "    \"total_shifts\": 210,\n" +
+                "    \"total_front_shifts\": 12,\n" +
+                "    \"total_rear_shifts\": 198,\n" +
+                "    \"power_curve\": { \"1s\": 850, \"5s\": 720, \"1m\": 450, \"5m\": 310, \"20m\": 260 }\n" +
+                "  },\n" +
+                "  \"records\": [\n" +
+                "    { \"time\": 0, \"power\": 150, \"heart_rate\": 110, \"cadence\": 0, \"speed\": 4.5, \"altitude\": 100, \"gear_ratio\": 2.3, \"latitude\": 37.77, \"longitude\": -122.41 },\n" +
+                "    { \"time\": 1, \"power\": 210, \"heart_rate\": 112, \"cadence\": 80, \"speed\": 6.2, \"altitude\": 100.1, \"gear_ratio\": 2.3, \"latitude\": 37.771, \"longitude\": -122.411 }\n" +
+                "  ],\n" +
+                "  \"gear_usage\": [\n" +
+                "    { \"combination\": \"50x17\", \"seconds\": 850, \"percentage\": 23.6 }\n" +
+                "  ]\n" +
+                "}\n\n" +
+                "Your output MUST be a valid JSON object matching the following structure and no other text (do NOT wrap in markdown code blocks, do NOT write explanations, just return raw JSON):\n" +
+                "{\n" +
+                "  \"id\": \"unique-kebab-case-identifier\",\n" +
+                "  \"title\": \"A concise title for the card\",\n" +
+                "  \"jsCode\": \"// Pure Javascript code here\"\n" +
+                "}\n\n" +
+                "Rules for 'jsCode':\n" +
+                "1. The code will be run as a function body with three parameters: 'data', 'container', and 'Chart'.\n" +
+                "2. It must render its visual content inside the 'container' element (which is a standard HTML div).\n" +
+                "3. If creating a chart, it must create a '<canvas>' element inside the 'container', style it to fit (e.g. style.height = '350px'), and instantiate a new Chart.js graph using the provided 'Chart' constructor.\n" +
+                "4. All HTML elements (like legends, stat boxes, tables) must be generated dynamically using standard JS DOM manipulation methods (e.g. document.createElement, appendChild, innerHTML) and appended to 'container'.\n" +
+                "5. Ensure the styling matches a premium dark mode theme (backgrounds should be transparent or dark, colors should be white/var(--text-primary)/var(--accent)/var(--text-secondary), borders should be var(--border-color)).\n" +
+                "6. Do NOT load external libraries, CSS, or make API calls. Access all ride metrics exclusively from the 'data' parameter.\n" +
+                "7. Calculate any required summaries from the 'data.records' array (e.g. averages, ranges, correlations, distributions) or retrieve them from 'data.summary'.\n" +
+                "8. Ensure all variable names are locally scoped (e.g., const, let) and do not clash with global namespaces.\n\n" +
+                "Athlete request:\n" + evolvePrompt;
+
+            const apiVersion = model.indexOf('gemini-3') === 0 ? 'v1beta' : 'v1';
+
+            const makeCall = (version) => {
+                const callUrl = 'https://generativelanguage.googleapis.com/' + version + '/models/' + model + ':generateContent?key=' + key;
+                return fetch(callUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            role: 'user',
+                            parts: [{ text: systemPrompt }]
+                        }]
+                    })
+                })
+                .then(res => {
+                    if (!res.ok) {
+                        return res.json().then(errData => {
+                            const errMsg = errData.error?.message || ('HTTP ' + res.status);
+                            return { ok: false, status: res.status, message: errMsg };
+                        });
+                    }
+                    return res.json().then(data => ({ ok: true, data }));
+                });
+            };
+
+            makeCall(apiVersion)
+                .then(result => {
+                    if (result.ok) return result.data;
+                    if (result.status === 404) {
+                        if (statusText) statusText.textContent = 'Retrying with v1beta...';
+                        return makeCall('v1beta').then(betaResult => {
+                            if (betaResult.ok) return betaResult.data;
+                            throw new Error(betaResult.message);
+                        });
+                    }
+                    throw new Error(result.message);
+                })
+                .then(data => {
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) throw new Error("Empty response from Gemini API.");
+
+                    if (statusText) statusText.textContent = 'Parsing response...';
+
+                    let jsonText = text.trim();
+                    const jsonStart = jsonText.indexOf('{');
+                    const jsonEnd = jsonText.lastIndexOf('}');
+                    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+                        jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
+                    }
+
+                    const resultCard = JSON.parse(jsonText);
+                    if (!resultCard.id || !resultCard.title || !resultCard.jsCode) {
+                        throw new Error("Invalid response schema: missing id, title, or jsCode.");
+                    }
+
+                    try {
+                        new Function('data', 'container', 'Chart', resultCard.jsCode);
+                    } catch(compileErr) {
+                        throw new Error("Syntax error in generated JavaScript: " + compileErr.message);
+                    }
+
+                    const savedCardsData = localStorage.getItem('directeur_custom_cards');
+                    let savedCards = savedCardsData ? JSON.parse(savedCardsData) : [];
+
+                    savedCards = savedCards.filter(c => c.id !== resultCard.id);
+                    savedCards.push(resultCard);
+                    localStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
+
+                    if (promptInput) promptInput.value = '';
+                    alert('Dashboard evolved successfully! Added card: "' + resultCard.title + '".');
+                    
+                    if (rideData) {
+                        renderDashboard(rideData);
+                    }
+                })
+                .catch(err => {
+                    console.error("Dashboard evolution error:", err);
+                    alert("Failed to evolve dashboard: " + err.message);
+                })
+                .finally(() => {
+                    if (evolveLoading) evolveLoading.style.display = 'none';
+                    if (btnEvolve) btnEvolve.disabled = false;
+                });
+        }
+        window.generateCustomChart = generateCustomChart;
 
         // Prepare JSON and Schema strings
 
@@ -8626,7 +9346,7 @@ func getDashboardTemplate() string {
             }
         };
 
-        const loadRideData = (source, param, param2, pushToHistory = true) => {
+        function loadRideData(source, param, param2, pushToHistory = true) {
             selectRideModal.style.display = 'none';
             analysisLoadingOverlay.style.display = 'flex';
 
@@ -8727,7 +9447,19 @@ func getDashboardTemplate() string {
                     if (data.local && data.local.length > 0) {
                         data.local.forEach(file => {
                             const dateStr = new Date(file.mod_time).toLocaleString();
-                            const sizeStr = (file.size_bytes / 1024).toFixed(1) + ' KB';
+                            
+                            let lengthStr = '';
+                            if (file.distance_meters) {
+                                lengthStr += (file.distance_meters / 1000).toFixed(1) + ' km';
+                            }
+                            if (file.duration_seconds) {
+                                if (lengthStr) lengthStr += ' | ';
+                                lengthStr += formatDuration(file.duration_seconds);
+                            }
+                            if (!lengthStr) {
+                                lengthStr = (file.size_bytes / 1024).toFixed(1) + ' KB';
+                            }
+
                             const item = document.createElement('div');
                             item.className = 'ride-list-item';
                             item.innerHTML = '<div>' +
@@ -8735,7 +9467,7 @@ func getDashboardTemplate() string {
                                 '<div style="font-size: 0.8rem; color: var(--text-secondary);">Modified: ' + dateStr + '</div>' +
                                 '</div>' +
                                 '<div style="display: flex; align-items: center; gap: 1rem;">' +
-                                '<span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">' + sizeStr + '</span>' +
+                                '<span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">' + lengthStr + '</span>' +
                                 '<span class="badge" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;">FIT</span>' +
                                 '</div>';
                             item.addEventListener('click', () => {
