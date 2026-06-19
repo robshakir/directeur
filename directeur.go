@@ -3340,6 +3340,29 @@ func getDashboardTemplate() string {
         </div>
     </header>
 
+    <!-- Collapsible Rides Calendar -->
+    <div id="rides-calendar-container" style="max-width: 1400px; margin: 1rem auto 0 auto; padding: 0 1.5rem;">
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 0.75rem 1rem; box-shadow: 0 4px 25px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 0.5rem; transition: all 0.3s ease;">
+            <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;" id="rides-calendar-header">
+                <div style="display: flex; align-items: center; gap: 0.5rem; font-family: 'Outfit'; font-weight: 700; font-size: 0.95rem; color: #ffffff;">
+                    <span>📅</span> Recent Ride Activity (Last 30 Days)
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span id="rides-calendar-stats" style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 500;"></span>
+                    <button id="btn-toggle-rides-calendar" style="background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; gap: 0.25rem; font-family: inherit;">
+                        <span id="rides-calendar-arrow" style="display: inline-block; transition: transform 0.2s ease;">▲</span> Collapse
+                    </button>
+                </div>
+            </div>
+            
+            <div id="rides-calendar-content" style="transition: max-height 0.3s ease-in-out, opacity 0.2s ease-in-out; overflow: hidden; max-height: 500px; opacity: 1;">
+                <div id="rides-calendar-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.5rem; margin-top: 0.25rem; padding-bottom: 0.25rem; overflow-x: auto;">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Stats Grid -->
     <div class="stats-grid">
         <div class="stat-card" id="card-np">
@@ -4222,6 +4245,290 @@ func getDashboardTemplate() string {
                 });
             }
 
+            // ==========================================
+            // Collapsible Rides Calendar Logic
+            // ==========================================
+            const renderRidesCalendar = () => {
+                const container = document.getElementById('rides-calendar-grid');
+                const statsSpan = document.getElementById('rides-calendar-stats');
+                if (!container) return;
+
+                container.innerHTML = '';
+
+                // Gather rides from last 30 days
+                const today = new Date();
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(today.getDate() - 29); // last 30 days
+                thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+                const ridesByDate = {};
+                let totalRideCount = 0;
+
+                const formatLocalDateKey = (d) => {
+                    const year = d.getFullYear();
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return year + '-' + month + '-' + day;
+                };
+
+                const addRideToGroup = (dateStr, rideObj) => {
+                    if (!ridesByDate[dateStr]) {
+                        ridesByDate[dateStr] = [];
+                    }
+                    ridesByDate[dateStr].push(rideObj);
+                    totalRideCount++;
+                };
+
+                // Group local rides
+                if (window.allRidesData && window.allRidesData.local) {
+                    window.allRidesData.local.forEach(file => {
+                        if (!file.filename) return;
+                        const parts = file.filename.match(/^(\d{4})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})/);
+                        if (parts) {
+                            const fileTime = new Date(parseInt(parts[1]), parseInt(parts[2]) - 1, parseInt(parts[3]), parseInt(parts[4]), parseInt(parts[5]), parseInt(parts[6]));
+                            if (!isNaN(fileTime.getTime()) && fileTime >= thirtyDaysAgo) {
+                                addRideToGroup(formatLocalDateKey(fileTime), {
+                                    source: 'local',
+                                    param: file.filename,
+                                    param2: '',
+                                    label: 'Local: ' + file.filename,
+                                    distance: (file.size_bytes / 1024).toFixed(0) + ' KB',
+                                    timeStr: fileTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                                    isFIT: true
+                                });
+                            }
+                        }
+                    });
+                }
+
+                // Group Hammerhead rides
+                if (window.allRidesData && window.allRidesData.hammerhead) {
+                    window.allRidesData.hammerhead.forEach(act => {
+                        if (!act.startTime) return;
+                        const fileTime = new Date(act.startTime);
+                        if (!isNaN(fileTime.getTime()) && fileTime >= thirtyDaysAgo) {
+                            addRideToGroup(formatLocalDateKey(fileTime), {
+                                source: 'hammerhead',
+                                param: act.id,
+                                param2: '',
+                                label: act.name || 'Hammerhead Ride',
+                                distance: (act.distance / 1000).toFixed(1) + ' km',
+                                timeStr: fileTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                            });
+                        }
+                    });
+                }
+
+                // Group Wahoo rides
+                if (window.allRidesData && window.allRidesData.wahoo) {
+                    window.allRidesData.wahoo.forEach(act => {
+                        if (!act.starts) return;
+                        const fileTime = new Date(act.starts);
+                        if (!isNaN(fileTime.getTime()) && fileTime >= thirtyDaysAgo) {
+                            addRideToGroup(formatLocalDateKey(fileTime), {
+                                source: 'wahoo',
+                                param: act.id,
+                                param2: act.file ? act.file.url : '',
+                                label: act.name || 'Wahoo Ride',
+                                distance: (act.distance / 1000).toFixed(1) + ' km',
+                                timeStr: fileTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                            });
+                        }
+                    });
+                }
+
+                // Group Intervals rides
+                if (window.allRidesData && window.allRidesData.intervals) {
+                    window.allRidesData.intervals.forEach(act => {
+                        if (!act.start_time) return;
+                        const fileTime = new Date(act.start_time);
+                        if (!isNaN(fileTime.getTime()) && fileTime >= thirtyDaysAgo) {
+                            addRideToGroup(formatLocalDateKey(fileTime), {
+                                source: 'intervals',
+                                param: act.id,
+                                param2: '',
+                                label: act.name || 'Intervals.icu Ride',
+                                distance: act.distance_km + ' km',
+                                timeStr: fileTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                            });
+                        }
+                    });
+                }
+
+                const historyData = localStorage.getItem('fit_ride_history');
+                const historyList = historyData ? JSON.parse(historyData) : [];
+
+                if (statsSpan) statsSpan.textContent = totalRideCount + ' ride(s) in last 30 days';
+
+                // Render 30 day cards
+                for (let i = 0; i < 30; i++) {
+                    const currentDay = new Date(thirtyDaysAgo);
+                    currentDay.setDate(thirtyDaysAgo.getDate() + i);
+
+                    const dateKey = formatLocalDateKey(currentDay);
+                    const dayRides = ridesByDate[dateKey] || [];
+                    
+                    const isAnalyzed = dayRides.some(r => {
+                        const rTime = new Date(currentDay);
+                        return historyList.some(h => {
+                            const hTime = new Date(h.id);
+                            return hTime.getFullYear() === rTime.getFullYear() &&
+                                   hTime.getMonth() === rTime.getMonth() &&
+                                   hTime.getDate() === rTime.getDate();
+                        });
+                    });
+
+                    const dayCard = document.createElement('div');
+                    dayCard.style.background = 'rgba(255,255,255,0.02)';
+                    dayCard.style.border = '1px solid var(--border-color)';
+                    dayCard.style.borderRadius = '10px';
+                    dayCard.style.padding = '0.4rem 0.5rem';
+                    dayCard.style.display = 'flex';
+                    dayCard.style.flexDirection = 'column';
+                    dayCard.style.minWidth = '130px';
+                    dayCard.style.minHeight = '85px';
+                    dayCard.style.gap = '0.25rem';
+                    dayCard.style.transition = 'all 0.2s';
+                    dayCard.style.flex = '1 0 auto';
+                    
+                    const isToday = formatLocalDateKey(today) === dateKey;
+                    if (isToday) {
+                        dayCard.style.borderColor = 'var(--accent)';
+                        dayCard.style.background = 'rgba(255,255,255,0.04)';
+                    }
+
+                    const dayName = currentDay.toLocaleDateString('en-US', { weekday: 'short' });
+                    const dayNum = currentDay.getDate();
+                    const monthName = currentDay.toLocaleDateString('en-US', { month: 'short' });
+
+                    const dateLabel = document.createElement('div');
+                    dateLabel.style.display = 'flex';
+                    dateLabel.style.justifyContent = 'space-between';
+                    dateLabel.style.alignItems = 'center';
+                    dateLabel.style.fontSize = '0.7rem';
+                    dateLabel.style.fontWeight = '600';
+                    dateLabel.style.color = isToday ? 'var(--accent)' : 'var(--text-secondary)';
+                    dateLabel.innerHTML = '<span>' + dayName + ', ' + monthName + ' ' + dayNum + '</span>';
+
+                    if (isToday) {
+                        dateLabel.innerHTML += '<span style="font-size: 0.55rem; background: var(--accent); color: #0a0a0c; padding: 1px 3px; border-radius: 3px; font-weight: 700; line-height: 1;">TODAY</span>';
+                    }
+                    dayCard.appendChild(dateLabel);
+
+                    const ridesArea = document.createElement('div');
+                    ridesArea.style.flex = '1';
+                    ridesArea.style.display = 'flex';
+                    ridesArea.style.flexDirection = 'column';
+                    ridesArea.style.gap = '0.2rem';
+                    ridesArea.style.justifyContent = 'center';
+
+                    if (dayRides.length > 0) {
+                        dayCard.style.background = 'rgba(255,255,255,0.05)';
+                        if (isAnalyzed) {
+                            dayCard.style.borderLeft = '3px solid #2ecc71';
+                        } else {
+                            dayCard.style.borderLeft = '3px solid var(--accent)';
+                        }
+
+                        dayRides.forEach(ride => {
+                            const rideBtn = document.createElement('button');
+                            rideBtn.className = 'btn-action';
+                            rideBtn.style.width = '100%';
+                            rideBtn.style.padding = '0.2rem 0.35rem';
+                            rideBtn.style.fontSize = '0.65rem';
+                            rideBtn.style.fontWeight = '600';
+                            rideBtn.style.textAlign = 'left';
+                            rideBtn.style.cursor = 'pointer';
+                            rideBtn.style.whiteSpace = 'nowrap';
+                            rideBtn.style.overflow = 'hidden';
+                            rideBtn.style.textOverflow = 'ellipsis';
+                            rideBtn.style.display = 'flex';
+                            rideBtn.style.justifyContent = 'space-between';
+                            rideBtn.style.alignItems = 'center';
+                            rideBtn.style.borderRadius = '4px';
+
+                            let badgeColor = '#ffffff';
+                            let sourceLabel = '';
+
+                            if (ride.source === 'local') {
+                                sourceLabel = 'FIT';
+                            } else if (ride.source === 'hammerhead') {
+                                badgeColor = '#ff8b6b';
+                                sourceLabel = 'HH';
+                            } else if (ride.source === 'wahoo') {
+                                badgeColor = '#e0aaff';
+                                sourceLabel = 'WAH';
+                            } else if (ride.source === 'intervals') {
+                                badgeColor = 'var(--accent)';
+                                sourceLabel = 'INT';
+                            }
+
+                            rideBtn.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                            rideBtn.style.color = badgeColor;
+
+                            rideBtn.innerHTML = '<span style="overflow: hidden; text-overflow: ellipsis; max-width: 70%;">' + ride.distance + '</span>' +
+                                '<span style="font-size: 0.5rem; opacity: 0.8; font-weight: 700; border: 1px solid ' + badgeColor + '; padding: 0px 2px; border-radius: 2px; line-height: 1;">' + sourceLabel + '</span>';
+
+                            rideBtn.title = ride.label + ' (' + ride.distance + ') at ' + ride.timeStr;
+
+                            rideBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                loadRideData(ride.source, ride.param, ride.param2);
+                            });
+
+                            ridesArea.appendChild(rideBtn);
+                        });
+                    } else {
+                        const emptyText = document.createElement('div');
+                        emptyText.style.fontSize = '0.65rem';
+                        emptyText.style.color = 'rgba(255,255,255,0.1)';
+                        emptyText.style.textAlign = 'center';
+                        emptyText.textContent = '-';
+                        ridesArea.appendChild(emptyText);
+                    }
+
+                    dayCard.appendChild(ridesArea);
+                    container.appendChild(dayCard);
+                }
+            };
+            window.renderRidesCalendar = renderRidesCalendar;
+
+            // Bind Collapsible Rides Calendar toggling
+            const calHeader = document.getElementById('rides-calendar-header');
+            const calContent = document.getElementById('rides-calendar-content');
+            const calArrow = document.getElementById('rides-calendar-arrow');
+            const calBtnToggle = document.getElementById('btn-toggle-rides-calendar');
+            
+            const setCalendarCollapsed = (collapsed) => {
+                if (collapsed) {
+                    calContent.style.maxHeight = '0px';
+                    calContent.style.opacity = '0';
+                    calArrow.textContent = '▼';
+                    calBtnToggle.innerHTML = '▼ Show Calendar';
+                    localStorage.setItem('directeur_calendar_collapsed', 'true');
+                } else {
+                    calContent.style.maxHeight = '500px';
+                    calContent.style.opacity = '1';
+                    calArrow.textContent = '▲';
+                    calBtnToggle.innerHTML = '▲ Collapse';
+                    localStorage.setItem('directeur_calendar_collapsed', 'false');
+                }
+            };
+            
+            const toggleCalendar = (e) => {
+                const isCollapsed = localStorage.getItem('directeur_calendar_collapsed') === 'true';
+                setCalendarCollapsed(!isCollapsed);
+            };
+            
+            if (calHeader) calHeader.addEventListener('click', toggleCalendar);
+            if (calBtnToggle) calBtnToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleCalendar();
+            });
+            
+            const initialCollapsed = localStorage.getItem('directeur_calendar_collapsed') === 'true';
+            setCalendarCollapsed(initialCollapsed);
+
             // Initial render - check query parameters first!
             const urlParams = new URLSearchParams(window.location.search);
             const qSource = urlParams.get('source');
@@ -4254,6 +4561,11 @@ func getDashboardTemplate() string {
                     .then(res => res.json())
                     .then(data => {
                         window.allRidesData = data;
+                        try {
+                            renderRidesCalendar();
+                        } catch(e) {
+                            console.error("Error rendering rides calendar on load:", e);
+                        }
                         if (data.bikes && data.bikes.length > 0) {
                             populateSelectorOptions(data.bikes);
                         }
@@ -8011,6 +8323,11 @@ func getDashboardTemplate() string {
                         }
                         
                         localStorage.setItem('fit_ride_history', JSON.stringify(history));
+                        try {
+                            renderRidesCalendar();
+                        } catch(e) {
+                            console.error("Error rendering rides calendar after save:", e);
+                        }
                     } catch (e) {
                         console.error("Failed to save ride history:", e);
                     }
@@ -8385,6 +8702,11 @@ func getDashboardTemplate() string {
                 })
                 .then(data => {
                     window.allRidesData = data;
+                    try {
+                        renderRidesCalendar();
+                    } catch(e) {
+                        console.error("Error rendering rides calendar on refresh:", e);
+                    }
                     selectRideLoading.style.display = 'none';
 
                     // Toggle connection error banner
@@ -9041,6 +9363,11 @@ func getDashboardTemplate() string {
                     if (confirm('Are you sure you want to delete this ride coaching report and chat history from this browser?')) {
                         const updatedHistory = history.filter(r => r.id !== rideId);
                         localStorage.setItem('fit_ride_history', JSON.stringify(updatedHistory));
+                        try {
+                            renderRidesCalendar();
+                        } catch(e) {
+                            console.error("Error rendering rides calendar after delete:", e);
+                        }
                         renderHistory();
                         checkCachedReport(false);
                         populateSavedDataModal();
