@@ -7459,7 +7459,13 @@ func getDashboardTemplate() string {
 
                     const isFuture = dayDate.getTime() > today.getTime();
                     const existingDay = plansByDate[key];
-                    const newDay = (program.days && program.days[idx]) ? program.days[idx] : null;
+                    let newDay = null;
+                    if (program.days) {
+                        newDay = program.days.find(d => d.date === key);
+                        if (!newDay) {
+                            newDay = program.days[idx];
+                        }
+                    }
 
                     let targetDay = newDay;
                     // If it is in the past, and there's an existing workout, preserve it
@@ -7961,7 +7967,8 @@ func getDashboardTemplate() string {
                 "      \"weekly_summary\": \"Provide a 2-3 sentence overview of this week's physiological focus and progression.\",\n" +
                 "      \"days\": [\n" +
                 "        {\n" +
-                "          \"day\": \"Name of the day (e.g., Monday)\",\n" +
+                "          \"date\": \"2026-06-22\",\n" +
+                "          \"day\": \"Monday, Jun 22, 2026\",\n" +
                 "          \"workout_type\": \"Rest Day / Recovery / Endurance / Tempo / Sweet Spot / Threshold / VO2 Max / Anaerobic\",\n" +
                 "          \"title\": \"Workout Name\",\n" +
                 "          \"duration_mins\": 60,\n" +
@@ -7971,7 +7978,7 @@ func getDashboardTemplate() string {
                 "          \"structure\": \"Warm Up: 10m easy spinning. Main Set: 3x8m at Sweet Spot (200-215W) with 4m recovery. Cool Down: 10m easy spinning.\",\n" +
                 "          \"intervals_icu_structure\": \"- 10m ramp 50-75%\\n\\n3x\\n- 8m 85% 90rpm\\n- 4m 50% recovery\\n\\n- 10m 50%\"\n" +
                 "        },\n" +
-                "        ... (exactly 7 days for this week)\n" +
+                "        ... (exactly 7 days for this week starting on Monday and ending on Sunday)\n" +
                 "      ]\n" +
                 "    },\n" +
                 "    ... (continue for all " + weeksNum + " weeks)\n" +
