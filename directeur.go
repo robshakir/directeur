@@ -3404,6 +3404,19 @@ func getDashboardTemplate() string {
                             </select>
                         </div>
 
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Duration (Weeks)</label>
+                            <select id="calendar-weeks-select" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%;">
+                                <option value="1" selected>1 Week</option>
+                                <option value="2">2 Weeks</option>
+                                <option value="3">3 Weeks</option>
+                                <option value="4">4 Weeks</option>
+                                <option value="6">6 Weeks</option>
+                                <option value="8">8 Weeks</option>
+                                <option value="12">12 Weeks</option>
+                            </select>
+                        </div>
+
                          <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; margin-bottom: 0.25rem;">
                             <button onclick="showIntervalsConfigModal()" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%; text-align: center; cursor: pointer; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-color)'">
                                 🌐 Intervals.icu Connection
@@ -6779,6 +6792,10 @@ func getDashboardTemplate() string {
             if (savedModel) {
                 document.getElementById('calendar-model-select').value = savedModel;
             }
+            const savedWeeks = localStorage.getItem('fit_calendar_weeks');
+            if (savedWeeks) {
+                document.getElementById('calendar-weeks-select').value = savedWeeks;
+            }
 
             // Sync plannerCalendarWeekIndex to the latest plan's week if available, else 0
             const weeksWithPlans = getWeeksWithPlans();
@@ -7786,11 +7803,13 @@ func getDashboardTemplate() string {
             const goals = document.getElementById('calendar-goals-input').value.trim();
             const constraints = document.getElementById('calendar-constraints-input').value.trim();
             const model = document.getElementById('calendar-model-select').value;
+            const weeksNum = parseInt(document.getElementById('calendar-weeks-select').value) || 1;
             
             // Persist parameters in local storage
             localStorage.setItem('fit_calendar_goals', goals);
             localStorage.setItem('fit_calendar_constraints', constraints);
             localStorage.setItem('fit_calendar_model', model);
+            localStorage.setItem('fit_calendar_weeks', weeksNum);
 
             // Show loading, hide outputs
             document.getElementById('calendar-loading').style.display = 'flex';
@@ -7843,30 +7862,32 @@ func getDashboardTemplate() string {
             tomorrow.setDate(today.getDate() + 1);
             const tomorrowStr = formatDate(tomorrow);
             
-            // Generate list of next 7 days starting today
-            let weekDaysText = "";
-            let weekDaysList = [];
-            for (let i = 0; i < 7; i++) {
-                const d = new Date(today);
-                d.setDate(today.getDate() + i);
-                const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
-                weekDaysList.push(dayName);
-                weekDaysText += "- " + d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }) + "\n";
+            // Generate chronological list of weeks and days starting today
+            let promptDateGuides = "";
+            for (let w = 0; w < weeksNum; w++) {
+                const weekStart = new Date(today);
+                weekStart.setDate(today.getDate() + (w * 7));
+                const weekStartStr = formatDate(weekStart);
+                promptDateGuides += "### Week " + (w + 1) + " (Starting " + weekStartStr + "):\n";
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date(today);
+                    d.setDate(today.getDate() + (w * 7) + i);
+                    promptDateGuides += "- Day " + (i + 1) + " (" + d.toLocaleDateString('en-US', { weekday: 'long' }) + "): " + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + "\n";
+                }
+                promptDateGuides += "\n";
             }
-            const startDayName = weekDaysList[0];
-            const chronologicalDaysGuide = weekDaysList.join(', ');
 
-            const promptText = "You are an elite cycling coach and exercise physiologist. Design a structured training program for the next 7 days, starting today (" + todayStr + "), for an athlete based on their recent ride history, current FTP, training goals, constraints, and their last generated training plan.\n\n" +
-                "Date Context:\n" +
-                "- Today (Day 1) is: " + todayStr + "\n" +
-                "- Tomorrow (Day 2) is: " + tomorrowStr + "\n" +
-                "- The 7 specific days of this training program are:\n" + weekDaysText + "\n" +
+            const promptText = "You are an elite cycling coach and exercise physiologist. Design a structured multi-week training program for the next " + weeksNum + " weeks (" + (weeksNum * 7) + " days in total), starting today (" + todayStr + "), for an athlete based on their recent ride history, current FTP, training goals, constraints, and their last generated training plan.\n\n" +
+                "Date Context & Weeks:\n" +
+                "- Today is: " + todayStr + "\n" +
+                "- Tomorrow is: " + tomorrowStr + "\n\n" +
+                "Here are the specific weeks and days to plan:\n" + promptDateGuides + "\n" +
                 "IMPORTANT RULES FOR HANDLING DAYS/DATES:\n" +
-                "1. Today's date and day of the week is " + todayStr + ". Use this exact date context to interpret relative days/dates mentioned in the constraints (e.g. if today is Tuesday, then 'yesterday' is Monday, 'tomorrow' is Wednesday, 'this Friday' is Friday, etc.).\n" +
-                "2. If the athlete says they 'just finished' or 'completed' a workout today, you MUST record that specific completed workout on today (" + startDayName + ") in your training plan. DO NOT prescribe 'Rest' or a different workout for today if a workout has already been completed.\n" +
-                "3. Align all other planned workouts and rest days exactly with the dates/weekdays mentioned in the athlete's constraints (e.g. if they say they will ride 100km on Friday, place that ride on the corresponding Friday date; if they suggest rides for Saturday and Sunday, schedule appropriate workouts on those weekend days within the 7-day program).\n" +
-                "4. You must output the days in chronological order starting from today: " + chronologicalDaysGuide + ".\n" +
-                "5. Consider the Last Generated Training Plan Context (if available) when planning the next 7 days. Use it to ensure continuity in training load, progression, recovery, and to understand what workouts were previously scheduled.\n\n" +
+                "1. Use the today date (" + todayStr + ") to interpret relative days/dates mentioned in the constraints (e.g. if today is Tuesday, then 'yesterday' is Monday, 'tomorrow' is Wednesday, 'this Friday' is Friday, etc.).\n" +
+                "2. If the athlete says they 'just finished' or 'completed' a workout today, you MUST record that completed workout on today (Week 1, Day 1) in your training plan. DO NOT prescribe 'Rest' or a different workout for today if a workout has already been completed.\n" +
+                "3. Align all other planned workouts and rest days with the constraints (e.g. if they say they will ride 100km on Friday, place that on the Friday date; if they suggest rides for Saturday and Sunday, schedule those weekend workouts).\n" +
+                "4. Apply the training constraints to all weeks in the generated program (e.g. if Monday and Friday are rest days, apply this to each week; if Tuesday/Thursday trainer sessions are capped at 1 hour, apply this to each week) unless the constraints specify a particular date.\n" +
+                "5. Ensure continuity in training load, progression, recovery, and volume across the weeks. Start from the context of the last generated training plan if available.\n\n" +
                 "Last Generated Training Plan Context:\n" + lastPlanText + "\n\n" +
                 "Athlete FTP: " + athleteFTP + " W\n\n" +
                 "Recent Ride History:\n" + historyText + "\n\n" +
@@ -7874,20 +7895,25 @@ func getDashboardTemplate() string {
                 "Athlete's Constraints for the Training Week:\n" + constraints + "\n\n" +
                 "Please output the program strictly as a JSON object matching the following structure:\n" +
                 "{\n" +
-                "  \"weekly_summary\": \"Provide a 2-3 sentence overview of the week's physiological focus and progression.\",\n" +
-                "  \"days\": [\n" +
+                "  \"weeks\": [\n" +
                 "    {\n" +
-                "      \"day\": \"" + startDayName + "\",\n" +
-                "      \"workout_type\": \"Rest Day / Recovery / Endurance / Tempo / Sweet Spot / Threshold / VO2 Max / Anaerobic\",\n" +
-                "      \"title\": \"Workout Name\",\n" +
-                "      \"duration_mins\": 60,\n" +
-                "      \"target_tss\": 55,\n" +
-                "      \"target_if\": 0.72,\n" +
-                "      \"description\": \"Overview of the workout focus.\",\n" +
-                "      \"structure\": \"Warm Up: 10m easy spinning. Main Set: 3x8m at Sweet Spot (200-215W) with 4m recovery. Cool Down: 10m easy spinning.\",\n" +
-                "      \"intervals_icu_structure\": \"- 10m ramp 50-75%\\n\\n3x\\n- 8m 85% 90rpm\\n- 4m 50% recovery\\n\\n- 10m 50%\"\n" +
+                "      \"weekly_summary\": \"Provide a 2-3 sentence overview of this week's physiological focus and progression.\",\n" +
+                "      \"days\": [\n" +
+                "        {\n" +
+                "          \"day\": \"Name of the day (e.g., Monday)\",\n" +
+                "          \"workout_type\": \"Rest Day / Recovery / Endurance / Tempo / Sweet Spot / Threshold / VO2 Max / Anaerobic\",\n" +
+                "          \"title\": \"Workout Name\",\n" +
+                "          \"duration_mins\": 60,\n" +
+                "          \"target_tss\": 55,\n" +
+                "          \"target_if\": 0.72,\n" +
+                "          \"description\": \"Overview of the workout focus.\",\n" +
+                "          \"structure\": \"Warm Up: 10m easy spinning. Main Set: 3x8m at Sweet Spot (200-215W) with 4m recovery. Cool Down: 10m easy spinning.\",\n" +
+                "          \"intervals_icu_structure\": \"- 10m ramp 50-75%\\n\\n3x\\n- 8m 85% 90rpm\\n- 4m 50% recovery\\n\\n- 10m 50%\"\n" +
+                "        },\n" +
+                "        ... (exactly 7 days for this week)\n" +
+                "      ]\n" +
                 "    },\n" +
-                "    ... (continue in chronological order for the next 6 days: " + weekDaysList.slice(1).join(', ') + ")\n" +
+                "    ... (continue for all " + weeksNum + " weeks)\n" +
                 "  ]\n" +
                 "}\n\n" +
                 "Please output two structure fields for each day:\n" +
@@ -7947,17 +7973,42 @@ func getDashboardTemplate() string {
                     const jsonText = text.substring(jsonStart, jsonEnd + 1);
                     const parsedProgram = JSON.parse(jsonText);
                     
-                    // Attach the start_date of the training week to the program object.
-                    // Keep the actual start date (today) rather than forcing it to getMonday,
-                    // so the days generated by the model align with their correct dates.
-                    parsedProgram.start_date = today.toISOString();
+                    // Parse weeks (supporting both multi-week "weeks" array and single-week format)
+                    let weeks = [];
+                    if (parsedProgram.weeks && Array.isArray(parsedProgram.weeks)) {
+                        weeks = parsedProgram.weeks;
+                    } else if (parsedProgram.days) {
+                        weeks = [parsedProgram];
+                    } else {
+                        throw new Error("Invalid program structure: 'weeks' or 'days' not found.");
+                    }
                     
-                    // saveProgramToHistory merges past days from any existing plan for this week,
-                    // then returns the merged program. We use the merged result everywhere so
-                    // completed/past days are never silently overwritten.
-                    const mergedProgram = saveProgramToHistory(parsedProgram);
-                    localStorage.setItem('fit_training_program', JSON.stringify(mergedProgram));
-                    renderTrainingCalendar(mergedProgram);
+                    let firstMergedProgram = null;
+                    weeks.forEach((weekData, wIdx) => {
+                        const weekStartDate = new Date(today);
+                        weekStartDate.setDate(today.getDate() + (wIdx * 7));
+                        
+                        const weekProgram = {
+                            start_date: weekStartDate.toISOString(),
+                            weekly_summary: weekData.weekly_summary || "",
+                            days: weekData.days || []
+                        };
+                        
+                        const merged = saveProgramToHistory(weekProgram);
+                        if (wIdx === 0) {
+                            firstMergedProgram = merged;
+                        }
+                    });
+                    
+                    if (firstMergedProgram) {
+                        localStorage.setItem('fit_training_program', JSON.stringify(firstMergedProgram));
+                        
+                        // Sync current calendar display view to the current selected week index
+                        const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
+                        window.currentCalendarProgram = synthesizedWeek;
+                        renderTrainingCalendar(synthesizedWeek);
+                        renderPlannerHistory();
+                    }
                 })
                 .catch(err => {
                     console.error("Calendar generation error:", err);
