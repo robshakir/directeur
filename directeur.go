@@ -373,6 +373,18 @@ func loadConfig(path string) Config {
 	defaultConfig := Config{
 		FrontGears: []int{33, 46},
 		RearGears:  []int{36, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10},
+		Bikes: []BikeProfile{
+			{
+				Name:       "Cervélo Soloist",
+				FrontGears: []int{33, 46},
+				RearGears:  []int{36, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10},
+			},
+			{
+				Name:       "Cervélo Aspero",
+				FrontGears: []int{40},
+				RearGears:  []int{46, 38, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10},
+			},
+		},
 		FTP:        250,
 	}
 
@@ -390,6 +402,9 @@ func loadConfig(path string) Config {
 	}
 	if config.FTP == 0 {
 		config.FTP = 250
+	}
+	if len(config.Bikes) == 0 {
+		config.Bikes = defaultConfig.Bikes
 	}
 	if config.HammerheadAPI.DownloadDir == "" {
 		config.HammerheadAPI.DownloadDir = "./fit_downloads"
@@ -2590,6 +2605,97 @@ func getDashboardTemplate() string {
             transition: all 0.3s ease;
         }
 
+        /* Global Header and Navigation Tabs Styling */
+        #global-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1rem;
+            max-width: 1400px;
+            margin: 0 auto 1.5rem auto;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .header-logo-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .header-logo-container h1 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin: 0;
+            background: linear-gradient(135deg, #ffffff 30%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-nav-tabs {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            padding: 0.25rem;
+            border-radius: 9999px;
+        }
+
+        .nav-tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 0.82rem;
+            font-weight: 600;
+            padding: 0.4rem 1.1rem;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            outline: none;
+        }
+
+        .nav-tab-btn:hover {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-tab-btn.active {
+            color: #ffffff;
+            background: var(--accent);
+            box-shadow: 0 2px 8px var(--accent-glow);
+        }
+
+        .theme-select-compact {
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            font-family: inherit;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-align: center;
+            border-radius: 6px;
+            text-transform: uppercase;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.3rem 0.5rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .theme-select-compact:hover {
+            border-color: var(--accent);
+        }
+
         header {
             display: flex;
             justify-content: space-between;
@@ -3168,116 +3274,156 @@ func getDashboardTemplate() string {
     </style>
 </head>
 <body>
-    <!-- Landing View -->
-    <div id="landing-view">
-        <div class="landing-glow"></div>
-        <div class="landing-container">
-            <div class="landing-logo-container">
-                <svg class="landing-logo-icon" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-width="2"/>
-                    <circle cx="12" cy="12" r="7" stroke-width="1.5"/>
-                    <path d="M12 7c0 2-1 3-3 3 2 0 3 1 3 3 0-2 1-3 3-3-2 0-3-1-3-3z" fill="currentColor" stroke="none"/>
-                </svg>
-                <h1 class="landing-title">directeur<span style="color: var(--accent); font-weight: 800;">AI</span></h1>
-                <div style="font-size: 0.75rem; font-weight: 600; opacity: 0.8; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 0.5rem; display: inline-block;">dsAI Cycling Coach</div>
+    <!-- Global Header -->
+    <header id="global-header">
+        <div class="header-logo-container" onclick="switchToView('landing')" title="Go to Home">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); filter: drop-shadow(0 0 6px var(--accent-glow)); vertical-align: middle;">
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-width="2"/>
+                <circle cx="12" cy="12" r="7" stroke-width="1.5"/>
+                <path d="M12 7c0 2-1 3-3 3 2 0 3 1 3 3 0-2 1-3 3-3-2 0-3-1-3-3z" fill="currentColor" stroke="none"/>
+            </svg>
+            <h1>directeur<span style="color: var(--accent); font-weight: 800;">AI</span></h1>
+        </div>
+        
+        <div class="header-nav-tabs">
+            <button class="nav-tab-btn active" id="nav-tab-landing" onclick="switchToView('landing')">🏠 Home</button>
+            <button class="nav-tab-btn" id="nav-tab-dashboard" onclick="switchToView('dashboard')">⚡ Rides</button>
+            <button class="nav-tab-btn" id="nav-tab-calendar" onclick="switchToView('calendar')">🗓️ Training Planner</button>
+            <button class="nav-tab-btn" id="nav-tab-settings" onclick="switchToView('settings')">⚙️ Settings</button>
+            <button class="nav-tab-btn" id="nav-tab-data" onclick="switchToView('data')">📦 Data & Backup</button>
+        </div>
+        
+        <div class="header-actions">
+            <select id="theme-selector" class="theme-select-compact">
+                <option value="theme-giro">🎨 Giro</option>
+                <option value="theme-flandrian">🎨 Flandrian</option>
+                <option value="theme-tour">🎨 Tour</option>
+                <option value="theme-vuelta">🎨 Vuelta</option>
+                <option value="theme-carbon">🎨 Carbon</option>
+            </select>
+        </div>
+    </header>
+    <!-- Landing / Home View -->
+    <div id="landing-view" style="display: flex; flex-direction: column; padding: 2rem; max-width: 1400px; margin: 0 auto; box-sizing: border-box; width: 100%;">
+        <div style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; width: 100%;">
+            <div>
+                <h2 style="font-size: 1.6rem; font-weight: 700; color: #ffffff; font-family: 'Outfit'; margin: 0;">Welcome back to directeur<span style="color: var(--accent);">AI</span></h2>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.25rem;">Here is your unified activity & training schedule for the week.</p>
+            </div>
+            <!-- Quick Actions -->
+            <div style="display: flex; gap: 0.75rem;">
+                <button class="btn-action" onclick="switchToView('dashboard')" style="font-weight: 600;">⚡ View Rides Dashboard</button>
+                <button class="btn-action" onclick="switchToView('calendar')" style="font-weight: 600;">🗓️ Plan Training Week</button>
+            </div>
+        </div>
+
+        <!-- Weekly Unified Calendar Container -->
+        <div class="card" style="margin-bottom: 2rem; padding: 1.25rem; width: 100%; box-sizing: border-box;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem;">
+                <div style="font-family: 'Outfit'; font-weight: 700; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>📅</span> Unified Training & Activity Calendar
+                    <span id="landing-calendar-week-label" style="font-size: 0.85rem; color: var(--text-secondary); font-weight: normal; margin-left: 0.5rem;"></span>
+                </div>
+                <!-- Week Toggles for Landing -->
+                <div style="display: flex; align-items: center; gap: 0.35rem; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.2rem 0.4rem;">
+                    <button class="btn-action" id="btn-landing-prev-week" style="padding: 0.15rem 0.3rem; border: none; background: transparent; font-size: 0.8rem;" title="Previous Week">⬅️</button>
+                    <button class="btn-action" id="btn-landing-next-week" style="padding: 0.15rem 0.3rem; border: none; background: transparent; font-size: 0.8rem;" title="Next Week">➡️</button>
+                </div>
             </div>
             
-            <p class="landing-subtitle">
-                Unlock elite cycling analytics. Map drivetrain efficiency, evaluate neuromuscular load, and receive advanced AI coaching telemetry.
-            </p>
-            
-            <div class="landing-menu">
-                <button class="landing-btn landing-btn-primary" onclick="showDashboardView()">
-                    ⚡ Analyse Ride
-                </button>
-                <button class="landing-btn" onclick="showCalendarView()">
-                    🗓️ Training Programme
-                </button>
-                <button class="landing-btn" onclick="triggerDeviceLinking()">
-                    🔗 Link Devices & Import
-                </button>
-                <button class="landing-btn" onclick="promptFTPConfig()">
-                    ⚙️ Configure FTP
-                </button>
-                <button class="landing-btn" onclick="promptAPIConfig()">
-                    🔑 Configure Gemini Key
-                </button>
-                <button class="landing-btn" onclick="showIntervalsConfigModal()">
-                    🌐 Connect Intervals.icu
-                </button>
+            <div id="landing-calendar-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem;">
+                <!-- Day cards rendered dynamically -->
+            </div>
+        </div>
+        
+        <!-- Summary Dashboard Widgets Row -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; width: 100%;">
+            <!-- Widget 1: Training Plan Summary -->
+            <div class="card" id="landing-plan-summary-card" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div class="card-header"><div class="card-title">Weekly Plan Focus</div></div>
+                <div id="landing-plan-summary-content" style="font-size: 0.85rem; line-height: 1.5; color: var(--text-secondary);">
+                    No active training plan. Go to the <a href="#" onclick="event.preventDefault(); switchToView('calendar');" style="color: var(--accent); font-weight: 600; text-decoration: none;">Training Planner</a> to generate one!
+                </div>
             </div>
             
-            <div class="landing-footer">
-                directeurAI v1.2 &copy; 2026. Standalone offline mode enabled.
+            <!-- Widget 2: Recent Activity Quick Selector -->
+            <div class="card" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div class="card-header"><div class="card-title">Recent Ride Files</div></div>
+                <div id="landing-recent-activity-list" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem;">
+                    <!-- Lists recent rides -->
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Calendar View Container -->
     <div id="calendar-view" style="display: none; padding: 2rem; max-width: 1400px; margin: 0 auto; min-height: 100vh; box-sizing: border-box; font-family: var(--font-family); color: var(--text-primary);">
-        <header style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1.5rem; margin-bottom: 2rem;">
-            <div class="logo-area">
-                <h1 style="display: flex; align-items: center; gap: 0.5rem; text-transform: none; letter-spacing: normal; cursor: pointer;" onclick="showLandingView()" title="Return to Landing Page">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); filter: drop-shadow(0 0 8px var(--accent-glow)); transition: all 0.3s ease; margin-right: 0.1rem; vertical-align: middle;">
-                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-width="2"/>
-                        <circle cx="12" cy="12" r="7" stroke-width="1.5"/>
-                        <path d="M12 7c0 2-1 3-3 3 2 0 3 1 3 3 0-2 1-3 3-3-2 0-3-1-3-3z" fill="currentColor" stroke="none"/>
-                    </svg>
-                    directeur<span style="color: var(--accent); font-weight: 800;">AI</span> <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.8; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase;">dsAI</span>
-                </h1>
-                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.2rem;">Elite Training Programme Planner</p>
+        <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem 1rem; margin-bottom: 1.5rem;">
             <div style="display: flex; align-items: center; gap: 1rem;">
-                <div id="calendar-week-nav" style="display: none; align-items: center; gap: 0.5rem; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.35rem 0.5rem;">
-                    <button class="btn-action" onclick="navigateWeek('prev')" style="padding: 0.15rem 0.35rem; border: none; background: transparent; font-size: 0.9rem;" title="Previous Week">⬅️</button>
-                    <select id="calendar-week-select" class="btn-action" style="background: transparent; border: none; color: #ffffff; font-size: 0.85rem; font-weight: 600; padding: 0 1.5rem 0 0.5rem; outline: none; cursor: pointer; text-align-last: center;" onchange="loadWeekFromSelect(this.value)">
+                <div style="font-family: 'Outfit'; font-weight: 700; font-size: 1.1rem; color: #ffffff;">🗓️ Training Programme Planner</div>
+            </div>
+            <div id="calendar-week-nav" style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.35rem 0.5rem;">
+                <button class="btn-action" onclick="navigateWeek('prev')" style="padding: 0.15rem 0.35rem; border: none; background: transparent; font-size: 0.9rem;" title="Previous Week">⬅️</button>
+                <select id="calendar-week-select" class="btn-action" style="background: transparent; border: none; color: #ffffff; font-size: 0.85rem; font-weight: 600; padding: 0 1.5rem 0 0.5rem; outline: none; cursor: pointer; text-align-last: center;" onchange="loadWeekFromSelect(this.value)">
                         <option value="" disabled selected>Select Week</option>
                     </select>
                     <button class="btn-action" onclick="navigateWeek('next')" style="padding: 0.15rem 0.35rem; border: none; background: transparent; font-size: 0.9rem;" title="Next Week">➡️</button>
                 </div>
-                <button class="btn-action" onclick="showLandingView()" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;" title="Return to Landing Page">🏠 Home</button>
             </div>
-        </header>
 
         <div style="display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: start; margin-top: 1rem;">
             <!-- Grid columns split for desktop -->
             <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
-                <!-- Left Column: Inputs -->
-                <div class="card" style="flex: 1 1 320px; max-width: 340px; display: flex; flex-direction: column; gap: 1.25rem;">
-                    <div class="card-header">
-                        <div class="card-title">Planner Configuration</div>
-                    </div>
-                    
-                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Training Goals</label>
-                        <textarea id="calendar-goals-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 70px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Build FTP and climbing endurance for hilly grand fondo">Build FTP and climbing endurance</textarea>
-                    </div>
-                    
-                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Constraints for Next Week</label>
-                        <textarea id="calendar-constraints-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 100px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Tuesday/Thursday trainer sessions capped at 1h. Long ride on Saturday. Monday/Friday Rest.">Monday and Friday are rest days. Long endurance ride on Saturday. Tuesday/Thursday trainer sessions capped at 1 hour.</textarea>
-                    </div>
+                <!-- Left Column Container -->
+                <div style="flex: 1 1 320px; max-width: 340px; display: flex; flex-direction: column; gap: 1.5rem;">
+                    <!-- Planner Configuration Card -->
+                    <div class="card" style="display: flex; flex-direction: column; gap: 1.25rem; width: 100%; box-sizing: border-box;">
+                        <div class="card-header">
+                            <div class="card-title">Planner Configuration</div>
+                        </div>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Training Goals</label>
+                            <textarea id="calendar-goals-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 70px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Build FTP and climbing endurance for hilly grand fondo">Build FTP and climbing endurance</textarea>
+                        </div>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Constraints for Next Week</label>
+                            <textarea id="calendar-constraints-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 100px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Tuesday/Thursday trainer sessions capped at 1h. Long ride on Saturday. Monday/Friday Rest.">Monday and Friday are rest days. Long endurance ride on Saturday. Tuesday/Thursday trainer sessions capped at 1 hour.</textarea>
+                        </div>
 
-                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Gemini AI Model</label>
-                        <select id="calendar-model-select" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%;">
-                            <option value="gemini-3.5-flash" selected>Gemini 3.5 Flash (Default)</option>
-                            <option value="gemini-3.5-pro">Gemini 3.5 Pro</option>
-                            <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
-                            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                            <option value="gemini-1.5-pro">Gemini 1.5 Pro (Legacy)</option>
-                        </select>
-                    </div>
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Gemini AI Model</label>
+                            <select id="calendar-model-select" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%;">
+                                <option value="gemini-3.5-flash" selected>Gemini 3.5 Flash (Default)</option>
+                                <option value="gemini-3.5-pro">Gemini 3.5 Pro</option>
+                                <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
+                                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Legacy)</option>
+                            </select>
+                        </div>
 
-                     <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; margin-bottom: 0.25rem;">
-                        <button onclick="showIntervalsConfigModal()" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%; text-align: center; cursor: pointer; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-color)'">
-                            🌐 Intervals.icu Connection
+                         <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; margin-bottom: 0.25rem;">
+                            <button onclick="showIntervalsConfigModal()" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%; text-align: center; cursor: pointer; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-color)'">
+                                🌐 Intervals.icu Connection
+                            </button>
+                        </div>
+
+                        <button id="btn-generate-calendar" onclick="generateTrainingCalendar()" class="landing-btn landing-btn-primary" style="width: 100%; justify-content: center; font-size: 0.9rem; padding: 0.75rem;">
+                            🗓️ Generate Programme
                         </button>
                     </div>
 
-                    <button id="btn-generate-calendar" onclick="generateTrainingCalendar()" class="landing-btn landing-btn-primary" style="width: 100%; justify-content: center; font-size: 0.9rem; padding: 0.75rem;">
-                        🗓️ Generate Programme
-                    </button>
+                    <!-- Past Programmes Card -->
+                    <div class="card" id="calendar-history-card" style="display: flex; flex-direction: column; gap: 1rem; width: 100%; box-sizing: border-box;">
+                        <div class="card-header" style="margin-bottom: 0.25rem;">
+                            <div class="card-title">Past Programmes</div>
+                        </div>
+                        <div id="calendar-history-list" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 320px; overflow-y: auto; padding-right: 0.25rem;">
+                            <!-- Dynamically populated -->
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Right Column: Outputs -->
@@ -3352,45 +3498,18 @@ func getDashboardTemplate() string {
             </div>
         </div>
 
-        <header>
-            <div class="logo-area">
-                <h1 style="display: flex; align-items: center; gap: 0.5rem; text-transform: none; letter-spacing: normal; cursor: pointer;" onclick="showLandingView()" title="Return to Landing Page">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); filter: drop-shadow(0 0 8px var(--accent-glow)); transition: all 0.3s ease; margin-right: 0.1rem; vertical-align: middle;">
-                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke-width="2"/>
-                        <circle cx="12" cy="12" r="7" stroke-width="1.5"/>
-                        <path d="M12 7c0 2-1 3-3 3 2 0 3 1 3 3 0-2 1-3 3-3-2 0-3-1-3-3z" fill="currentColor" stroke="none"/>
-                    </svg>
-                    directeur<span style="color: var(--accent); font-weight: 800;">AI</span> <span style="font-size: 0.75rem; font-weight: 600; opacity: 0.8; background: rgba(255,255,255,0.08); padding: 0.15rem 0.4rem; border-radius: 4px; letter-spacing: 0.05em; text-transform: uppercase;">dsAI</span>
-                </h1>
-                <p id="ride-date-sub">Cycling Analysis Dashboard</p>
+        <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; width: 100%; box-sizing: border-box;">
+            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                <button id="btn-select-ride" class="btn-action" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">📂 Select Ride</button>
+                <select id="bike-selector" class="btn-action" style="display: none;">
+                    <option value="">⚙️ Default Gears</option>
+                </select>
+                <div id="ride-date-sub" style="font-size: 0.85rem; color: var(--text-secondary);">Cycling Analysis Dashboard</div>
             </div>
-        <div style="display: flex; gap: 1rem; align-items: center;">
-            <button class="btn-action" onclick="showLandingView()" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;" title="Return to Landing Page">🏠 Home</button>
-            <button id="btn-select-ride" class="btn-action" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">📂 Select Ride</button>
-            <select id="bike-selector" class="btn-action" style="display: none;">
-                <option value="">⚙️ Default Gears</option>
-            </select>
-            <select id="theme-selector" class="badge" style="cursor: pointer; appearance: none; -webkit-appearance: none; font-family: inherit; font-size: 0.85rem; font-weight: 600; text-align: center; border-radius: 9999px; text-transform: uppercase;">
-                <option value="theme-giro" style="background: var(--bg-secondary); color: var(--text-primary);">GIRO PINK THEME</option>
-                <option value="theme-flandrian" style="background: var(--bg-secondary); color: var(--text-primary);">FLANDRIAN YELLOW THEME</option>
-                <option value="theme-tour" style="background: var(--bg-secondary); color: var(--text-primary);">TOUR YELLOW THEME</option>
-                <option value="theme-vuelta" style="background: var(--bg-secondary); color: var(--text-primary);">VUELTA RED THEME</option>
-                <option value="theme-carbon" style="background: var(--bg-secondary); color: var(--text-primary);">CARBON DARK THEME</option>
-            </select>
-            <button id="btn-gemini-coach" class="btn-action" style="background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2)); border-color: #9b59b6; color: #e0aaff; font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">🤖 Ask directeurAI Coach</button>
-            <div class="dropdown" id="data-dropdown">
-                <button class="btn-action" id="btn-data-dropdown" style="gap: 0.5rem;">
-                    📦 Data Options <span style="font-size: 0.6rem; opacity: 0.7; transition: transform 0.2s ease; display: inline-block;" id="dropdown-arrow">▼</span>
-                </button>
-                <div class="dropdown-menu" id="data-dropdown-menu">
-                    <button id="btn-copy-json" class="dropdown-item">📋 View JSON Data</button>
-                    <button id="btn-view-schema" class="dropdown-item">📋 View Schema</button>
-                    <button id="btn-download-json" class="dropdown-item">📥 Download JSON</button>
-                    <button id="btn-show-saved-data" class="dropdown-item">📦 Show Saved Data</button>
-                </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <button id="btn-gemini-coach" class="btn-action" style="background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2)); border-color: #9b59b6; color: #e0aaff; font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">🤖 Ask directeurAI Coach</button>
             </div>
         </div>
-    </header>
 
     <!-- Collapsible Rides Calendar -->
     <div id="rides-calendar-container" style="margin-bottom: 1.5rem;">
@@ -3830,6 +3949,127 @@ func getDashboardTemplate() string {
     </div>
     </div> <!-- End dashboard-view -->
 
+    <!-- Settings View Container -->
+    <div id="settings-view" style="display: none; padding: 2rem; max-width: 1400px; margin: 0 auto; min-height: 100vh; box-sizing: border-box; font-family: var(--font-family); color: var(--text-primary); width: 100%;">
+        <div class="toolbar" style="display: flex; align-items: center; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; width: 100%; box-sizing: border-box;">
+            <div style="font-family: 'Outfit'; font-weight: 700; font-size: 1.1rem; color: #ffffff;">⚙️ Unified Application Settings</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; align-items: start; width: 100%;">
+            <!-- Card 1: FTP Configuration -->
+            <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+                <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Functional Threshold Power (FTP)</h4>
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0; line-height: 1.4;">Configure your Functional Threshold Power (FTP) in Watts. This value is critical for scaling power training zones and calculating Normalized Power (NP).</p>
+                <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem;">
+                    <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Athlete FTP (Watts)</label>
+                    <input type="number" id="settings-ftp-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;" value="250">
+                </div>
+                <button onclick="saveFTPFromSettings()" class="landing-btn landing-btn-primary" style="justify-content: center; font-size: 0.85rem; padding: 0.6rem 0; font-weight: 600; margin-top: 0.5rem; width: 100%;">💾 Save FTP</button>
+            </div>
+
+            <!-- Card 2: Gemini API Key -->
+            <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+                <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Gemini API Credentials</h4>
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0; line-height: 1.4;">Enter your Google Gemini API Key. This enables advanced AI coaching analysis, ride feedback, and dynamic training plan generation.</p>
+                <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem;">
+                    <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Gemini API Key</label>
+                    <input type="password" id="settings-api-key-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;" placeholder="Paste API Key here">
+                </div>
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; width: 100%;">
+                    <button onclick="saveAPIKeyFromSettings()" class="landing-btn landing-btn-primary" style="flex: 1; justify-content: center; font-size: 0.85rem; padding: 0.6rem 0; font-weight: 600;">💾 Save Key</button>
+                    <button onclick="clearAPIKeyFromSettings()" class="btn-action" style="flex: 1; justify-content: center; font-size: 0.85rem; padding: 0.6rem 0;">Clear Key</button>
+                </div>
+            </div>
+
+            <!-- Card 3: Default Bike/Gears Selection -->
+            <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+                <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Drivetrain & Bike Selector</h4>
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0; line-height: 1.4;">Select your active bike configuration to analyze gear ratios and map mechanical drivetrain efficiency telemetry.</p>
+                <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem;">
+                    <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Active Drivetrain</label>
+                    <select id="settings-bike-selector" class="btn-action" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none; width: 100%; box-sizing: border-box;" onchange="saveBikeFromSettings(this.value)">
+                        <option value="">⚙️ Default Gears</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Card 4: Intervals.icu Account Connection -->
+            <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+                <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Intervals.icu Connection</h4>
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0; line-height: 1.4;">Sync workouts and training plans directly to your Intervals.icu calendar. Configure athlete credentials below.</p>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.25rem;">
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Athlete ID</label>
+                        <input type="text" id="settings-intervals-athlete-id" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.5rem; font-family: inherit; font-size: 0.8rem; outline: none;" placeholder="Athlete ID (or 0)" value="0">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">API Key</label>
+                        <input type="password" id="settings-intervals-api-key" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.5rem; font-family: inherit; font-size: 0.8rem; outline: none;" placeholder="Paste API Key">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin: 0.1rem 0;">
+                        <input type="checkbox" id="settings-intervals-enabled" style="cursor: pointer; width: 15px; height: 15px; accent-color: var(--accent);">
+                        <label for="settings-intervals-enabled" style="font-size: 0.8rem; color: #ffffff; cursor: pointer; font-weight: 500;">Enable Calendar Export</label>
+                    </div>
+                </div>
+                <div id="settings-intervals-test-status" style="display: none; padding: 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 500;"></div>
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem; width: 100%;">
+                    <button onclick="testIntervalsFromSettings()" id="btn-settings-intervals-test" class="btn-action" style="flex: 1; justify-content: center; font-size: 0.8rem; padding: 0.5rem 0;">🔍 Test Link</button>
+                    <button onclick="saveIntervalsFromSettings()" class="landing-btn landing-btn-primary" style="flex: 1; justify-content: center; font-size: 0.8rem; padding: 0.5rem 0;">💾 Save Link</button>
+                </div>
+            </div>
+
+            <!-- Card 5: Device Imports / Accounts Connection -->
+            <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+                <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Device Linking & Imports</h4>
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0; line-height: 1.4;">Link your Hammerhead account or local cycling computer devices to download raw ride activity files instantly.</p>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem; width: 100%;">
+                    <button class="landing-btn landing-btn-primary" onclick="triggerDeviceLinking()" style="justify-content: center; font-size: 0.85rem; padding: 0.6rem 0; font-weight: 600; width: 100%;">🔗 Link Hammerhead Account</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data & Backup View Container -->
+    <div id="data-view" style="display: none; padding: 2rem; max-width: 1400px; margin: 0 auto; min-height: 100vh; box-sizing: border-box; font-family: var(--font-family); color: var(--text-primary); width: 100%;">
+        <div class="toolbar" style="display: flex; align-items: center; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; width: 100%; box-sizing: border-box;">
+            <div style="font-family: 'Outfit'; font-weight: 700; font-size: 1.1rem; color: #ffffff;">📦 Database & Local Cache Options</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem; align-items: start; width: 100%;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; width: 100%;">
+                <!-- Backup and Recovery Card -->
+                <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+                    <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Database Backup & Migration</h4>
+                    <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0; line-height: 1.4;">Export all stored telemetry files, custom chart layouts, training history, and application configuration to a JSON backup file, or restore from a previous backup.</p>
+                    <div style="display: flex; gap: 0.75rem; margin-top: 0.75rem; width: 100%;">
+                        <button onclick="window.exportAllLocalStorage()" class="landing-btn landing-btn-primary" style="flex: 1; justify-content: center; font-size: 0.85rem; padding: 0.6rem 0; font-weight: 600;">📤 Export Backup</button>
+                        <button onclick="window.triggerImportBackup()" class="btn-action" style="flex: 1; justify-content: center; font-size: 0.85rem; padding: 0.6rem 0; font-weight: 600;">📥 Import Backup</button>
+                    </div>
+                </div>
+
+                <!-- Database Wipe Card -->
+                <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+                    <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Cache Management</h4>
+                    <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0; line-height: 1.4;">Wipe all stored ride history and API settings from this browser origin. This action is irreversible.</p>
+                    <button id="data-clear-all-btn" class="landing-btn" style="border-color: rgba(231, 76, 60, 0.5); color: #fc8181; font-weight: 600; justify-content: center; margin-top: 1rem; font-size: 0.85rem; padding: 0.6rem 0; width: 100%;">⚠️ Wipe All Local Cache</button>
+                </div>
+            </div>
+
+            <!-- Active Ride Telemetry JSON Card -->
+            <div class="card" style="display: flex; flex-direction: column; gap: 1rem; width: 100%; box-sizing: border-box;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Active Ride Telemetry (JSON Preview)</h4>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button id="data-copy-json-btn" class="btn-action" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">📋 Copy JSON</button>
+                        <button id="data-download-json-btn" class="btn-action" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">📥 Download JSON File</button>
+                        <button id="data-view-schema-btn" class="btn-action" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">📋 View Schema</button>
+                    </div>
+                </div>
+                <textarea id="data-json-preview" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #a0aec0; padding: 0.75rem; font-family: monospace; font-size: 0.75rem; min-height: 300px; max-height: 450px; resize: vertical; outline: none; width: 100%; box-sizing: border-box;" readonly></textarea>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal for Intervals.icu Configuration -->
     <div id="intervals-config-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center; padding: 2rem;">
         <div style="width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 1.25rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; padding: 1.75rem; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px var(--accent-glow);">
@@ -4148,6 +4388,16 @@ func getDashboardTemplate() string {
 
         // Global Chart and Map references for dynamic updating
         let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline, quadrantAnalysisChart;
+
+        const getMonday = (d) => {
+            const date = new Date(d);
+            const day = date.getDay(); // 0 is Sunday, 1 is Monday, ..., 6 is Saturday
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(date.setDate(diff));
+            monday.setHours(0, 0, 0, 0);
+            return monday;
+        };
+        window.getMonday = getMonday;
         let leafletMap, startMarker, endMarker;
         let fullJSONString = "";
         const fullSchemaString = JSON.stringify(schemaData, null, 2);
@@ -4306,6 +4556,17 @@ func getDashboardTemplate() string {
                 applyTheme('theme-carbon');
             }
 
+            // Bind Data & Backup view action buttons
+            if (typeof bindDataViewListeners === 'function') {
+                bindDataViewListeners();
+            }
+
+            // Restore active view or default to landing
+            const activeView = localStorage.getItem('directeur_active_view') || 'landing';
+            if (typeof switchToView === 'function') {
+                switchToView(activeView);
+            }
+
             document.getElementById('theme-selector').addEventListener('change', (e) => {
                 applyTheme(e.target.value);
             });
@@ -4324,6 +4585,27 @@ func getDashboardTemplate() string {
                         localStorage.setItem('directeur_selected_bike', selectedBikeName);
                     } else {
                         localStorage.removeItem('directeur_selected_bike');
+                    }
+
+                    // Save association in fit_ride_history for the current ride
+                    const historyData = localStorage.getItem('fit_ride_history');
+                    if (historyData) {
+                        try {
+                            const history = JSON.parse(historyData);
+                            const rideId = rideData && rideData.summary ? rideData.summary.start_time : null;
+                            if (rideId) {
+                                const ride = history.find(r => r.id === rideId);
+                                if (ride) {
+                                    ride.bike = selectedBikeName;
+                                    localStorage.setItem('fit_ride_history', JSON.stringify(history));
+                                    try {
+                                        renderRidesCalendar();
+                                    } catch(e){}
+                                }
+                            }
+                        } catch (e) {
+                            console.error("Error updating ride bike in history:", e);
+                        }
                     }
 
                     // Update URL query parameter
@@ -4358,10 +4640,10 @@ func getDashboardTemplate() string {
 
                 container.innerHTML = '';
 
-                // Calculate date range based on offset
+                // Calculate date range based on offset, starting on Monday
                 const today = new Date();
-                const startDay = new Date();
-                startDay.setDate(today.getDate() - 6 - (calendarWeekOffset * 7));
+                const startDay = getMonday(today);
+                startDay.setDate(startDay.getDate() - (calendarWeekOffset * 7));
                 startDay.setHours(0, 0, 0, 0);
 
                 const endDayLimit = new Date(startDay);
@@ -4375,7 +4657,7 @@ func getDashboardTemplate() string {
                     const dateRangeStr = startDay.toLocaleDateString('en-US', options) + ' - ' + rangeEnd.toLocaleDateString('en-US', options);
                     
                     if (calendarWeekOffset === 0) {
-                        titleDiv.innerHTML = '<span>📅</span> Recent Ride Activity (Last 7 Days)';
+                        titleDiv.innerHTML = '<span>📅</span> Recent Ride Activity (This Week: ' + dateRangeStr + ')';
                     } else if (calendarWeekOffset === 1) {
                         titleDiv.innerHTML = '<span>📅</span> Recent Ride Activity (1 Week Ago: ' + dateRangeStr + ')';
                     } else {
@@ -4489,7 +4771,7 @@ func getDashboardTemplate() string {
 
                 if (statsSpan) {
                     if (calendarWeekOffset === 0) {
-                        statsSpan.textContent = totalRideCount + ' ride(s) in last 7 days';
+                        statsSpan.textContent = totalRideCount + ' ride(s) in this week';
                     } else if (calendarWeekOffset === 1) {
                         statsSpan.textContent = totalRideCount + ' ride(s) in week (1 week ago)';
                     } else {
@@ -4744,6 +5026,15 @@ func getDashboardTemplate() string {
                                 console.error("Error re-rendering calendar on rides fetch:", e);
                             }
                         }
+
+                        // Re-render the unified landing calendar to resolve completed rides
+                        try {
+                            if (typeof renderUnifiedLandingCalendar === 'function') {
+                                renderUnifiedLandingCalendar();
+                            }
+                        } catch(e) {
+                            console.error("Error rendering unified landing calendar on load:", e);
+                        }
                         
                         // Handle connection error banner at the top of the page
                         const errBanner = document.getElementById('connection-error-banner');
@@ -4782,6 +5073,21 @@ func getDashboardTemplate() string {
                 
                 const urlParams = new URLSearchParams(window.location.search);
                 let initialBike = urlParams.get('bike');
+                if (!initialBike) {
+                    const rideId = rideData && rideData.summary ? rideData.summary.start_time : null;
+                    if (rideId) {
+                        const historyData = localStorage.getItem('fit_ride_history');
+                        if (historyData) {
+                            try {
+                                const history = JSON.parse(historyData);
+                                const ride = history.find(r => r.id === rideId);
+                                if (ride && ride.bike) {
+                                    initialBike = ride.bike;
+                                }
+                            } catch(e){}
+                        }
+                    }
+                }
                 if (!initialBike) {
                     initialBike = localStorage.getItem('directeur_selected_bike');
                 }
@@ -6148,6 +6454,10 @@ func getDashboardTemplate() string {
                     const history = JSON.parse(historyData);
                     const ride = history.find(r => r.id === rideId);
                     if (ride && ride.source && ride.param) {
+                        const bikeSelector = document.getElementById('bike-selector');
+                        if (bikeSelector) {
+                            bikeSelector.value = ride.bike || '';
+                        }
                         loadRideData(ride.source, ride.param, ride.param2 || '');
                         showDashboardView();
                         return;
@@ -6214,12 +6524,61 @@ func getDashboardTemplate() string {
         };
         window.viewRideAnalysis = viewRideAnalysis;
 
-        const showLandingView = () => {
-            document.getElementById('dashboard-view').style.display = 'none';
-            document.getElementById('calendar-view').style.display = 'none';
-            document.getElementById('landing-view').style.display = 'flex';
+        // Global View Router
+        const switchToView = (viewName) => {
+            // Update active view tracking in localStorage
+            localStorage.setItem('directeur_active_view', viewName);
 
-            // Clear ride query parameters when going home
+            // Hide all view containers
+            const views = ['landing-view', 'dashboard-view', 'calendar-view', 'settings-view', 'data-view'];
+            views.forEach(v => {
+                const el = document.getElementById(v);
+                if (el) el.style.display = 'none';
+            });
+
+            // Deactivate all navigation tabs
+            const tabs = ['nav-tab-landing', 'nav-tab-dashboard', 'nav-tab-calendar', 'nav-tab-settings', 'nav-tab-data'];
+            tabs.forEach(t => {
+                const el = document.getElementById(t);
+                if (el) el.classList.remove('active');
+            });
+
+            // Show selected view container and activate its tab
+            const targetView = viewName + '-view';
+            const targetTab = 'nav-tab-' + viewName;
+
+            const viewEl = document.getElementById(targetView);
+            if (viewEl) {
+                if (viewName === 'landing') {
+                    viewEl.style.display = 'flex'; // Landing/Home layout is flex
+                } else {
+                    viewEl.style.display = 'block'; // All others are block
+                }
+            }
+
+            const tabEl = document.getElementById(targetTab);
+            if (tabEl) tabEl.classList.add('active');
+
+            // Trigger specific view loading/rendering side-effects
+            if (viewName === 'calendar') {
+                loadCalendarViewDetails(); // load calendar constraints and history lists
+            } else if (viewName === 'landing') {
+                renderUnifiedLandingCalendar(); // render the unified home calendar
+            } else if (viewName === 'settings') {
+                populateSettingsView(); // load settings inputs
+            } else if (viewName === 'data') {
+                populateDataView(); // load JSON telemetry previews
+            } else if (viewName === 'dashboard') {
+                window.dispatchEvent(new Event('resize'));
+                if (leafletMap) {
+                    leafletMap.invalidateSize();
+                    if (routePolyline) {
+                        leafletMap.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
+                    }
+                }
+            }
+
+            // Clean query params on view change to maintain a clean URL bar
             const url = new URL(window.location.origin + window.location.pathname);
             const bike = new URL(window.location.href).searchParams.get('bike');
             if (bike) {
@@ -6227,21 +6586,17 @@ func getDashboardTemplate() string {
             }
             window.history.pushState({}, '', url.toString());
         };
+        window.switchToView = switchToView;
+
+        // Legacy compatibility wrapper functions
+        const showLandingView = () => switchToView('landing');
         window.showLandingView = showLandingView;
 
-        const showCalendarView = () => {
-            document.getElementById('landing-view').style.display = 'none';
-            document.getElementById('dashboard-view').style.display = 'none';
-            document.getElementById('calendar-view').style.display = 'block';
+        const showCalendarView = () => switchToView('calendar');
+        window.showCalendarView = showCalendarView;
 
-            // Clear ride query parameters when going to calendar
-            const url = new URL(window.location.origin + window.location.pathname);
-            const bike = new URL(window.location.href).searchParams.get('bike');
-            if (bike) {
-                url.searchParams.set('bike', bike);
-            }
-            window.history.pushState({}, '', url.toString());
-            
+        // Calendar Loader Helper
+        const loadCalendarViewDetails = () => {
             // Load custom inputs from local storage if saved
             const savedGoals = localStorage.getItem('fit_calendar_goals');
             if (savedGoals) {
@@ -6300,15 +6655,518 @@ func getDashboardTemplate() string {
             if (historyList.length > 0) {
                 const latestPlan = historyList[historyList.length - 1];
                 window.currentCalendarProgram = latestPlan;
+                
+                // Sync plannerCalendarWeekIndex
+                if (latestPlan && latestPlan.start_date) {
+                    const planStart = new Date(latestPlan.start_date);
+                    const todayMonday = getMonday(new Date());
+                    const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+                    window.plannerCalendarWeekIndex = diffWeeks;
+                } else {
+                    window.plannerCalendarWeekIndex = 0;
+                }
+                
                 renderTrainingCalendar(latestPlan);
             } else {
+                window.plannerCalendarWeekIndex = 0;
                 window.currentCalendarProgram = null;
                 renderTrainingCalendar(null);
             }
 
             updateIntervalsSyncUI();
+            renderPlannerHistory();
         };
-        window.showCalendarView = showCalendarView;
+
+        // Unified Landing & Planner Calendar Week Navigation Offsets
+        let landingCalendarWeekIndex = 0; // Tracks offsets or matches in historyList
+        window.plannerCalendarWeekIndex = 0; // Tracks planner view week navigation offsets
+
+        const renderUnifiedLandingCalendar = () => {
+            const grid = document.getElementById('landing-calendar-grid');
+            const weekLabel = document.getElementById('landing-calendar-week-label');
+            const summaryContent = document.getElementById('landing-plan-summary-content');
+            const recentList = document.getElementById('landing-recent-activity-list');
+            if (!grid) return;
+
+            // Load training programs history
+            let historyList = [];
+            try {
+                const historyData = localStorage.getItem('fit_training_programs_history');
+                if (historyData) historyList = JSON.parse(historyData);
+            } catch (e) {
+                console.error(e);
+            }
+
+            // 1. Calculate displayStartDate (Monday of the displayed week)
+            const today = new Date();
+            let displayStartDate = new Date(today);
+            displayStartDate.setDate(today.getDate() + (landingCalendarWeekIndex * 7));
+            displayStartDate = getMonday(displayStartDate);
+
+            // 2. Find if there is a plan in history that overlaps with this week [displayStartDate, displayStartDate + 6]
+            let data = null;
+            const weekStartVal = new Date(displayStartDate);
+            weekStartVal.setHours(0,0,0,0);
+            const weekEndVal = new Date(weekStartVal);
+            weekEndVal.setDate(weekStartVal.getDate() + 6);
+
+            // First search history list (newest first)
+            for (let i = historyList.length - 1; i >= 0; i--) {
+                const plan = historyList[i];
+                if (plan && plan.start_date) {
+                    const planStart = new Date(plan.start_date);
+                    planStart.setHours(0,0,0,0);
+                    const planEnd = new Date(planStart);
+                    planEnd.setDate(planStart.getDate() + 6);
+                    if (planStart <= weekEndVal && planEnd >= weekStartVal) {
+                        data = plan;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback to legacy single plan if history is empty
+            if (!data) {
+                try {
+                    const legacyData = localStorage.getItem('fit_training_program');
+                    if (legacyData) {
+                        const plan = JSON.parse(legacyData);
+                        if (plan && plan.start_date) {
+                            const planStart = new Date(plan.start_date);
+                            planStart.setHours(0,0,0,0);
+                            const planEnd = new Date(planStart);
+                            planEnd.setDate(planStart.getDate() + 6);
+                            if (planStart <= weekEndVal && planEnd >= weekStartVal) {
+                                data = plan;
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // Render weekly summary widget
+            if (data && data.weekly_summary) {
+                const mondayLabelDate = getMonday(data.start_date);
+                summaryContent.innerHTML = '<div style="font-weight: 600; color: #ffffff; margin-bottom: 0.5rem;">Week starting ' + mondayLabelDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ':</div>' +
+                    '<div style="font-size: 0.85rem; color: var(--text-secondary);">' + data.weekly_summary + '</div>';
+            } else {
+                summaryContent.innerHTML = 'No active training plan focus. Go to the <a href="#" onclick="event.preventDefault(); switchToView(\'calendar\');" style="color: var(--accent); font-weight: 600; text-decoration: none;">Training Planner</a> to generate one!';
+            }
+
+            // Load completed ride history for match-ups
+            const historyData = localStorage.getItem('fit_ride_history');
+            let completedRidesHistory = [];
+            if (historyData) {
+                try {
+                    completedRidesHistory = JSON.parse(historyData);
+                } catch(e){}
+            }
+
+            // Render Recent Rides list widget on Home Page
+            if (completedRidesHistory.length === 0) {
+                recentList.innerHTML = '<div style="font-style: italic; color: var(--text-secondary); font-size: 0.8rem; text-align: center; padding-top: 1rem;">No analyzed rides found.</div>';
+            } else {
+                const sortedRecent = [...completedRidesHistory].reverse().slice(0, 5);
+                recentList.innerHTML = sortedRecent.map(ride => {
+                    return '<div onclick="window.viewRideAnalysis(\'' + ride.id + '\')" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.78rem; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background=\'rgba(255,255,255,0.08)\'; this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.background=\'rgba(255,255,255,0.03)\'; this.style.borderColor=\'rgba(255,255,255,0.05)\'">' +
+                        '<div>' +
+                            '<div style="font-weight: 600; color: #ffffff;">📅 ' + ride.date + '</div>' +
+                            '<div style="font-size: 0.7rem; color: var(--text-secondary);">' + ride.distance_km + ' km | NP: ' + ride.np + 'W</div>' +
+                        '</div>' +
+                        '<div style="font-size: 0.8rem; color: var(--accent); font-weight: 600;">➔</div>' +
+                    '</div>';
+                }).join('');
+            }
+
+            // If there's no calendar plan to display, render a generic empty/placeholder week card grid based on displayStartDate
+            if (!data || !data.days) {
+                const startOfWeek = getMonday(displayStartDate);
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+                weekLabel.innerText = "Week of " + startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + " – " + endOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + " (Placeholder)";
+
+                let gridHTML = '';
+                for (let i = 0; i < 7; i++) {
+                    const dayDate = new Date(startOfWeek);
+                    dayDate.setDate(startOfWeek.getDate() + i);
+                    const shortDate = dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    
+                    // Match completed rides
+                    const dYear = dayDate.getFullYear();
+                    const dMonth = dayDate.getMonth();
+                    const dDay = dayDate.getDate();
+                    const dayCompleted = completedRidesHistory.filter(ride => {
+                        const rDate = new Date(ride.id);
+                        return rDate.getFullYear() === dYear && rDate.getMonth() === dMonth && rDate.getDate() === dDay;
+                    });
+
+                    let completedSection = '';
+                    if (dayCompleted.length > 0) {
+                        completedSection = dayCompleted.map(ride => 
+                            '<div onclick="window.viewRideAnalysis(\'' + ride.id + '\')" style="background: rgba(46, 204, 113, 0.12); border: 1px solid rgba(46, 204, 113, 0.25); border-radius: 6px; padding: 0.35rem; font-size: 0.72rem; color: #2ecc71; font-weight: 600; cursor: pointer; text-align: center; margin-top: 0.5rem;" title="' + ride.summary + '">✔ ' + ride.distance_km + ' km</div>'
+                        ).join('');
+                    } else {
+                        completedSection = '<div style="font-style: italic; color: var(--text-secondary); font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">No activity</div>';
+                    }
+
+                    const isToday = dayDate.toDateString() === new Date().toDateString();
+                    const cardBorder = isToday ? 'border-color: var(--accent); background: rgba(255, 107, 107, 0.05);' : 'border-color: var(--border-color);';
+
+                    gridHTML += '<div class="card" style="padding: 0.75rem; ' + cardBorder + ' display: flex; flex-direction: column; justify-content: space-between; min-height: 140px;">' +
+                        '<div>' +
+                            '<div style="font-size: 0.8rem; font-weight: 700; color: #ffffff; text-align: center;">' + shortDate + '</div>' +
+                            (isToday ? '<div style="font-size: 0.65rem; background: var(--accent); color: #ffffff; border-radius: 4px; padding: 0.1rem 0.25rem; font-weight: 700; text-transform: uppercase; width: max-content; margin: 0.25rem auto 0 auto;">Today</div>' : '') +
+                        '</div>' +
+                        '<div>' + completedSection + '</div>' +
+                    '</div>';
+                }
+                grid.innerHTML = gridHTML;
+                return;
+            }
+
+            // Render calendar if training program data exists!
+            const mondayDate = displayStartDate;
+            const endWeekDate = new Date(mondayDate);
+            endWeekDate.setDate(mondayDate.getDate() + 6);
+            weekLabel.innerText = "Week of " + mondayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + " – " + endWeekDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+            const formatLocalDateKey = (d) => {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return year + '-' + month + '-' + day;
+            };
+
+            const planStartDate = new Date(data.start_date);
+            planStartDate.setHours(0,0,0,0);
+
+            const workoutMapByDate = {};
+            if (data.days && Array.isArray(data.days)) {
+                data.days.forEach((day, idx) => {
+                    const workoutDate = new Date(planStartDate);
+                    workoutDate.setDate(planStartDate.getDate() + idx);
+                    const dateKey = formatLocalDateKey(workoutDate);
+                    workoutMapByDate[dateKey] = day;
+                });
+            }
+
+            const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+            let gridHTML = '';
+            weekdays.forEach((dayName, idx) => {
+                const dayDate = new Date(mondayDate);
+                dayDate.setDate(mondayDate.getDate() + idx);
+                const dateKey = formatLocalDateKey(dayDate);
+
+                const d = workoutMapByDate[dateKey] || { 
+                    day: dayName.charAt(0).toUpperCase() + dayName.slice(1), 
+                    workout_planned: false, 
+                    workout_type: 'REST', 
+                    title: 'Rest Day', 
+                    description: 'No planned workout. Time for recovery!', 
+                    duration_mins: 0,
+                    target_tss: 0,
+                    target_if: 0,
+                    structure: 'No structure'
+                };
+
+                // Match completed rides
+                const dYear = dayDate.getFullYear();
+                const dMonth = dayDate.getMonth();
+                const dDay = dayDate.getDate();
+                const dayCompleted = completedRidesHistory.filter(ride => {
+                    const rDate = new Date(ride.id);
+                    return rDate.getFullYear() === dYear && rDate.getMonth() === dMonth && rDate.getDate() === dDay;
+                });
+
+                const isToday = dayDate.toDateString() === new Date().toDateString();
+                const cardBorder = isToday ? 'border-color: var(--accent); background: rgba(255, 107, 107, 0.05);' : 'border-color: var(--border-color);';
+
+                // Classify planned workout badge styling
+                const workoutType = (d.workout_type || '').toLowerCase();
+                const isPlanned = (d.workout_planned !== undefined && d.workout_planned !== null) 
+                    ? (d.workout_planned && d.workout_planned !== 'false') 
+                    : (d.workout_type && !workoutType.includes('rest') && !workoutType.includes('recovery'));
+
+                let workoutBadgeColor = 'background: rgba(255,255,255,0.06); color: var(--text-secondary);';
+                if (isPlanned) {
+                    if (workoutType.includes('rest') || workoutType.includes('recovery')) {
+                        workoutBadgeColor = 'background: rgba(46, 204, 113, 0.1); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.2);';
+                    } else if (workoutType.includes('endurance') || workoutType.includes('aerobic')) {
+                        workoutBadgeColor = 'background: rgba(52, 152, 219, 0.1); color: #3498db; border: 1px solid rgba(52, 152, 219, 0.2);';
+                    } else if (workoutType.includes('sweet spot') || workoutType.includes('tempo')) {
+                        workoutBadgeColor = 'background: rgba(241, 196, 15, 0.1); color: #f1c40f; border: 1px solid rgba(241, 196, 15, 0.2);';
+                    } else if (workoutType.includes('threshold') || workoutType.includes('intervals')) {
+                        workoutBadgeColor = 'background: rgba(230, 126, 34, 0.1); color: #e67e22; border: 1px solid rgba(230, 126, 34, 0.2);';
+                    } else if (workoutType.includes('vo2') || workoutType.includes('anaerobic')) {
+                        workoutBadgeColor = 'background: rgba(155, 89, 182, 0.1); color: #9b59b6; border: 1px solid rgba(155, 89, 182, 0.2);';
+                    }
+                }
+
+                // Render planned workout segment
+                let workoutPlannedHTML = '';
+                if (isPlanned) {
+                    const workoutTitle = d.title || 'Workout';
+                    const workoutDuration = d.duration_mins ? d.duration_mins + 'm' : '';
+                    workoutPlannedHTML = 
+                        '<div style="margin-top: 0.5rem; padding: 0.4rem; border-radius: 6px; ' + workoutBadgeColor + ' font-size: 0.72rem; font-weight: 500;">' +
+                            '<div style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="' + workoutTitle + '">📋 ' + workoutTitle + '</div>' +
+                            (workoutDuration ? '<div style="font-size: 0.65rem; opacity: 0.8; margin-top: 0.15rem;">Target: ' + workoutDuration + '</div>' : '') +
+                        '</div>';
+                } else {
+                    workoutPlannedHTML = '<div style="font-size: 0.65rem; color: var(--text-secondary); font-style: italic; margin-top: 0.5rem; text-align: center;">Rest Day</div>';
+                }
+
+                // Render completed actual rides segment
+                let completedHTML = '';
+                if (dayCompleted.length > 0) {
+                    completedHTML = dayCompleted.map(ride => 
+                        '<div onclick="window.viewRideAnalysis(\'' + ride.id + '\')" style="background: rgba(46, 204, 113, 0.15); border: 1px solid #2ecc71; border-radius: 6px; padding: 0.4rem; font-size: 0.72rem; color: #ffffff; cursor: pointer; text-align: center; margin-top: 0.5rem; transition: transform 0.15s;" onmouseover="this.style.transform=\'scale(1.03)\'" onmouseout="this.style.transform=\'scale(1)\'">' +
+                            '<div style="color: #2ecc71; font-weight: 700;">✔ Completed</div>' +
+                            '<div style="font-size: 0.68rem; opacity: 0.9;">' + ride.distance_km + ' km (' + ride.np + 'W)</div>' +
+                        '</div>'
+                    ).join('');
+                } else if (!isPlanned) {
+                    completedHTML = '<div style="font-style: italic; color: #2ecc71; font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">Rest Day</div>';
+                } else {
+                    completedHTML = '<div style="font-style: italic; color: #f1c40f; font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">Pending</div>';
+                }
+
+                const displayDayLabel = d.day || (dayName.charAt(0).toUpperCase() + dayName.slice(1));
+                const formattedDateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+                gridHTML += '<div class="card" style="padding: 0.75rem; ' + cardBorder + ' display: flex; flex-direction: column; justify-content: space-between; min-height: 180px;">' +
+                    '<div>' +
+                        '<div style="font-size: 0.8rem; font-weight: 700; color: #ffffff; text-align: center;">' + displayDayLabel + '</div>' +
+                        '<div style="font-size: 0.7rem; color: var(--text-secondary); text-align: center; margin-top: 0.1rem;">' + formattedDateStr + '</div>' +
+                        (isToday ? '<div style="font-size: 0.65rem; background: var(--accent); color: #ffffff; border-radius: 4px; padding: 0.1rem 0.25rem; font-weight: 700; text-transform: uppercase; width: max-content; margin: 0.25rem auto 0 auto;">Today</div>' : '') +
+                        workoutPlannedHTML +
+                    '</div>' +
+                    '<div>' + completedHTML + '</div>' +
+                '</div>';
+            });
+
+            grid.innerHTML = gridHTML;
+        };
+        window.renderUnifiedLandingCalendar = renderUnifiedLandingCalendar;
+
+        const navigateLandingWeek = (direction) => {
+            if (direction === 'prev') {
+                landingCalendarWeekIndex--;
+            } else {
+                landingCalendarWeekIndex++;
+            }
+            renderUnifiedLandingCalendar();
+        };
+        window.navigateLandingWeek = navigateLandingWeek;
+
+        const btnLandingPrev = document.getElementById('btn-landing-prev-week');
+        const btnLandingNext = document.getElementById('btn-landing-next-week');
+        if (btnLandingPrev) {
+            btnLandingPrev.addEventListener('click', (e) => {
+                e.stopPropagation();
+                navigateLandingWeek('prev');
+            });
+        }
+        if (btnLandingNext) {
+            btnLandingNext.addEventListener('click', (e) => {
+                e.stopPropagation();
+                navigateLandingWeek('next');
+            });
+        }
+
+        // Settings View Functions
+        const populateSettingsView = () => {
+            // FTP
+            const ftpEl = document.getElementById('settings-ftp-input');
+            if (ftpEl) ftpEl.value = athleteFTP;
+
+            // Gemini Key
+            const apiKeyEl = document.getElementById('settings-api-key-input');
+            if (apiKeyEl) apiKeyEl.value = localStorage.getItem('gemini_api_key') || '';
+
+            // Intervals.icu
+            fetch('/api/intervals/config')
+                .then(r => r.json())
+                .then(data => {
+                    const athleteIdEl = document.getElementById('settings-intervals-athlete-id');
+                    if (athleteIdEl) athleteIdEl.value = data.athlete_id || '0';
+                    
+                    const enabledEl = document.getElementById('settings-intervals-enabled');
+                    if (enabledEl) enabledEl.checked = data.enabled || false;
+                    
+                    const apiKeyEl = document.getElementById('settings-intervals-api-key');
+                    if (apiKeyEl) apiKeyEl.value = '';
+                })
+                .catch(err => console.error("Error loading Intervals config:", err));
+
+            // Default Bike
+            const dashBike = document.getElementById('bike-selector');
+            const settingsBike = document.getElementById('settings-bike-selector');
+            if (dashBike && settingsBike) {
+                settingsBike.innerHTML = dashBike.innerHTML;
+                settingsBike.value = dashBike.value;
+            }
+        };
+        window.populateSettingsView = populateSettingsView;
+
+        const saveFTPFromSettings = () => {
+            const val = parseInt(document.getElementById('settings-ftp-input').value);
+            if (val && !isNaN(val) && val > 0) {
+                updateFTP(val);
+                alert('FTP updated to ' + val + 'W');
+            } else {
+                alert('Please enter a valid FTP number.');
+            }
+        };
+        window.saveFTPFromSettings = saveFTPFromSettings;
+
+        const saveAPIKeyFromSettings = () => {
+            const key = document.getElementById('settings-api-key-input').value.trim();
+            localStorage.setItem('gemini_api_key', key);
+            alert('Gemini API Key updated successfully!');
+        };
+        window.saveAPIKeyFromSettings = saveAPIKeyFromSettings;
+
+        const clearAPIKeyFromSettings = () => {
+            localStorage.removeItem('gemini_api_key');
+            document.getElementById('settings-api-key-input').value = '';
+            alert('Gemini API Key cleared.');
+        };
+        window.clearAPIKeyFromSettings = clearAPIKeyFromSettings;
+
+        const saveBikeFromSettings = (value) => {
+            const dashBike = document.getElementById('bike-selector');
+            if (dashBike) {
+                dashBike.value = value;
+                dashBike.dispatchEvent(new Event('change'));
+            } else {
+                if (value) {
+                    localStorage.setItem('directeur_selected_bike', value);
+                } else {
+                    localStorage.removeItem('directeur_selected_bike');
+                }
+            }
+        };
+        window.saveBikeFromSettings = saveBikeFromSettings;
+
+        const saveIntervalsFromSettings = () => {
+            const athlete_id = document.getElementById('settings-intervals-athlete-id').value.trim();
+            const api_key = document.getElementById('settings-intervals-api-key').value.trim();
+            const enabled = document.getElementById('settings-intervals-enabled').checked;
+
+            fetch('/api/intervals/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ athlete_id, api_key, enabled })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Intervals.icu settings saved successfully!');
+                    updateIntervalsSyncUI();
+                } else {
+                    alert('Error saving settings: ' + data.message);
+                }
+            })
+            .catch(err => alert('Network error: ' + err.message));
+        };
+        window.saveIntervalsFromSettings = saveIntervalsFromSettings;
+
+        const testIntervalsFromSettings = () => {
+            const statusEl = document.getElementById('settings-intervals-test-status');
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(255,255,255,0.05)';
+                statusEl.style.color = '#ffffff';
+                statusEl.innerText = 'Testing connection...';
+            }
+
+            const athlete_id = document.getElementById('settings-intervals-athlete-id').value.trim();
+            const api_key = document.getElementById('settings-intervals-api-key').value.trim();
+
+            fetch('/api/intervals/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ athlete_id, api_key })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (statusEl) {
+                    if (data.status === 'success') {
+                        statusEl.style.background = 'rgba(46, 204, 113, 0.15)';
+                        statusEl.style.color = '#2ecc71';
+                        statusEl.innerText = '✔ Connection Successful! Athlete: ' + (data.name || athlete_id);
+                    } else {
+                        statusEl.style.background = 'rgba(231, 76, 60, 0.15)';
+                        statusEl.style.color = '#ff6b6b';
+                        statusEl.innerText = '❌ Connection Failed: ' + data.message;
+                    }
+                }
+            })
+            .catch(err => {
+                if (statusEl) {
+                    statusEl.style.background = 'rgba(231, 76, 60, 0.15)';
+                    statusEl.style.color = '#ff6b6b';
+                    statusEl.innerText = '❌ Error: ' + err.message;
+                }
+            });
+        };
+        window.testIntervalsFromSettings = testIntervalsFromSettings;
+
+        // Data View Functions
+        const populateDataView = () => {
+            const textarea = document.getElementById('data-json-preview');
+            if (!textarea) return;
+
+            if (window.rideData) {
+                textarea.value = JSON.stringify(window.rideData, null, 2);
+            } else {
+                textarea.value = 'No active ride telemetry loaded. Select a ride on the Rides page to view JSON.';
+            }
+        };
+        window.populateDataView = populateDataView;
+
+        const bindDataViewListeners = () => {
+            const clearBtn = document.getElementById('data-clear-all-btn');
+            if (clearBtn) {
+                clearBtn.onclick = () => {
+                    if (confirm("⚠️ WARNING: This will permanently wipe all local storage data, including your Gemini API key, ride history, default bike settings, and training programs. This cannot be undone!\n\nAre you sure you want to clear all data?")) {
+                        localStorage.clear();
+                        alert("Local storage wiped successfully. Reloading...");
+                        window.location.reload();
+                    }
+                };
+            }
+
+            const copyBtn = document.getElementById('data-copy-json-btn');
+            if (copyBtn) {
+                copyBtn.onclick = () => {
+                    const text = document.getElementById('data-json-preview').value;
+                    navigator.clipboard.writeText(text)
+                        .then(() => alert('Ride JSON copied to clipboard!'))
+                        .catch(err => alert('Failed to copy: ' + err));
+                };
+            }
+
+            const downloadBtn = document.getElementById('data-download-json-btn');
+            if (downloadBtn) {
+                downloadBtn.onclick = () => {
+                    const dlBtn = document.getElementById('btn-download-json');
+                    if (dlBtn) dlBtn.click();
+                };
+            }
+
+            const schemaBtn = document.getElementById('data-view-schema-btn');
+            if (schemaBtn) {
+                schemaBtn.onclick = () => {
+                    const schBtn = document.getElementById('btn-view-schema');
+                    if (schBtn) schBtn.click();
+                };
+            }
+        };
+        window.bindDataViewListeners = bindDataViewListeners;
 
         const getWeekOptionLabel = (dateStr) => {
             const d = new Date(dateStr);
@@ -6321,29 +7179,177 @@ func getDashboardTemplate() string {
             const navEl = document.getElementById('calendar-week-nav');
             if (!selectEl || !navEl) return;
             
-            if (!historyList || historyList.length === 0) {
-                navEl.style.display = 'none';
-                return;
-            }
-            
             navEl.style.display = 'flex';
             selectEl.innerHTML = '';
             
-            historyList.forEach(p => {
+            // Add history list items
+            if (historyList && historyList.length > 0) {
+                historyList.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.start_date;
+                    opt.textContent = getWeekOptionLabel(p.start_date);
+                    opt.style.background = 'var(--bg-secondary)';
+                    opt.style.color = '#ffffff';
+                    if (activeDateStr && p.start_date === activeDateStr) {
+                        opt.selected = true;
+                    }
+                    selectEl.appendChild(opt);
+                });
+            }
+            
+            // If activeDateStr is not in historyList (or history is empty), add a temporary option
+            const exists = historyList ? historyList.some(p => p.start_date === activeDateStr) : false;
+            if (activeDateStr && !exists) {
                 const opt = document.createElement('option');
-                opt.value = p.start_date;
-                opt.textContent = getWeekOptionLabel(p.start_date);
+                opt.value = activeDateStr;
+                opt.textContent = getWeekOptionLabel(activeDateStr) + " (No Plan)";
                 opt.style.background = 'var(--bg-secondary)';
-                opt.style.color = '#ffffff';
-                if (activeDateStr && p.start_date === activeDateStr) {
-                    opt.selected = true;
-                }
+                opt.style.color = 'var(--text-secondary)';
+                opt.selected = true;
                 selectEl.appendChild(opt);
-            });
+            } else if (!activeDateStr && (!historyList || historyList.length === 0)) {
+                // Default fallback if everything is empty
+                const opt = document.createElement('option');
+                const todayMonday = getMonday(new Date());
+                opt.value = todayMonday.toISOString();
+                opt.textContent = getWeekOptionLabel(todayMonday) + " (No Plan)";
+                opt.style.background = 'var(--bg-secondary)';
+                opt.style.color = 'var(--text-secondary)';
+                opt.selected = true;
+                selectEl.appendChild(opt);
+            }
         };
 
+        const renderPlannerHistory = () => {
+            const listEl = document.getElementById('calendar-history-list');
+            if (!listEl) return;
+            
+            let historyList = [];
+            try {
+                const historyData = localStorage.getItem('fit_training_programs_history');
+                if (historyData) {
+                    historyList = JSON.parse(historyData);
+                }
+            } catch (e) {
+                console.error("Error parsing training history:", e);
+            }
+            
+            if (historyList.length === 0) {
+                listEl.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 1.5rem 0; font-style: italic;">No previous plans saved.</div>';
+                return;
+            }
+            
+            listEl.innerHTML = '';
+            
+            // Sort chronologically descending so latest is on top
+            const sortedHistory = [...historyList].sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+            
+            sortedHistory.forEach(p => {
+                const isActive = window.currentCalendarProgram && window.currentCalendarProgram.start_date === p.start_date;
+                
+                const item = document.createElement('div');
+                item.className = 'history-list-item';
+                item.style.display = 'flex';
+                item.style.justifyContent = 'space-between';
+                item.style.alignItems = 'center';
+                item.style.padding = '0.75rem';
+                item.style.borderRadius = '8px';
+                item.style.background = isActive ? 'rgba(255, 107, 107, 0.12)' : 'var(--bg-tertiary)';
+                item.style.border = isActive ? '1px solid var(--accent)' : '1px solid var(--border-color)';
+                item.style.cursor = 'pointer';
+                item.style.transition = 'all 0.2s ease';
+                item.style.marginBottom = '0.5rem';
+                
+                // Truncate summary for subtext
+                const summary = p.weekly_summary ? (p.weekly_summary.length > 70 ? p.weekly_summary.substring(0, 67) + '...' : p.weekly_summary) : 'No focus summary.';
+                
+                const textSection = document.createElement('div');
+                textSection.style.flex = '1';
+                textSection.style.minWidth = '0';
+                textSection.style.paddingRight = '0.5rem';
+                textSection.innerHTML = 
+                    '<div style="font-weight: 600; font-size: 0.85rem; color: ' + (isActive ? 'var(--accent)' : '#ffffff') + '; margin-bottom: 0.2rem;">' +
+                        getWeekOptionLabel(p.start_date) +
+                    '</div>' +
+                    '<div style="font-size: 0.75rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' +
+                        summary +
+                    '</div>';
+                
+                textSection.addEventListener('click', (e) => {
+                    loadWeekFromSelect(p.start_date);
+                });
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerHTML = '🗑️';
+                deleteBtn.style.background = 'transparent';
+                deleteBtn.style.border = 'none';
+                deleteBtn.style.cursor = 'pointer';
+                deleteBtn.style.fontSize = '0.85rem';
+                deleteBtn.style.padding = '0.2rem';
+                deleteBtn.style.opacity = '0.6';
+                deleteBtn.style.transition = 'opacity 0.2s';
+                deleteBtn.title = 'Delete Week';
+                deleteBtn.addEventListener('mouseover', () => deleteBtn.style.opacity = '1');
+                deleteBtn.addEventListener('mouseout', () => deleteBtn.style.opacity = '0.6');
+                
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm('Are you sure you want to delete the plan for ' + getWeekOptionLabel(p.start_date) + '?')) {
+                        deleteProgramFromHistory(p.start_date);
+                    }
+                });
+                
+                item.appendChild(textSection);
+                item.appendChild(deleteBtn);
+                
+                item.addEventListener('mouseenter', () => {
+                    if (!isActive) {
+                        item.style.borderColor = 'var(--text-secondary)';
+                        item.style.background = 'rgba(255, 255, 255, 0.05)';
+                    }
+                });
+                item.addEventListener('mouseleave', () => {
+                    if (!isActive) {
+                        item.style.borderColor = 'var(--border-color)';
+                        item.style.background = 'var(--bg-tertiary)';
+                    }
+                });
+                
+                listEl.appendChild(item);
+            });
+        };
+        window.renderPlannerHistory = renderPlannerHistory;
+
+        const deleteProgramFromHistory = (startDateStr) => {
+            try {
+                const historyData = localStorage.getItem('fit_training_programs_history');
+                if (!historyData) return;
+                let history = JSON.parse(historyData);
+                history = history.filter(p => p.start_date !== startDateStr);
+                localStorage.setItem('fit_training_programs_history', JSON.stringify(history));
+                
+                if (window.currentCalendarProgram && window.currentCalendarProgram.start_date === startDateStr) {
+                    if (history.length > 0) {
+                        const latest = history[history.length - 1];
+                        localStorage.setItem('fit_training_program', JSON.stringify(latest));
+                        window.currentCalendarProgram = latest;
+                        renderTrainingCalendar(latest);
+                    } else {
+                        localStorage.removeItem('fit_training_program');
+                        window.currentCalendarProgram = null;
+                        renderTrainingCalendar(null);
+                    }
+                } else {
+                    renderPlannerHistory();
+                }
+            } catch (e) {
+                console.error("Failed to delete program:", e);
+            }
+        };
+        window.deleteProgramFromHistory = deleteProgramFromHistory;
+
         const saveProgramToHistory = (program) => {
-            if (!program || !program.start_date) return;
+            if (!program || !program.start_date) return program;
             try {
                 const historyData = localStorage.getItem('fit_training_programs_history');
                 let history = [];
@@ -6358,6 +7364,33 @@ func getDashboardTemplate() string {
                 });
                 
                 if (existingIdx !== -1) {
+                    const existingPlan = history[existingIdx];
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    const mergedDays = [];
+                    const planStart = new Date(program.start_date);
+                    
+                    for (let idx = 0; idx < 7; idx++) {
+                        const dayDate = new Date(planStart);
+                        dayDate.setDate(planStart.getDate() + idx);
+                        dayDate.setHours(0, 0, 0, 0);
+                        
+                        const isFuture = dayDate.getTime() > today.getTime();
+                        
+                        const existingDay = (existingPlan.days && existingPlan.days[idx]) ? existingPlan.days[idx] : null;
+                        const newDay = (program.days && program.days[idx]) ? program.days[idx] : null;
+                        
+                        if (!isFuture && existingDay) {
+                            mergedDays.push(existingDay);
+                        } else if (newDay) {
+                            mergedDays.push(newDay);
+                        } else if (existingDay) {
+                            mergedDays.push(existingDay);
+                        }
+                    }
+                    
+                    program.days = mergedDays;
                     history[existingIdx] = program;
                 } else {
                     history.push(program);
@@ -6365,20 +7398,33 @@ func getDashboardTemplate() string {
                 
                 history.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
                 localStorage.setItem('fit_training_programs_history', JSON.stringify(history));
+                renderPlannerHistory();
             } catch (e) {
                 console.error("Failed to save training program to history:", e);
             }
+            return program;
         };
 
         const loadWeekFromSelect = (startDateStr) => {
             try {
+                // Sync plannerCalendarWeekIndex
+                const planStart = new Date(startDateStr);
+                const todayMonday = getMonday(new Date());
+                const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+                window.plannerCalendarWeekIndex = diffWeeks;
+
                 const historyData = localStorage.getItem('fit_training_programs_history');
-                if (!historyData) return;
-                const history = JSON.parse(historyData);
+                let history = [];
+                if (historyData) {
+                    history = JSON.parse(historyData);
+                }
                 const match = history.find(p => p.start_date === startDateStr);
                 if (match) {
                     window.currentCalendarProgram = match;
                     renderTrainingCalendar(match);
+                } else {
+                    window.currentCalendarProgram = null;
+                    renderTrainingCalendar(null);
                 }
             } catch(e) {
                 console.error("Failed to load selected week:", e);
@@ -6387,23 +7433,58 @@ func getDashboardTemplate() string {
         window.loadWeekFromSelect = loadWeekFromSelect;
 
         const navigateWeek = (dir) => {
-            const selectEl = document.getElementById('calendar-week-select');
-            if (!selectEl || selectEl.options.length <= 1) return;
-            let idx = selectEl.selectedIndex;
             if (dir === 'prev') {
-                idx--;
+                window.plannerCalendarWeekIndex--;
             } else if (dir === 'next') {
-                idx++;
+                window.plannerCalendarWeekIndex++;
             }
-            if (idx >= 0 && idx < selectEl.options.length) {
-                selectEl.selectedIndex = idx;
-                loadWeekFromSelect(selectEl.options[idx].value);
+            
+            // Calculate displayStartDate for this week offset
+            const today = new Date();
+            let displayStartDate = new Date(today);
+            if (typeof window.plannerCalendarWeekIndex !== 'undefined') {
+                displayStartDate.setDate(today.getDate() + (window.plannerCalendarWeekIndex * 7));
+            }
+            displayStartDate = getMonday(displayStartDate);
+            
+            // Search history for a plan covering this week
+            let historyList = [];
+            try {
+                const historyData = localStorage.getItem('fit_training_programs_history');
+                if (historyData) historyList = JSON.parse(historyData);
+            } catch (e) {}
+            
+            const weekStartVal = new Date(displayStartDate);
+            weekStartVal.setHours(0,0,0,0);
+            const weekEndVal = new Date(weekStartVal);
+            weekEndVal.setDate(weekStartVal.getDate() + 6);
+            
+            let data = null;
+            for (let i = historyList.length - 1; i >= 0; i--) {
+                const plan = historyList[i];
+                if (plan && plan.start_date) {
+                    const planStart = new Date(plan.start_date);
+                    planStart.setHours(0,0,0,0);
+                    const planEnd = new Date(planStart);
+                    planEnd.setDate(planStart.getDate() + 6);
+                    if (planStart <= weekEndVal && planEnd >= weekStartVal) {
+                        data = plan;
+                        break;
+                    }
+                }
+            }
+            
+            if (data) {
+                window.currentCalendarProgram = data;
+                renderTrainingCalendar(data);
+            } else {
+                window.currentCalendarProgram = null;
+                renderTrainingCalendar(null);
             }
         };
         window.navigateWeek = navigateWeek;
 
         const renderTrainingCalendar = (data) => {
-            window.currentCalendarProgram = data;
             let needsHistorySave = false;
             const grid = document.getElementById('calendar-grid');
             const summaryBox = document.getElementById('calendar-summary-box');
@@ -6412,17 +7493,27 @@ func getDashboardTemplate() string {
             const overviewGrid = document.getElementById('calendar-overview-grid');
             const emptyState = document.getElementById('calendar-empty-state');
             
+            // Calculate displayed week starting Monday
+            const today = new Date();
+            let displayStartDate = new Date(today);
+            if (typeof window.plannerCalendarWeekIndex !== 'undefined') {
+                displayStartDate.setDate(today.getDate() + (window.plannerCalendarWeekIndex * 7));
+            }
+            displayStartDate = getMonday(displayStartDate);
+
+            // If data is null/undefined, build a placeholder plan object for the navigated week
             if (!data || !data.days) {
-                grid.style.display = 'none';
-                summaryBox.style.display = 'none';
-                overviewBox.style.display = 'none';
-                emptyState.style.display = 'flex';
-                const navEl = document.getElementById('calendar-week-nav');
-                if (navEl) navEl.style.display = 'none';
-                return;
+                data = {
+                    start_date: displayStartDate.toISOString(),
+                    weekly_summary: "No planned workouts for this week. Use the Planner Configuration on the left to generate a training plan!",
+                    days: []
+                };
             }
 
+            window.currentCalendarProgram = data;
+
             emptyState.style.display = 'none';
+            grid.style.display = 'flex';
             summaryText.innerText = data.weekly_summary || 'Weekly training plan focus.';
             summaryBox.style.display = 'block';
             overviewBox.style.display = 'block';
@@ -6481,7 +7572,46 @@ func getDashboardTemplate() string {
                 }
             }
             
-            data.days.forEach((d, idx) => {
+            const formatLocalDateKey = (d) => {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return year + '-' + month + '-' + day;
+            };
+
+            const mondayDate = getMonday(data.start_date);
+            const planStartDate = new Date(data.start_date);
+            planStartDate.setHours(0,0,0,0);
+
+            const workoutMapByDate = {};
+            if (data.days && Array.isArray(data.days)) {
+                data.days.forEach((day, idx) => {
+                    const workoutDate = new Date(planStartDate);
+                    workoutDate.setDate(planStartDate.getDate() + idx);
+                    const dateKey = formatLocalDateKey(workoutDate);
+                    workoutMapByDate[dateKey] = day;
+                });
+            }
+
+            const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+            weekdays.forEach((dayName, idx) => {
+                const dayDate = new Date(mondayDate);
+                dayDate.setDate(mondayDate.getDate() + idx);
+                const dateKey = formatLocalDateKey(dayDate);
+
+                const d = workoutMapByDate[dateKey] || { 
+                    day: dayName.charAt(0).toUpperCase() + dayName.slice(1), 
+                    workout_planned: false, 
+                    workout_type: 'REST', 
+                    title: 'Rest Day', 
+                    description: 'No planned workout. Time for recovery!', 
+                    duration_mins: 0,
+                    target_tss: 0,
+                    target_if: 0,
+                    structure: 'No structure'
+                };
+
                 let badgeColor = 'rgba(255,255,255,0.08)';
                 let textColor = '#ffffff';
                 let borderColor = 'rgba(255,255,255,0.15)';
@@ -6511,41 +7641,22 @@ func getDashboardTemplate() string {
 
                 let dateDisplay = '';
                 let shortDateStr = '';
-                const weekdayIndices = {
-                    'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
-                    'thursday': 4, 'friday': 5, 'saturday': 6
-                };
-                const startDayOfWeek = startDate ? startDate.getDay() : 0;
-                const dayName = (d.day || '').toLowerCase().trim();
-                let offset = idx;
-                if (startDate && weekdayIndices[dayName] !== undefined) {
-                    const targetDayOfWeek = weekdayIndices[dayName];
-                    offset = (targetDayOfWeek - startDayOfWeek + 7) % 7;
-                }
-
-                let dayDate = null;
-                if (startDate) {
-                    dayDate = new Date(startDate);
-                    dayDate.setDate(startDate.getDate() + offset);
-                    shortDateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    dateDisplay = '<span style="font-size: 0.85rem; color: var(--text-secondary); margin-top: -0.2rem; margin-bottom: 0.2rem; font-weight: 500;">' + shortDateStr + '</span>';
-                }
+                shortDateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                dateDisplay = '<span style="font-size: 0.85rem; color: var(--text-secondary); margin-top: -0.2rem; margin-bottom: 0.2rem; font-weight: 500;">' + shortDateStr + '</span>';
 
                 // Check if there are analyzed rides matching this dayDate (local time comparison)
                 let completedRides = [];
-                if (dayDate) {
-                    const dYear = dayDate.getFullYear();
-                    const dMonth = dayDate.getMonth();
-                    const dDay = dayDate.getDate();
-                    
-                    completedRides = history.filter(ride => {
-                        if (!ride.id) return false;
-                        const rDate = new Date(ride.id);
-                        return rDate.getFullYear() === dYear &&
-                               rDate.getMonth() === dMonth &&
-                               rDate.getDate() === dDay;
-                    });
-                }
+                const dYear = dayDate.getFullYear();
+                const dMonth = dayDate.getMonth();
+                const dDay = dayDate.getDate();
+                
+                completedRides = history.filter(ride => {
+                    if (!ride.id) return false;
+                    const rDate = new Date(ride.id);
+                    return rDate.getFullYear() === dYear &&
+                           rDate.getMonth() === dMonth &&
+                           rDate.getDate() === dDay;
+                });
 
                 completedRides.forEach(completedRide => {
                     if (completedRide && (!completedRide.source || !completedRide.param)) {
@@ -6746,6 +7857,7 @@ func getDashboardTemplate() string {
             }
 
             grid.style.display = 'flex';
+            renderPlannerHistory();
         };
         window.renderTrainingCalendar = renderTrainingCalendar;
 
@@ -6921,11 +8033,14 @@ func getDashboardTemplate() string {
                     const parsedProgram = JSON.parse(jsonText);
                     
                     // Attach the start_date of the training week to the program object
-                    parsedProgram.start_date = today.toISOString();
+                    parsedProgram.start_date = weekStart.toISOString();
                     
-                    saveProgramToHistory(parsedProgram);
-                    localStorage.setItem('fit_training_program', JSON.stringify(parsedProgram));
-                    renderTrainingCalendar(parsedProgram);
+                    // saveProgramToHistory merges past days from any existing plan for this week,
+                    // then returns the merged program. We use the merged result everywhere so
+                    // completed/past days are never silently overwritten.
+                    const mergedProgram = saveProgramToHistory(parsedProgram);
+                    localStorage.setItem('fit_training_program', JSON.stringify(mergedProgram));
+                    renderTrainingCalendar(mergedProgram);
                 })
                 .catch(err => {
                     console.error("Calendar generation error:", err);
@@ -7886,46 +9001,53 @@ func getDashboardTemplate() string {
         const modalDownloadBtn = document.getElementById('modal-download-btn');
         const jsonTextarea = document.getElementById('json-textarea');
 
-        // Populate textarea with a fast preview of the JSON on load to prevent rendering crash/lag
-        const jsonLines = fullJSONString.split('\n');
-        const jsonPreview = jsonLines.slice(0, 100).join('\n') + 
-            '\n\n... [Telemetry records truncated for performance. Download the full JSON file or copy it below] ...';
-        jsonTextarea.value = jsonPreview;
+        if (jsonTextarea) {
+            const jsonLines = fullJSONString.split('\n');
+            const jsonPreview = jsonLines.slice(0, 100).join('\n') + 
+                '\n\n... [Telemetry records truncated for performance. Download the full JSON file or copy it below] ...';
+            jsonTextarea.value = jsonPreview;
+        }
 
-        btnCopyJson.addEventListener('click', () => {
-            jsonModal.style.display = 'flex';
-        });
-
-        modalCloseBtn.addEventListener('click', () => {
-            jsonModal.style.display = 'none';
-        });
-
-        jsonModal.addEventListener('click', (e) => {
-            if (e.target === jsonModal) {
-                jsonModal.style.display = 'none';
-            }
-        });
-
-        // Copy JSON directly from memory to clipboard (avoiding textarea selection crash)
-        modalCopyBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(fullJSONString).then(() => {
-                modalCopyBtn.innerText = '✔ Copied!';
-                modalCopyBtn.style.backgroundColor = 'rgba(46, 204, 113, 0.2)';
-                modalCopyBtn.style.borderColor = '#2ecc71';
-                modalCopyBtn.style.color = '#2ecc71';
-                setTimeout(() => {
-                    modalCopyBtn.innerText = '📋 Copy Entire JSON';
-                    modalCopyBtn.style.backgroundColor = '';
-                    modalCopyBtn.style.borderColor = '';
-                    modalCopyBtn.style.color = '';
-                }, 2000);
-            }).catch(err => {
-                console.error('Could not copy text: ', err);
-                alert('Copying failed, please download the file directly.');
+        if (btnCopyJson) {
+            btnCopyJson.addEventListener('click', () => {
+                if (jsonModal) jsonModal.style.display = 'flex';
             });
-        });
+        }
 
-        // Download JSON using Blob (avoiding copy-paste buffer/DOM crash)
+        if (modalCloseBtn) {
+            modalCloseBtn.addEventListener('click', () => {
+                if (jsonModal) jsonModal.style.display = 'none';
+            });
+        }
+
+        if (jsonModal) {
+            jsonModal.addEventListener('click', (e) => {
+                if (e.target === jsonModal) {
+                    jsonModal.style.display = 'none';
+                }
+            });
+        }
+
+        if (modalCopyBtn) {
+            modalCopyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(fullJSONString).then(() => {
+                    modalCopyBtn.innerText = '✔ Copied!';
+                    modalCopyBtn.style.backgroundColor = 'rgba(46, 204, 113, 0.2)';
+                    modalCopyBtn.style.borderColor = '#2ecc71';
+                    modalCopyBtn.style.color = '#2ecc71';
+                    setTimeout(() => {
+                        modalCopyBtn.innerText = '📋 Copy Entire JSON';
+                        modalCopyBtn.style.backgroundColor = '';
+                        modalCopyBtn.style.borderColor = '';
+                        modalCopyBtn.style.color = '';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Could not copy text: ', err);
+                    alert('Copying failed, please download the file directly.');
+                });
+            });
+        }
+
         const downloadJSON = () => {
             const blob = new Blob([fullJSONString], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -7938,8 +9060,13 @@ func getDashboardTemplate() string {
             URL.revokeObjectURL(url);
         };
 
-        modalDownloadBtn.addEventListener('click', downloadJSON);
-        document.getElementById('btn-download-json').addEventListener('click', downloadJSON);
+        if (modalDownloadBtn) {
+            modalDownloadBtn.addEventListener('click', downloadJSON);
+        }
+        const btnDlJson = document.getElementById('btn-download-json');
+        if (btnDlJson) {
+            btnDlJson.addEventListener('click', downloadJSON);
+        }
 
         // Modal Logic for Schema Viewer
         const schemaModal = document.getElementById('schema-modal');
@@ -7949,84 +9076,97 @@ func getDashboardTemplate() string {
         const schemaDownloadBtn = document.getElementById('schema-download-btn');
         const schemaTextarea = document.getElementById('schema-textarea');
 
-        // Populate schema textarea (schema is small, no need for truncation)
-        schemaTextarea.value = fullSchemaString;
+        if (schemaTextarea) {
+            schemaTextarea.value = fullSchemaString;
+        }
 
-        btnViewSchema.addEventListener('click', () => {
-            schemaModal.style.display = 'flex';
-        });
-
-        schemaCloseBtn.addEventListener('click', () => {
-            schemaModal.style.display = 'none';
-        });
-
-        schemaModal.addEventListener('click', (e) => {
-            if (e.target === schemaModal) {
-                schemaModal.style.display = 'none';
-            }
-        });
-
-        // Copy Schema directly from memory
-        schemaCopyBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(fullSchemaString).then(() => {
-                schemaCopyBtn.innerText = '✔ Copied!';
-                schemaCopyBtn.style.backgroundColor = 'rgba(46, 204, 113, 0.2)';
-                schemaCopyBtn.style.borderColor = '#2ecc71';
-                schemaCopyBtn.style.color = '#2ecc71';
-                setTimeout(() => {
-                    schemaCopyBtn.innerText = '📋 Copy Schema';
-                    schemaCopyBtn.style.backgroundColor = '';
-                    schemaCopyBtn.style.borderColor = '';
-                    schemaCopyBtn.style.color = '';
-                }, 2000);
-            }).catch(err => {
-                console.error('Could not copy schema: ', err);
-                alert('Copying failed.');
+        if (btnViewSchema) {
+            btnViewSchema.addEventListener('click', () => {
+                if (schemaModal) schemaModal.style.display = 'flex';
             });
-        });
+        }
 
-        // Download Schema using Blob
-        schemaDownloadBtn.addEventListener('click', () => {
-            const blob = new Blob([fullSchemaString], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'schema.json';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        });
+        if (schemaCloseBtn) {
+            schemaCloseBtn.addEventListener('click', () => {
+                if (schemaModal) schemaModal.style.display = 'none';
+            });
+        }
+
+        if (schemaModal) {
+            schemaModal.addEventListener('click', (e) => {
+                if (e.target === schemaModal) {
+                    schemaModal.style.display = 'none';
+                }
+            });
+        }
+
+        if (schemaCopyBtn) {
+            schemaCopyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(fullSchemaString).then(() => {
+                    schemaCopyBtn.innerText = '✔ Copied!';
+                    schemaCopyBtn.style.backgroundColor = 'rgba(46, 204, 113, 0.2)';
+                    schemaCopyBtn.style.borderColor = '#2ecc71';
+                    schemaCopyBtn.style.color = '#2ecc71';
+                    setTimeout(() => {
+                        schemaCopyBtn.innerText = '📋 Copy Schema';
+                        schemaCopyBtn.style.backgroundColor = '';
+                        schemaCopyBtn.style.borderColor = '';
+                        schemaCopyBtn.style.color = '';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Could not copy schema: ', err);
+                    alert('Copying failed.');
+                });
+            });
+        }
+
+        if (schemaDownloadBtn) {
+            schemaDownloadBtn.addEventListener('click', () => {
+                const blob = new Blob([fullSchemaString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'schema.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+        }
 
         // Dropdown Toggle Logic
         const dataDropdown = document.getElementById('data-dropdown');
         const btnDataDropdown = document.getElementById('btn-data-dropdown');
         const dropdownArrow = document.getElementById('dropdown-arrow');
 
-        btnDataDropdown.addEventListener('click', (e) => {
-            e.stopPropagation();
-            dataDropdown.classList.toggle('active');
-            if (dataDropdown.classList.contains('active')) {
-                dropdownArrow.style.transform = 'rotate(180deg)';
-            } else {
-                dropdownArrow.style.transform = 'rotate(0deg)';
-            }
-        });
-
-        // Close dropdown when clicking an option
-        const dropdownItems = dataDropdown.querySelectorAll('.dropdown-item');
-        dropdownItems.forEach(item => {
-            item.addEventListener('click', () => {
-                dataDropdown.classList.remove('active');
-                dropdownArrow.style.transform = 'rotate(0deg)';
+        if (btnDataDropdown && dataDropdown) {
+            btnDataDropdown.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dataDropdown.classList.toggle('active');
+                if (dropdownArrow) {
+                    if (dataDropdown.classList.contains('active')) {
+                        dropdownArrow.style.transform = 'rotate(180deg)';
+                    } else {
+                        dropdownArrow.style.transform = 'rotate(0deg)';
+                    }
+                }
             });
-        });
+        }
 
-        // Close dropdown when clicking outside
+        if (dataDropdown) {
+            const dropdownItems = dataDropdown.querySelectorAll('.dropdown-item');
+            dropdownItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    dataDropdown.classList.remove('active');
+                    if (dropdownArrow) dropdownArrow.style.transform = 'rotate(0deg)';
+                });
+            });
+        }
+
         window.addEventListener('click', (e) => {
-            if (!dataDropdown.contains(e.target)) {
+            if (dataDropdown && !dataDropdown.contains(e.target)) {
                 dataDropdown.classList.remove('active');
-                dropdownArrow.style.transform = 'rotate(0deg)';
+                if (dropdownArrow) dropdownArrow.style.transform = 'rotate(0deg)';
             }
         });
 
@@ -8041,6 +9181,8 @@ func getDashboardTemplate() string {
         const savedDataExportBtn = document.getElementById('saved-data-export-btn');
         const savedDataImportBtn = document.getElementById('saved-data-import-btn');
         const savedDataImportFile = document.getElementById('saved-data-import-file');
+        const btnExportBackup = document.getElementById('btn-export-backup');
+        const btnImportBackup = document.getElementById('btn-import-backup');
 
         // ==========================================
         // Gemini AI Coach Integration
@@ -9033,7 +10175,8 @@ func getDashboardTemplate() string {
                             power_curve: rideData.summary.power_curve,
                             source: currentRideSource || '',
                             param: currentRideParam || '',
-                            param2: currentRideParam2 || ''
+                            param2: currentRideParam2 || '',
+                            bike: document.getElementById('bike-selector') ? document.getElementById('bike-selector').value : ''
                         };
                         
                         if (existingIdx !== -1) {
@@ -9947,10 +11090,12 @@ func getDashboardTemplate() string {
         // ==========================================
         // Saved Data Manager Logic
         // ==========================================
-        btnShowSavedData.addEventListener('click', () => {
-            savedDataModal.style.display = 'flex';
-            populateSavedDataModal();
-        });
+        if (btnShowSavedData) {
+            btnShowSavedData.addEventListener('click', () => {
+                if (savedDataModal) savedDataModal.style.display = 'flex';
+                populateSavedDataModal();
+            });
+        }
 
         savedDataCloseBtn.addEventListener('click', () => {
             savedDataModal.style.display = 'none';
@@ -10174,14 +11319,7 @@ func getDashboardTemplate() string {
         savedDataClearAllBtn.addEventListener('click', () => {
             if (confirm('⚠️ WARNING: This will permanently delete ALL analyzed rides history, chat logs, training plan details, default bike settings, and API keys from this browser.\n\nAre you sure you want to delete everything?')) {
                 if (confirm('CONFIRM IRREVERSIBLE OPERATION:\nAre you absolutely sure? This cannot be undone.')) {
-                    const keysToRemove = [];
-                    for (let i = 0; i < localStorage.length; i++) {
-                        const k = localStorage.key(i);
-                        if (k && (k.startsWith('fit_') || k.startsWith('directeur_') || k === 'gemini_api_key')) {
-                            keysToRemove.push(k);
-                        }
-                    }
-                    keysToRemove.forEach(k => localStorage.removeItem(k));
+                    localStorage.clear();
                     
                     const coachKeyPanel = document.getElementById('coach-key-panel');
                     const coachAnalysisPanel = document.getElementById('coach-analysis-panel');
@@ -10206,6 +11344,7 @@ func getDashboardTemplate() string {
                     }
 
                     renderHistory();
+                    renderPlannerHistory();
                     checkCachedReport(false);
                     savedDataModal.style.display = 'none';
                     alert('All browser local storage data wiped successfully.');
@@ -10213,12 +11352,12 @@ func getDashboardTemplate() string {
             }
         });
 
-        // Backup Export
+        // Backup Export (Exports everything in local storage)
         savedDataExportBtn.addEventListener('click', () => {
             const backup = {};
             for (let i = 0; i < localStorage.length; i++) {
                 const k = localStorage.key(i);
-                if (k && (k.startsWith('fit_') || k.startsWith('directeur_') || k === 'gemini_api_key')) {
+                if (k) {
                     backup[k] = localStorage.getItem(k);
                 }
             }
@@ -10236,7 +11375,7 @@ func getDashboardTemplate() string {
             URL.revokeObjectURL(url);
         });
 
-        // Backup Import
+        // Backup Import (Imports everything in local storage)
         savedDataImportBtn.addEventListener('click', () => {
             savedDataImportFile.click();
         });
@@ -10256,14 +11395,12 @@ func getDashboardTemplate() string {
 
                     let count = 0;
                     Object.keys(importedData).forEach(k => {
-                        if (k.startsWith('fit_') || k.startsWith('directeur_') || k === 'gemini_api_key') {
-                            localStorage.setItem(k, importedData[k]);
-                            count++;
-                        }
+                        localStorage.setItem(k, importedData[k]);
+                        count++;
                     });
 
                     if (count === 0) {
-                        alert('No valid directeurAI browser cache data found in the backup file.');
+                        alert('No data items found in the backup file.');
                         return;
                     }
 
@@ -10309,9 +11446,18 @@ func getDashboardTemplate() string {
                     }
 
                     renderHistory();
+                    renderPlannerHistory();
                     checkCachedReport(true);
                     populateSavedDataModal();
                     
+                    // Reload active view to display imported data
+                    const activeView = localStorage.getItem('directeur_active_view');
+                    if (activeView === 'calendar' && typeof showCalendarView === 'function') {
+                        showCalendarView();
+                    } else if (typeof showDashboardView === 'function') {
+                        showDashboardView();
+                    }
+
                     alert('Successfully imported ' + count + ' data items from backup file.');
                 } catch(err) {
                     alert('Failed to parse backup file: ' + err.message);
@@ -10320,6 +11466,51 @@ func getDashboardTemplate() string {
             };
             reader.readAsText(file);
         });
+
+        // Dropdown Menu Backup Export
+        if (btnExportBackup) {
+            btnExportBackup.addEventListener('click', () => {
+                if (savedDataExportBtn) savedDataExportBtn.click();
+            });
+        }
+
+        // Dropdown Menu Backup Import
+        if (btnImportBackup) {
+            btnImportBackup.addEventListener('click', () => {
+                if (savedDataImportBtn) savedDataImportBtn.click();
+            });
+        }
+
+        // Global/Window-level functions called by onclick events in HTML templates
+        window.exportAllLocalStorage = () => {
+            if (savedDataExportBtn) {
+                savedDataExportBtn.click();
+            } else {
+                const backup = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k) backup[k] = localStorage.getItem(k);
+                }
+                const jsonString = JSON.stringify(backup, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'directeurAI_backup_' + new Date().toISOString().split('T')[0] + '.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        };
+
+        window.triggerImportBackup = () => {
+            if (savedDataImportBtn) {
+                savedDataImportBtn.click();
+            } else if (savedDataImportFile) {
+                savedDataImportFile.click();
+            }
+        };
 
     </script>
 </body>
