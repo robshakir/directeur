@@ -3417,11 +3417,7 @@ func getDashboardTemplate() string {
                             </select>
                         </div>
 
-                         <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; margin-bottom: 0.25rem;">
-                            <button onclick="showIntervalsConfigModal()" class="btn-action" style="font-size: 0.85rem; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: #ffffff; border-radius: 8px; outline: none; width: 100%; text-align: center; cursor: pointer; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.4rem;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-color)'">
-                                🌐 Intervals.icu Connection
-                            </button>
-                        </div>
+
 
                         <button id="btn-generate-calendar" onclick="generateTrainingCalendar()" class="landing-btn landing-btn-primary" style="width: 100%; justify-content: center; font-size: 0.9rem; padding: 0.75rem;">
                             🗓️ Generate Programme
