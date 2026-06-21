@@ -7216,7 +7216,7 @@ func getDashboardTemplate() string {
             if (activeDateStr && !exists) {
                 const opt = document.createElement('option');
                 opt.value = activeDateStr;
-                opt.textContent = getWeekOptionLabel(activeDateStr) + " (No Plan)";
+                opt.textContent = getWeekOptionLabel(activeDateStr);
                 opt.style.background = 'var(--bg-secondary)';
                 opt.style.color = 'var(--text-secondary)';
                 opt.selected = true;
@@ -7226,7 +7226,7 @@ func getDashboardTemplate() string {
                 const opt = document.createElement('option');
                 const todayMonday = getMonday(new Date());
                 opt.value = todayMonday.toISOString();
-                opt.textContent = getWeekOptionLabel(todayMonday) + " (No Plan)";
+                opt.textContent = getWeekOptionLabel(todayMonday);
                 opt.style.background = 'var(--bg-secondary)';
                 opt.style.color = 'var(--text-secondary)';
                 opt.selected = true;
