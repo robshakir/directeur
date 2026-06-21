@@ -2590,6 +2590,23 @@ func getDashboardTemplate() string {
             --border-color: #2b2f37;
         }
 
+        /* Custom scrollbar for textareas */
+        textarea::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+        textarea::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -3389,7 +3406,7 @@ func getDashboardTemplate() string {
                         
                         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                             <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Plan Constraints</label>
-                            <textarea id="calendar-constraints-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 100px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Tuesday/Thursday trainer sessions capped at 1h. Long ride on Saturday. Monday/Friday Rest.">Monday and Friday are rest days. Long endurance ride on Saturday. Tuesday/Thursday trainer sessions capped at 1 hour.</textarea>
+                            <textarea id="calendar-constraints-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 180px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Tuesday/Thursday trainer sessions capped at 1h. Long ride on Saturday. Monday/Friday Rest.">Monday and Friday are rest days. Long endurance ride on Saturday. Tuesday/Thursday trainer sessions capped at 1 hour.</textarea>
                         </div>
 
                         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
