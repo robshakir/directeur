@@ -6641,8 +6641,7 @@ func getDashboardTemplate() string {
                     if (parsed) {
                         // Ensure start_date exists
                         if (!parsed.start_date) {
-                            // Always use the Monday of the current week, never the next Monday.
-                            parsed.start_date = getMonday(new Date()).toISOString();
+                            parsed.start_date = new Date().toISOString();
                         }
                         historyList.push(parsed);
                         localStorage.setItem('fit_training_programs_history', JSON.stringify(historyList));
@@ -6652,17 +6651,25 @@ func getDashboardTemplate() string {
                 }
             }
 
-            // Self-heal: normalise every stored plan's start_date to the Monday of its week.
-            // This silently fixes plans that were saved with a mid-week or wrong-Monday date
-            // due to earlier bugs, without requiring the user to clear localStorage.
+            // Self-heal: adjust start_date to the correct weekday if it was previously normalized to a Monday.
+            // This restores the original alignment for plans that started on a different weekday (like Saturday).
+            const weekdayOffsets = {
+                'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6
+            };
             let historyNeedsResave = false;
             historyList.forEach(plan => {
-                if (plan && plan.start_date) {
-                    const correctMonday = getMonday(plan.start_date);
-                    const correctISO = correctMonday.toISOString();
-                    if (plan.start_date !== correctISO) {
-                        plan.start_date = correctISO;
-                        historyNeedsResave = true;
+                if (plan && plan.start_date && plan.days && plan.days[0]) {
+                    const firstDayName = (plan.days[0].day || '').toLowerCase();
+                    const offset = weekdayOffsets[firstDayName];
+                    if (typeof offset === 'number' && offset > 0) {
+                        const monday = getMonday(plan.start_date);
+                        const actualStart = new Date(monday);
+                        actualStart.setDate(monday.getDate() + offset);
+                        const actualISO = actualStart.toISOString();
+                        if (plan.start_date !== actualISO) {
+                            plan.start_date = actualISO;
+                            historyNeedsResave = true;
+                        }
                     }
                 }
             });
@@ -7379,10 +7386,10 @@ func getDashboardTemplate() string {
                 if (historyData) {
                     history = JSON.parse(historyData);
                 }
-                const targetTime = new Date(program.start_date).getTime();
+                const targetTime = parseLocalDate(program.start_date).getTime();
                 const existingIdx = history.findIndex(p => {
                     if (!p.start_date) return false;
-                    const pTime = new Date(p.start_date).getTime();
+                    const pTime = parseLocalDate(p.start_date).getTime();
                     return Math.abs(pTime - targetTime) <= 5 * 24 * 60 * 60 * 1000; // 5 days window
                 });
                 
@@ -7392,16 +7399,35 @@ func getDashboardTemplate() string {
                     today.setHours(0, 0, 0, 0);
                     
                     const mergedDays = [];
-                    const planStart = new Date(program.start_date);
+                    const planStart = parseLocalDate(program.start_date);
                     
+                    const formatLocalDateKey = (d) => {
+                        const year = d.getFullYear();
+                        const month = String(d.getMonth() + 1).padStart(2, '0');
+                        const day = String(d.getDate()).padStart(2, '0');
+                        return year + '-' + month + '-' + day;
+                    };
+
+                    // Map existing workouts by exact date
+                    const existingStartDate = parseLocalDate(existingPlan.start_date);
+                    const existingWorkoutMap = {};
+                    if (existingPlan.days && Array.isArray(existingPlan.days)) {
+                        existingPlan.days.forEach((day, idx) => {
+                            const dDate = new Date(existingStartDate);
+                            dDate.setDate(existingStartDate.getDate() + idx);
+                            const key = formatLocalDateKey(dDate);
+                            existingWorkoutMap[key] = day;
+                        });
+                    }
+
                     for (let idx = 0; idx < 7; idx++) {
                         const dayDate = new Date(planStart);
                         dayDate.setDate(planStart.getDate() + idx);
                         dayDate.setHours(0, 0, 0, 0);
+                        const key = formatLocalDateKey(dayDate);
                         
                         const isFuture = dayDate.getTime() > today.getTime();
-                        
-                        const existingDay = (existingPlan.days && existingPlan.days[idx]) ? existingPlan.days[idx] : null;
+                        const existingDay = existingWorkoutMap[key];
                         const newDay = (program.days && program.days[idx]) ? program.days[idx] : null;
                         
                         if (!isFuture && existingDay) {
@@ -8046,10 +8072,9 @@ func getDashboardTemplate() string {
                     const parsedProgram = JSON.parse(jsonText);
                     
                     // Attach the start_date of the training week to the program object.
-                    // Always anchor to the Monday of the current week so the week label,
-                    // plannerCalendarWeekIndex sync, and day-merge logic all agree on the
-                    // same boundary regardless of what day of the week it is today.
-                    parsedProgram.start_date = getMonday(today).toISOString();
+                    // Keep the actual start date (today) rather than forcing it to getMonday,
+                    // so the days generated by the model align with their correct dates.
+                    parsedProgram.start_date = today.toISOString();
                     
                     // saveProgramToHistory merges past days from any existing plan for this week,
                     // then returns the merged program. We use the merged result everywhere so
