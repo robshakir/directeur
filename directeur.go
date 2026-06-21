@@ -4400,6 +4400,14 @@ func getDashboardTemplate() string {
             return new Date(d);
         };
         window.parseLocalDate = parseLocalDate;
+        const formatLocalDateKey = (d) => {
+            const date = parseLocalDate(d);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return year + '-' + month + '-' + day;
+        };
+        window.formatLocalDateKey = formatLocalDateKey;
 
         const getMonday = (d) => {
             const date = parseLocalDate(d);
@@ -6623,85 +6631,165 @@ func getDashboardTemplate() string {
                 document.getElementById('calendar-model-select').value = savedModel;
             }
 
-            // Retrieve and migrate legacy plan to history if needed
-            let historyList = [];
-            try {
-                const historyData = localStorage.getItem('fit_training_programs_history');
-                if (historyData) {
-                    historyList = JSON.parse(historyData);
-                }
-            } catch (e) {
-                console.error(e);
-            }
+            // Define helpers globally in scope
+            const getSynthesizedWeek = (weekIndex) => {
+                const todayMonday = getMonday(new Date());
+                const displayStartDate = new Date(todayMonday);
+                displayStartDate.setDate(todayMonday.getDate() + (weekIndex * 7));
+                const displayStartStr = formatLocalDateKey(displayStartDate);
 
-            const currentProgram = localStorage.getItem('fit_training_program');
-            if (currentProgram && historyList.length === 0) {
+                let plansByDate = {};
                 try {
-                    const parsed = JSON.parse(currentProgram);
-                    if (parsed) {
-                        // Ensure start_date exists
-                        if (!parsed.start_date) {
-                            parsed.start_date = new Date().toISOString();
-                        }
-                        historyList.push(parsed);
-                        localStorage.setItem('fit_training_programs_history', JSON.stringify(historyList));
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
-            }
+                    const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                    if (plansByDateData) plansByDate = JSON.parse(plansByDateData);
+                } catch(e) {}
 
-            // Self-heal: adjust start_date to the correct weekday if it was previously normalized to a Monday.
-            // This restores the original alignment for plans that started on a different weekday (like Saturday).
-            const weekdayOffsets = {
-                'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6
+                let weeklySummaries = {};
+                try {
+                    const summariesData = localStorage.getItem('fit_weekly_summaries');
+                    if (summariesData) weeklySummaries = JSON.parse(summariesData);
+                } catch(e) {}
+
+                const synthesizedDays = [];
+                for (let i = 0; i < 7; i++) {
+                    const dayDate = new Date(displayStartDate);
+                    dayDate.setDate(displayStartDate.getDate() + i);
+                    const dateKey = formatLocalDateKey(dayDate);
+                    const dayPlan = plansByDate[dateKey];
+                    if (dayPlan) {
+                        synthesizedDays.push(dayPlan);
+                    } else {
+                        synthesizedDays.push({
+                            day: dayDate.toLocaleDateString('en-US', { weekday: 'long' }),
+                            workout_type: "Rest Day",
+                            title: "Rest Day",
+                            duration_mins: 0,
+                            target_tss: 0,
+                            target_if: 0,
+                            description: "Rest Day"
+                        });
+                    }
+                }
+
+                return {
+                    start_date: displayStartDate.toISOString(),
+                    weekly_summary: weeklySummaries[displayStartStr] || "No training plan focus for this week. Use the Planner Configuration on the left to generate a training plan!",
+                    days: synthesizedDays
+                };
             };
-            let historyNeedsResave = false;
-            historyList.forEach(plan => {
-                if (plan && plan.start_date && plan.days && plan.days[0]) {
-                    const firstDayName = (plan.days[0].day || '').toLowerCase();
-                    const offset = weekdayOffsets[firstDayName];
-                    if (typeof offset === 'number' && offset > 0) {
-                        const monday = getMonday(plan.start_date);
-                        const actualStart = new Date(monday);
-                        actualStart.setDate(monday.getDate() + offset);
-                        const actualISO = actualStart.toISOString();
-                        if (plan.start_date !== actualISO) {
-                            plan.start_date = actualISO;
-                            historyNeedsResave = true;
+            window.getSynthesizedWeek = getSynthesizedWeek;
+
+            const getWeeksWithPlans = () => {
+                let plansByDate = {};
+                try {
+                    const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                    if (plansByDateData) plansByDate = JSON.parse(plansByDateData);
+                } catch(e) {}
+
+                let weeklySummaries = {};
+                try {
+                    const summariesData = localStorage.getItem('fit_weekly_summaries');
+                    if (summariesData) weeklySummaries = JSON.parse(summariesData);
+                } catch(e) {}
+
+                const weeksMap = {};
+                Object.keys(plansByDate).forEach(dateStr => {
+                    const dayPlan = plansByDate[dateStr];
+                    if (dayPlan && dayPlan.workout_type && dayPlan.workout_type !== "Rest Day") {
+                        const monday = getMonday(dateStr);
+                        const mondayStr = formatLocalDateKey(monday);
+                        weeksMap[mondayStr] = true;
+                    }
+                });
+
+                Object.keys(weeklySummaries).forEach(mondayStr => {
+                    weeksMap[mondayStr] = true;
+                });
+
+                const sortedMondays = Object.keys(weeksMap).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+                return sortedMondays.map(mondayStr => {
+                    return {
+                        start_date: mondayStr,
+                        weekly_summary: weeklySummaries[mondayStr] || "Training plan for this week."
+                    };
+                });
+            };
+            window.getWeeksWithPlans = getWeeksWithPlans;
+
+            // Perform one-time migration of history to flat dictionary format
+            if (!localStorage.getItem('fit_training_plans_by_date')) {
+                const plansByDate = {};
+                const weeklySummaries = {};
+                
+                let historyList = [];
+                try {
+                    const historyData = localStorage.getItem('fit_training_programs_history');
+                    if (historyData) historyList = JSON.parse(historyData);
+                } catch(e) {}
+                
+                try {
+                    const legacyPlan = localStorage.getItem('fit_training_program');
+                    if (legacyPlan) {
+                        const parsed = JSON.parse(legacyPlan);
+                        if (parsed && !historyList.some(p => p.start_date === parsed.start_date)) {
+                            historyList.push(parsed);
                         }
                     }
-                }
-            });
-            if (historyNeedsResave) {
-                try {
-                    localStorage.setItem('fit_training_programs_history', JSON.stringify(historyList));
-                } catch (e) {
-                    console.error('Failed to resave healed history:', e);
-                }
+                } catch(e) {}
+
+                const weekdayOffsets = {
+                    'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6
+                };
+
+                historyList.forEach(plan => {
+                    if (plan && plan.start_date && plan.days) {
+                        let planStart = parseLocalDate(plan.start_date);
+                        
+                        // Apply legacy self-heal: adjust start_date if it was previously normalized to a Monday
+                        if (plan.days[0]) {
+                            const firstDayName = (plan.days[0].day || '').toLowerCase();
+                            const offset = weekdayOffsets[firstDayName];
+                            if (typeof offset === 'number' && offset > 0) {
+                                const monday = getMonday(plan.start_date);
+                                const actualStart = new Date(monday);
+                                actualStart.setDate(monday.getDate() + offset);
+                                planStart = actualStart;
+                            }
+                        }
+                        planStart.setHours(0,0,0,0);
+                        const mondayStr = formatLocalDateKey(getMonday(planStart));
+                        if (plan.weekly_summary) {
+                            weeklySummaries[mondayStr] = plan.weekly_summary;
+                        }
+                        
+                        plan.days.forEach((day, idx) => {
+                            const dDate = new Date(planStart);
+                            dDate.setDate(planStart.getDate() + idx);
+                            const key = formatLocalDateKey(dDate);
+                            plansByDate[key] = day;
+                        });
+                    }
+                });
+
+                localStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+                localStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
             }
 
-            // Load the latest plan from history if available
-            if (historyList.length > 0) {
-                const latestPlan = historyList[historyList.length - 1];
-                window.currentCalendarProgram = latestPlan;
-                
-                // Sync plannerCalendarWeekIndex
-                if (latestPlan && latestPlan.start_date) {
-                    const planStart = getMonday(latestPlan.start_date);
-                    const todayMonday = getMonday(new Date());
-                    const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
-                    window.plannerCalendarWeekIndex = diffWeeks;
-                } else {
-                    window.plannerCalendarWeekIndex = 0;
-                }
-                
-                renderTrainingCalendar(latestPlan);
+            // Sync plannerCalendarWeekIndex to the latest plan's week if available, else 0
+            const weeksWithPlans = getWeeksWithPlans();
+            if (weeksWithPlans.length > 0) {
+                const latestPlan = weeksWithPlans[0];
+                const planStart = getMonday(latestPlan.start_date);
+                const todayMonday = getMonday(new Date());
+                const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+                window.plannerCalendarWeekIndex = diffWeeks;
             } else {
                 window.plannerCalendarWeekIndex = 0;
-                window.currentCalendarProgram = null;
-                renderTrainingCalendar(null);
             }
+
+            const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
+            window.currentCalendarProgram = synthesizedWeek;
+            renderTrainingCalendar(synthesizedWeek);
 
             updateIntervalsSyncUI();
             renderPlannerHistory();
@@ -6718,64 +6806,17 @@ func getDashboardTemplate() string {
             const recentList = document.getElementById('landing-recent-activity-list');
             if (!grid) return;
 
-            // Load training programs history
-            let historyList = [];
-            try {
-                const historyData = localStorage.getItem('fit_training_programs_history');
-                if (historyData) historyList = JSON.parse(historyData);
-            } catch (e) {
-                console.error(e);
-            }
-
             // 1. Calculate displayStartDate (Monday of the displayed week)
             const today = new Date();
             let displayStartDate = new Date(today);
             displayStartDate.setDate(today.getDate() + (landingCalendarWeekIndex * 7));
             displayStartDate = getMonday(displayStartDate);
 
-            // 2. Find if there is a plan in history that overlaps with this week [displayStartDate, displayStartDate + 6]
-            let data = null;
-            const weekStartVal = new Date(displayStartDate);
-            weekStartVal.setHours(0,0,0,0);
-            const weekEndVal = new Date(weekStartVal);
-            weekEndVal.setDate(weekStartVal.getDate() + 6);
-
-            // First search history list (newest first)
-            for (let i = historyList.length - 1; i >= 0; i--) {
-                const plan = historyList[i];
-                if (plan && plan.start_date) {
-                    const planStart = parseLocalDate(plan.start_date);
-                    planStart.setHours(0,0,0,0);
-                    const planEnd = new Date(planStart);
-                    planEnd.setDate(planStart.getDate() + 6);
-                    if (planStart <= weekEndVal && planEnd >= weekStartVal) {
-                        data = plan;
-                        break;
-                    }
-                }
-            }
-
-            // Fallback to legacy single plan if history is empty
-            if (!data) {
-                try {
-                    const legacyData = localStorage.getItem('fit_training_program');
-                    if (legacyData) {
-                        const plan = JSON.parse(legacyData);
-                        if (plan && plan.start_date) {
-                            const planStart = parseLocalDate(plan.start_date);
-                            planStart.setHours(0,0,0,0);
-                            const planEnd = new Date(planStart);
-                            planEnd.setDate(planStart.getDate() + 6);
-                            if (planStart <= weekEndVal && planEnd >= weekStartVal) {
-                                data = plan;
-                            }
-                        }
-                    }
-                } catch (e) {}
-            }
+            const data = getSynthesizedWeek(landingCalendarWeekIndex);
+            const hasPlan = data && data.days && data.days.some(d => d.workout_type && d.workout_type !== "Rest Day");
 
             // Render weekly summary widget
-            if (data && data.weekly_summary) {
+            if (hasPlan && data.weekly_summary && !data.weekly_summary.startsWith("No training plan focus")) {
                 const mondayLabelDate = getMonday(data.start_date);
                 summaryContent.innerHTML = '<div style="font-weight: 600; color: #ffffff; margin-bottom: 0.5rem;">Week starting ' + mondayLabelDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ':</div>' +
                     '<div style="font-size: 0.85rem; color: var(--text-secondary);">' + data.weekly_summary + '</div>';
@@ -6808,78 +6849,11 @@ func getDashboardTemplate() string {
                 }).join('');
             }
 
-            // If there's no calendar plan to display, render a generic empty/placeholder week card grid based on displayStartDate
-            if (!data || !data.days) {
-                const startOfWeek = getMonday(displayStartDate);
-                const endOfWeek = new Date(startOfWeek);
-                endOfWeek.setDate(startOfWeek.getDate() + 6);
-
-                weekLabel.innerText = "Week of " + startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + " – " + endOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + " (Placeholder)";
-
-                let gridHTML = '';
-                for (let i = 0; i < 7; i++) {
-                    const dayDate = new Date(startOfWeek);
-                    dayDate.setDate(startOfWeek.getDate() + i);
-                    const shortDate = dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                    
-                    // Match completed rides
-                    const dYear = dayDate.getFullYear();
-                    const dMonth = dayDate.getMonth();
-                    const dDay = dayDate.getDate();
-                    const dayCompleted = completedRidesHistory.filter(ride => {
-                        const rDate = new Date(ride.id);
-                        return rDate.getFullYear() === dYear && rDate.getMonth() === dMonth && rDate.getDate() === dDay;
-                    });
-
-                    let completedSection = '';
-                    if (dayCompleted.length > 0) {
-                        completedSection = dayCompleted.map(ride => 
-                            '<div onclick="window.viewRideAnalysis(\'' + ride.id + '\')" style="background: rgba(46, 204, 113, 0.12); border: 1px solid rgba(46, 204, 113, 0.25); border-radius: 6px; padding: 0.35rem; font-size: 0.72rem; color: #2ecc71; font-weight: 600; cursor: pointer; text-align: center; margin-top: 0.5rem;" title="' + ride.summary + '">✔ ' + ride.distance_km + ' km</div>'
-                        ).join('');
-                    } else {
-                        completedSection = '<div style="font-style: italic; color: var(--text-secondary); font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">No activity</div>';
-                    }
-
-                    const isToday = dayDate.toDateString() === new Date().toDateString();
-                    const cardBorder = isToday ? 'border-color: var(--accent); background: rgba(255, 107, 107, 0.05);' : 'border-color: var(--border-color);';
-
-                    gridHTML += '<div class="card" style="padding: 0.75rem; ' + cardBorder + ' display: flex; flex-direction: column; justify-content: space-between; min-height: 140px;">' +
-                        '<div>' +
-                            '<div style="font-size: 0.8rem; font-weight: 700; color: #ffffff; text-align: center;">' + shortDate + '</div>' +
-                            (isToday ? '<div style="font-size: 0.65rem; background: var(--accent); color: #ffffff; border-radius: 4px; padding: 0.1rem 0.25rem; font-weight: 700; text-transform: uppercase; width: max-content; margin: 0.25rem auto 0 auto;">Today</div>' : '') +
-                        '</div>' +
-                        '<div>' + completedSection + '</div>' +
-                    '</div>';
-                }
-                grid.innerHTML = gridHTML;
-                return;
-            }
-
-            // Render calendar if training program data exists!
+            // Render calendar cards
             const mondayDate = displayStartDate;
             const endWeekDate = new Date(mondayDate);
             endWeekDate.setDate(mondayDate.getDate() + 6);
             weekLabel.innerText = "Week of " + mondayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + " – " + endWeekDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-            const formatLocalDateKey = (d) => {
-                const year = d.getFullYear();
-                const month = String(d.getMonth() + 1).padStart(2, '0');
-                const day = String(d.getDate()).padStart(2, '0');
-                return year + '-' + month + '-' + day;
-            };
-
-            const planStartDate = parseLocalDate(data.start_date);
-            planStartDate.setHours(0,0,0,0);
-
-            const workoutMapByDate = {};
-            if (data.days && Array.isArray(data.days)) {
-                data.days.forEach((day, idx) => {
-                    const workoutDate = new Date(planStartDate);
-                    workoutDate.setDate(planStartDate.getDate() + idx);
-                    const dateKey = formatLocalDateKey(workoutDate);
-                    workoutMapByDate[dateKey] = day;
-                });
-            }
 
             const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -6889,17 +6863,7 @@ func getDashboardTemplate() string {
                 dayDate.setDate(mondayDate.getDate() + idx);
                 const dateKey = formatLocalDateKey(dayDate);
 
-                const d = workoutMapByDate[dateKey] || { 
-                    day: dayName.charAt(0).toUpperCase() + dayName.slice(1), 
-                    workout_planned: false, 
-                    workout_type: 'REST', 
-                    title: 'Rest Day', 
-                    description: 'No planned workout. Time for recovery!', 
-                    duration_mins: 0,
-                    target_tss: 0,
-                    target_if: 0,
-                    structure: 'No structure'
-                };
+                const d = data.days[idx];
 
                 // Match completed rides
                 const dYear = dayDate.getFullYear();
@@ -6915,9 +6879,7 @@ func getDashboardTemplate() string {
 
                 // Classify planned workout badge styling
                 const workoutType = (d.workout_type || '').toLowerCase();
-                const isPlanned = (d.workout_planned !== undefined && d.workout_planned !== null) 
-                    ? (d.workout_planned && d.workout_planned !== 'false') 
-                    : (d.workout_type && !workoutType.includes('rest') && !workoutType.includes('recovery'));
+                const isPlanned = d.workout_type && !workoutType.includes('rest') && !workoutType.includes('recovery');
 
                 let workoutBadgeColor = 'background: rgba(255,255,255,0.06); color: var(--text-secondary);';
                 if (isPlanned) {
@@ -6960,7 +6922,7 @@ func getDashboardTemplate() string {
                 } else if (!isPlanned) {
                     completedHTML = '<div style="font-style: italic; color: #2ecc71; font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">Rest Day</div>';
                 } else {
-                    completedHTML = '<div style="font-style: italic; color: #f1c40f; font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">Pending</div>';
+                    completedHTML = '<div style="font-style: italic; color: var(--text-secondary); font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">Pending</div>';
                 }
 
                 const displayDayLabel = d.day || (dayName.charAt(0).toUpperCase() + dayName.slice(1));
@@ -7254,27 +7216,16 @@ func getDashboardTemplate() string {
             const listEl = document.getElementById('calendar-history-list');
             if (!listEl) return;
             
-            let historyList = [];
-            try {
-                const historyData = localStorage.getItem('fit_training_programs_history');
-                if (historyData) {
-                    historyList = JSON.parse(historyData);
-                }
-            } catch (e) {
-                console.error("Error parsing training history:", e);
-            }
+            const weeksList = getWeeksWithPlans();
             
-            if (historyList.length === 0) {
+            if (weeksList.length === 0) {
                 listEl.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 1.5rem 0; font-style: italic;">No previous plans saved.</div>';
                 return;
             }
             
             listEl.innerHTML = '';
             
-            // Sort chronologically descending so latest is on top
-            const sortedHistory = [...historyList].sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
-            
-            sortedHistory.forEach(p => {
+            weeksList.forEach(p => {
                 const isActive = window.currentCalendarProgram && window.currentCalendarProgram.start_date === p.start_date;
                 
                 const item = document.createElement('div');
@@ -7352,26 +7303,40 @@ func getDashboardTemplate() string {
 
         const deleteProgramFromHistory = (startDateStr) => {
             try {
-                const historyData = localStorage.getItem('fit_training_programs_history');
-                if (!historyData) return;
-                let history = JSON.parse(historyData);
-                history = history.filter(p => p.start_date !== startDateStr);
-                localStorage.setItem('fit_training_programs_history', JSON.stringify(history));
-                
-                if (window.currentCalendarProgram && window.currentCalendarProgram.start_date === startDateStr) {
-                    if (history.length > 0) {
-                        const latest = history[history.length - 1];
-                        localStorage.setItem('fit_training_program', JSON.stringify(latest));
-                        window.currentCalendarProgram = latest;
-                        renderTrainingCalendar(latest);
-                    } else {
-                        localStorage.removeItem('fit_training_program');
-                        window.currentCalendarProgram = null;
-                        renderTrainingCalendar(null);
-                    }
-                } else {
-                    renderPlannerHistory();
+                const monday = getMonday(startDateStr);
+                const mondayStr = formatLocalDateKey(monday);
+
+                let plansByDate = {};
+                try {
+                    const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                    if (plansByDateData) plansByDate = JSON.parse(plansByDateData);
+                } catch(e) {}
+
+                let weeklySummaries = {};
+                try {
+                    const summariesData = localStorage.getItem('fit_weekly_summaries');
+                    if (summariesData) weeklySummaries = JSON.parse(summariesData);
+                } catch(e) {}
+
+                // Delete the 7 days of this week
+                for (let i = 0; i < 7; i++) {
+                    const dayDate = new Date(monday);
+                    dayDate.setDate(monday.getDate() + i);
+                    const dateKey = formatLocalDateKey(dayDate);
+                    delete plansByDate[dateKey];
                 }
+
+                // Delete the weekly summary
+                delete weeklySummaries[mondayStr];
+
+                localStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+                localStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
+
+                // Re-render
+                const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
+                window.currentCalendarProgram = synthesizedWeek;
+                renderTrainingCalendar(synthesizedWeek);
+                renderPlannerHistory();
             } catch (e) {
                 console.error("Failed to delete program:", e);
             }
@@ -7381,75 +7346,78 @@ func getDashboardTemplate() string {
         const saveProgramToHistory = (program) => {
             if (!program || !program.start_date) return program;
             try {
-                const historyData = localStorage.getItem('fit_training_programs_history');
-                let history = [];
-                if (historyData) {
-                    history = JSON.parse(historyData);
-                }
-                const targetTime = parseLocalDate(program.start_date).getTime();
-                const existingIdx = history.findIndex(p => {
-                    if (!p.start_date) return false;
-                    const pTime = parseLocalDate(p.start_date).getTime();
-                    return Math.abs(pTime - targetTime) <= 5 * 24 * 60 * 60 * 1000; // 5 days window
-                });
-                
-                if (existingIdx !== -1) {
-                    const existingPlan = history[existingIdx];
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    
-                    const mergedDays = [];
-                    const planStart = parseLocalDate(program.start_date);
-                    
-                    const formatLocalDateKey = (d) => {
-                        const year = d.getFullYear();
-                        const month = String(d.getMonth() + 1).padStart(2, '0');
-                        const day = String(d.getDate()).padStart(2, '0');
-                        return year + '-' + month + '-' + day;
-                    };
+                let plansByDate = {};
+                try {
+                    const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                    if (plansByDateData) plansByDate = JSON.parse(plansByDateData);
+                } catch(e) {}
 
-                    // Map existing workouts by exact date
-                    const existingStartDate = parseLocalDate(existingPlan.start_date);
-                    const existingWorkoutMap = {};
-                    if (existingPlan.days && Array.isArray(existingPlan.days)) {
-                        existingPlan.days.forEach((day, idx) => {
-                            const dDate = new Date(existingStartDate);
-                            dDate.setDate(existingStartDate.getDate() + idx);
-                            const key = formatLocalDateKey(dDate);
-                            existingWorkoutMap[key] = day;
-                        });
+                let weeklySummaries = {};
+                try {
+                    const summariesData = localStorage.getItem('fit_weekly_summaries');
+                    if (summariesData) weeklySummaries = JSON.parse(summariesData);
+                } catch(e) {}
+
+                const planStart = parseLocalDate(program.start_date);
+                planStart.setHours(0, 0, 0, 0);
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                // Save weekly summary anchored to Monday
+                const monday = getMonday(planStart);
+                const mondayStr = formatLocalDateKey(monday);
+                if (program.weekly_summary) {
+                    weeklySummaries[mondayStr] = program.weekly_summary;
+                }
+
+                // Process each day in the generated program
+                const savedDays = [];
+                for (let idx = 0; idx < 7; idx++) {
+                    const dayDate = new Date(planStart);
+                    dayDate.setDate(planStart.getDate() + idx);
+                    dayDate.setHours(0, 0, 0, 0);
+                    const key = formatLocalDateKey(dayDate);
+
+                    const isFuture = dayDate.getTime() > today.getTime();
+                    const existingDay = plansByDate[key];
+                    const newDay = (program.days && program.days[idx]) ? program.days[idx] : null;
+
+                    let targetDay = newDay;
+                    // If it is in the past, and there's an existing workout, preserve it
+                    if (!isFuture && existingDay) {
+                        targetDay = existingDay;
+                    } else if (!newDay && existingDay) {
+                        targetDay = existingDay;
                     }
 
-                    for (let idx = 0; idx < 7; idx++) {
-                        const dayDate = new Date(planStart);
-                        dayDate.setDate(planStart.getDate() + idx);
-                        dayDate.setHours(0, 0, 0, 0);
-                        const key = formatLocalDateKey(dayDate);
-                        
-                        const isFuture = dayDate.getTime() > today.getTime();
-                        const existingDay = existingWorkoutMap[key];
-                        const newDay = (program.days && program.days[idx]) ? program.days[idx] : null;
-                        
-                        if (!isFuture && existingDay) {
-                            mergedDays.push(existingDay);
-                        } else if (newDay) {
-                            mergedDays.push(newDay);
-                        } else if (existingDay) {
-                            mergedDays.push(existingDay);
-                        }
+                    if (targetDay) {
+                        plansByDate[key] = targetDay;
+                        savedDays.push(targetDay);
+                    } else {
+                        // Fallback if no targetDay exists
+                        const fallback = {
+                            day: dayDate.toLocaleDateString('en-US', { weekday: 'long' }),
+                            workout_type: "Rest Day",
+                            title: "Rest Day",
+                            duration_mins: 0,
+                            target_tss: 0,
+                            target_if: 0,
+                            description: "Rest Day"
+                        };
+                        plansByDate[key] = fallback;
+                        savedDays.push(fallback);
                     }
-                    
-                    program.days = mergedDays;
-                    history[existingIdx] = program;
-                } else {
-                    history.push(program);
                 }
-                
-                history.sort((a, b) => parseLocalDate(a.start_date).getTime() - parseLocalDate(b.start_date).getTime());
-                localStorage.setItem('fit_training_programs_history', JSON.stringify(history));
+
+                localStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+                localStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
+
+                // Re-render
                 renderPlannerHistory();
+                program.days = savedDays;
             } catch (e) {
-                console.error("Failed to save training program to history:", e);
+                console.error("Failed to save training program:", e);
             }
             return program;
         };
@@ -7462,19 +7430,9 @@ func getDashboardTemplate() string {
                 const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
                 window.plannerCalendarWeekIndex = diffWeeks;
 
-                const historyData = localStorage.getItem('fit_training_programs_history');
-                let history = [];
-                if (historyData) {
-                    history = JSON.parse(historyData);
-                }
-                const match = history.find(p => p.start_date === startDateStr);
-                if (match) {
-                    window.currentCalendarProgram = match;
-                    renderTrainingCalendar(match);
-                } else {
-                    window.currentCalendarProgram = null;
-                    renderTrainingCalendar(null);
-                }
+                const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
+                window.currentCalendarProgram = synthesizedWeek;
+                renderTrainingCalendar(synthesizedWeek);
             } catch(e) {
                 console.error("Failed to load selected week:", e);
             }
@@ -7488,50 +7446,9 @@ func getDashboardTemplate() string {
                 window.plannerCalendarWeekIndex++;
             }
             
-            // Calculate displayStartDate for this week offset.
-            // IMPORTANT: anchor to the Monday of the current week, not raw today.
-            // Using raw today (e.g. Saturday June 20) means index*7 lands mid-week
-            // and getMonday rounds it differently at week boundaries.
-            const todayMonday = getMonday(new Date());
-            let displayStartDate = new Date(todayMonday);
-            if (typeof window.plannerCalendarWeekIndex !== 'undefined') {
-                displayStartDate.setDate(todayMonday.getDate() + (window.plannerCalendarWeekIndex * 7));
-            }
-            
-            // Search history for a plan covering this week
-            let historyList = [];
-            try {
-                const historyData = localStorage.getItem('fit_training_programs_history');
-                if (historyData) historyList = JSON.parse(historyData);
-            } catch (e) {}
-            
-            const weekStartVal = new Date(displayStartDate);
-            weekStartVal.setHours(0,0,0,0);
-            const weekEndVal = new Date(weekStartVal);
-            weekEndVal.setDate(weekStartVal.getDate() + 6);
-            
-            let data = null;
-            for (let i = historyList.length - 1; i >= 0; i--) {
-                const plan = historyList[i];
-                if (plan && plan.start_date) {
-                    const planStart = parseLocalDate(plan.start_date);
-                    planStart.setHours(0,0,0,0);
-                    const planEnd = new Date(planStart);
-                    planEnd.setDate(planStart.getDate() + 6);
-                    if (planStart <= weekEndVal && planEnd >= weekStartVal) {
-                        data = plan;
-                        break;
-                    }
-                }
-            }
-            
-            if (data) {
-                window.currentCalendarProgram = data;
-                renderTrainingCalendar(data);
-            } else {
-                window.currentCalendarProgram = null;
-                renderTrainingCalendar(null);
-            }
+            const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
+            window.currentCalendarProgram = synthesizedWeek;
+            renderTrainingCalendar(synthesizedWeek);
         };
         window.navigateWeek = navigateWeek;
 
@@ -7570,36 +7487,11 @@ func getDashboardTemplate() string {
             summaryBox.style.display = 'block';
             overviewBox.style.display = 'block';
 
-            let historyList = [];
-            try {
-                const historyData = localStorage.getItem('fit_training_programs_history');
-                if (historyData) {
-                    historyList = JSON.parse(historyData);
-                }
-            } catch (e) {
-                console.error(e);
-            }
-            updateWeekSelector(historyList, data.start_date);
+            updateWeekSelector(getWeeksWithPlans(), data.start_date);
 
             grid.innerHTML = '';
             overviewGrid.innerHTML = '';
             
-            let startDate = null;
-            if (data && data.start_date) {
-                startDate = parseLocalDate(data.start_date);
-            }
-
-            // Fallback: estimate start_date for legacy plans missing it
-            if (!startDate && data && data.days) {
-                startDate = getMonday(new Date());
-                data.start_date = startDate.toISOString();
-                try {
-                    localStorage.setItem('fit_training_program', JSON.stringify(data));
-                } catch (e) {
-                    console.error("Failed to save healed legacy training program:", e);
-                }
-            }
-
             // Retrieve local ride history for matching completed rides
             const historyData = localStorage.getItem('fit_ride_history');
             let history = [];
@@ -7610,27 +7502,10 @@ func getDashboardTemplate() string {
                     console.error("Error parsing ride history for calendar:", e);
                 }
             }
-            
-            const formatLocalDateKey = (d) => {
-                const year = d.getFullYear();
-                const month = String(d.getMonth() + 1).padStart(2, '0');
-                const day = String(d.getDate()).padStart(2, '0');
-                return year + '-' + month + '-' + day;
-            };
 
             const mondayDate = getMonday(data.start_date);
             const planStartDate = parseLocalDate(data.start_date);
             planStartDate.setHours(0,0,0,0);
-
-            const workoutMapByDate = {};
-            if (data.days && Array.isArray(data.days)) {
-                data.days.forEach((day, idx) => {
-                    const workoutDate = new Date(planStartDate);
-                    workoutDate.setDate(planStartDate.getDate() + idx);
-                    const dateKey = formatLocalDateKey(workoutDate);
-                    workoutMapByDate[dateKey] = day;
-                });
-            }
 
             const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
@@ -7639,17 +7514,7 @@ func getDashboardTemplate() string {
                 dayDate.setDate(mondayDate.getDate() + idx);
                 const dateKey = formatLocalDateKey(dayDate);
 
-                const d = workoutMapByDate[dateKey] || { 
-                    day: dayName.charAt(0).toUpperCase() + dayName.slice(1), 
-                    workout_planned: false, 
-                    workout_type: 'REST', 
-                    title: 'Rest Day', 
-                    description: 'No planned workout. Time for recovery!', 
-                    duration_mins: 0,
-                    target_tss: 0,
-                    target_if: 0,
-                    structure: 'No structure'
-                };
+                const d = data.days[idx];
 
                 let badgeColor = 'rgba(255,255,255,0.08)';
                 let textColor = '#ffffff';
@@ -8335,20 +8200,7 @@ func getDashboardTemplate() string {
 
             if (updated) {
                 window.currentCalendarProgram.days = workoutsCopy;
-                localStorage.setItem('fit_training_program', JSON.stringify(window.currentCalendarProgram));
-                try {
-                    const historyData = localStorage.getItem('fit_training_programs_history');
-                    if (historyData) {
-                        const historyList = JSON.parse(historyData);
-                        const idx = historyList.findIndex(p => p.start_date === window.currentCalendarProgram.start_date);
-                        if (idx !== -1) {
-                            historyList[idx] = window.currentCalendarProgram;
-                            localStorage.setItem('fit_training_programs_history', JSON.stringify(historyList));
-                        }
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
+                saveProgramToHistory(window.currentCalendarProgram);
                 renderTrainingCalendar(window.currentCalendarProgram);
             }
 
