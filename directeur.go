@@ -4389,8 +4389,20 @@ func getDashboardTemplate() string {
         // Global Chart and Map references for dynamic updating
         let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline, quadrantAnalysisChart;
 
+        const parseLocalDate = (d) => {
+            if (!d) return new Date();
+            if (d instanceof Date) return new Date(d);
+            const s = typeof d === 'string' ? d : d.toString();
+            const parts = s.split('T')[0].split('-');
+            if (parts.length === 3) {
+                return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            }
+            return new Date(d);
+        };
+        window.parseLocalDate = parseLocalDate;
+
         const getMonday = (d) => {
-            const date = new Date(d);
+            const date = parseLocalDate(d);
             const day = date.getDay(); // 0 is Sunday, 1 is Monday, ..., 6 is Saturday
             const diff = date.getDate() - day + (day === 0 ? -6 : 1);
             const monday = new Date(date.setDate(diff));
@@ -6646,7 +6658,7 @@ func getDashboardTemplate() string {
             let historyNeedsResave = false;
             historyList.forEach(plan => {
                 if (plan && plan.start_date) {
-                    const correctMonday = getMonday(new Date(plan.start_date));
+                    const correctMonday = getMonday(plan.start_date);
                     const correctISO = correctMonday.toISOString();
                     if (plan.start_date !== correctISO) {
                         plan.start_date = correctISO;
@@ -6669,7 +6681,7 @@ func getDashboardTemplate() string {
                 
                 // Sync plannerCalendarWeekIndex
                 if (latestPlan && latestPlan.start_date) {
-                    const planStart = getMonday(new Date(latestPlan.start_date));
+                    const planStart = getMonday(latestPlan.start_date);
                     const todayMonday = getMonday(new Date());
                     const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
                     window.plannerCalendarWeekIndex = diffWeeks;
@@ -6725,7 +6737,7 @@ func getDashboardTemplate() string {
             for (let i = historyList.length - 1; i >= 0; i--) {
                 const plan = historyList[i];
                 if (plan && plan.start_date) {
-                    const planStart = new Date(plan.start_date);
+                    const planStart = parseLocalDate(plan.start_date);
                     planStart.setHours(0,0,0,0);
                     const planEnd = new Date(planStart);
                     planEnd.setDate(planStart.getDate() + 6);
@@ -6743,7 +6755,7 @@ func getDashboardTemplate() string {
                     if (legacyData) {
                         const plan = JSON.parse(legacyData);
                         if (plan && plan.start_date) {
-                            const planStart = new Date(plan.start_date);
+                            const planStart = parseLocalDate(plan.start_date);
                             planStart.setHours(0,0,0,0);
                             const planEnd = new Date(planStart);
                             planEnd.setDate(planStart.getDate() + 6);
@@ -6849,7 +6861,7 @@ func getDashboardTemplate() string {
                 return year + '-' + month + '-' + day;
             };
 
-            const planStartDate = new Date(data.start_date);
+            const planStartDate = parseLocalDate(data.start_date);
             planStartDate.setHours(0,0,0,0);
 
             const workoutMapByDate = {};
@@ -7407,7 +7419,7 @@ func getDashboardTemplate() string {
                     history.push(program);
                 }
                 
-                history.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+                history.sort((a, b) => parseLocalDate(a.start_date).getTime() - parseLocalDate(b.start_date).getTime());
                 localStorage.setItem('fit_training_programs_history', JSON.stringify(history));
                 renderPlannerHistory();
             } catch (e) {
@@ -7419,7 +7431,7 @@ func getDashboardTemplate() string {
         const loadWeekFromSelect = (startDateStr) => {
             try {
                 // Sync plannerCalendarWeekIndex
-                const planStart = getMonday(new Date(startDateStr));
+                const planStart = getMonday(startDateStr);
                 const todayMonday = getMonday(new Date());
                 const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
                 window.plannerCalendarWeekIndex = diffWeeks;
@@ -7476,7 +7488,7 @@ func getDashboardTemplate() string {
             for (let i = historyList.length - 1; i >= 0; i--) {
                 const plan = historyList[i];
                 if (plan && plan.start_date) {
-                    const planStart = new Date(plan.start_date);
+                    const planStart = parseLocalDate(plan.start_date);
                     planStart.setHours(0,0,0,0);
                     const planEnd = new Date(planStart);
                     planEnd.setDate(planStart.getDate() + 6);
@@ -7548,7 +7560,7 @@ func getDashboardTemplate() string {
             
             let startDate = null;
             if (data && data.start_date) {
-                startDate = new Date(data.start_date);
+                startDate = parseLocalDate(data.start_date);
             }
 
             // Fallback: estimate start_date for legacy plans missing it
@@ -7581,7 +7593,7 @@ func getDashboardTemplate() string {
             };
 
             const mondayDate = getMonday(data.start_date);
-            const planStartDate = new Date(data.start_date);
+            const planStartDate = parseLocalDate(data.start_date);
             planStartDate.setHours(0,0,0,0);
 
             const workoutMapByDate = {};
