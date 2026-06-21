@@ -8032,8 +8032,11 @@ func getDashboardTemplate() string {
                     const jsonText = text.substring(jsonStart, jsonEnd + 1);
                     const parsedProgram = JSON.parse(jsonText);
                     
-                    // Attach the start_date of the training week to the program object
-                    parsedProgram.start_date = weekStart.toISOString();
+                    // Attach the start_date of the training week to the program object.
+                    // Always anchor to the Monday of the current week so the week label,
+                    // plannerCalendarWeekIndex sync, and day-merge logic all agree on the
+                    // same boundary regardless of what day of the week it is today.
+                    parsedProgram.start_date = getMonday(today).toISOString();
                     
                     // saveProgramToHistory merges past days from any existing plan for this week,
                     // then returns the merged program. We use the merged result everywhere so
