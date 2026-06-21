@@ -7544,6 +7544,10 @@ func getDashboardTemplate() string {
 
             const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
+            weekdays.forEach((dayName, idx) => {
+                const dayDate = new Date(mondayDate);
+                dayDate.setDate(mondayDate.getDate() + idx);
+                const dateKey = formatLocalDateKey(dayDate);
                 const displayDayLabel = dayName.charAt(0).toUpperCase() + dayName.slice(1);
                 const d = data.days[idx];
 
