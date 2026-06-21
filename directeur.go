@@ -6629,25 +6629,36 @@ func getDashboardTemplate() string {
                     if (parsed) {
                         // Ensure start_date exists
                         if (!parsed.start_date) {
-                            const today = new Date();
-                            const currentDay = today.getDay();
-                            let estStart = new Date(today);
-                            let daysToMonday = 0;
-                            if (currentDay >= 1 && currentDay <= 3) {
-                                daysToMonday = 1 - currentDay;
-                            } else {
-                                daysToMonday = (8 - currentDay) % 7;
-                                if (daysToMonday === 0) daysToMonday = 7;
-                            }
-                            estStart.setDate(today.getDate() + daysToMonday);
-                            estStart.setHours(0,0,0,0);
-                            parsed.start_date = estStart.toISOString();
+                            // Always use the Monday of the current week, never the next Monday.
+                            parsed.start_date = getMonday(new Date()).toISOString();
                         }
                         historyList.push(parsed);
                         localStorage.setItem('fit_training_programs_history', JSON.stringify(historyList));
                     }
                 } catch (e) {
                     console.error(e);
+                }
+            }
+
+            // Self-heal: normalise every stored plan's start_date to the Monday of its week.
+            // This silently fixes plans that were saved with a mid-week or wrong-Monday date
+            // due to earlier bugs, without requiring the user to clear localStorage.
+            let historyNeedsResave = false;
+            historyList.forEach(plan => {
+                if (plan && plan.start_date) {
+                    const correctMonday = getMonday(new Date(plan.start_date));
+                    const correctISO = correctMonday.toISOString();
+                    if (plan.start_date !== correctISO) {
+                        plan.start_date = correctISO;
+                        historyNeedsResave = true;
+                    }
+                }
+            });
+            if (historyNeedsResave) {
+                try {
+                    localStorage.setItem('fit_training_programs_history', JSON.stringify(historyList));
+                } catch (e) {
+                    console.error('Failed to resave healed history:', e);
                 }
             }
 
@@ -7439,13 +7450,15 @@ func getDashboardTemplate() string {
                 window.plannerCalendarWeekIndex++;
             }
             
-            // Calculate displayStartDate for this week offset
-            const today = new Date();
-            let displayStartDate = new Date(today);
+            // Calculate displayStartDate for this week offset.
+            // IMPORTANT: anchor to the Monday of the current week, not raw today.
+            // Using raw today (e.g. Saturday June 20) means index*7 lands mid-week
+            // and getMonday rounds it differently at week boundaries.
+            const todayMonday = getMonday(new Date());
+            let displayStartDate = new Date(todayMonday);
             if (typeof window.plannerCalendarWeekIndex !== 'undefined') {
-                displayStartDate.setDate(today.getDate() + (window.plannerCalendarWeekIndex * 7));
+                displayStartDate.setDate(todayMonday.getDate() + (window.plannerCalendarWeekIndex * 7));
             }
-            displayStartDate = getMonday(displayStartDate);
             
             // Search history for a plan covering this week
             let historyList = [];
@@ -7493,13 +7506,14 @@ func getDashboardTemplate() string {
             const overviewGrid = document.getElementById('calendar-overview-grid');
             const emptyState = document.getElementById('calendar-empty-state');
             
-            // Calculate displayed week starting Monday
-            const today = new Date();
-            let displayStartDate = new Date(today);
+            // Calculate displayed week starting Monday.
+            // Anchor to the Monday of the current week so that each index step
+            // is exactly 7 days regardless of today's day-of-week.
+            const todayMonday = getMonday(new Date());
+            let displayStartDate = new Date(todayMonday);
             if (typeof window.plannerCalendarWeekIndex !== 'undefined') {
-                displayStartDate.setDate(today.getDate() + (window.plannerCalendarWeekIndex * 7));
+                displayStartDate.setDate(todayMonday.getDate() + (window.plannerCalendarWeekIndex * 7));
             }
-            displayStartDate = getMonday(displayStartDate);
 
             // If data is null/undefined, build a placeholder plan object for the navigated week
             if (!data || !data.days) {
@@ -7539,20 +7553,7 @@ func getDashboardTemplate() string {
 
             // Fallback: estimate start_date for legacy plans missing it
             if (!startDate && data && data.days) {
-                const today = new Date();
-                const currentDay = today.getDay();
-                let estStart = new Date(today);
-                let daysToMonday = 0;
-                if (currentDay >= 1 && currentDay <= 3) {
-                    daysToMonday = 1 - currentDay;
-                } else {
-                    daysToMonday = (8 - currentDay) % 7;
-                    if (daysToMonday === 0) daysToMonday = 7;
-                }
-                estStart.setDate(today.getDate() + daysToMonday);
-                estStart.setHours(0,0,0,0);
-                startDate = estStart;
-
+                startDate = getMonday(new Date());
                 data.start_date = startDate.toISOString();
                 try {
                     localStorage.setItem('fit_training_program', JSON.stringify(data));
