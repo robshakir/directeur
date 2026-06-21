@@ -6638,12 +6638,13 @@ func getDashboardTemplate() string {
                 } else {
                     synthesizedDays.push({
                         day: dayDate.toLocaleDateString('en-US', { weekday: 'long' }),
-                        workout_type: "Rest Day",
-                        title: "Rest Day",
+                        workout_type: "No Plan",
+                        title: "No Plan",
                         duration_mins: 0,
                         target_tss: 0,
                         target_if: 0,
-                        description: "Rest Day"
+                        description: "No training plan focus generated for this day.",
+                        is_fallback: true
                     });
                 }
             }
@@ -6883,13 +6884,11 @@ func getDashboardTemplate() string {
 
                 // Classify planned workout badge styling
                 const workoutType = (d.workout_type || '').toLowerCase();
-                const isPlanned = d.workout_type && !workoutType.includes('rest') && !workoutType.includes('recovery');
+                const isPlanned = d.workout_type && !workoutType.includes('rest') && !workoutType.includes('recovery') && !workoutType.includes('no plan');
 
                 let workoutBadgeColor = 'background: rgba(255,255,255,0.06); color: var(--text-secondary);';
                 if (isPlanned) {
-                    if (workoutType.includes('rest') || workoutType.includes('recovery')) {
-                        workoutBadgeColor = 'background: rgba(46, 204, 113, 0.1); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.2);';
-                    } else if (workoutType.includes('endurance') || workoutType.includes('aerobic')) {
+                    if (workoutType.includes('endurance') || workoutType.includes('aerobic')) {
                         workoutBadgeColor = 'background: rgba(52, 152, 219, 0.1); color: #3498db; border: 1px solid rgba(52, 152, 219, 0.2);';
                     } else if (workoutType.includes('sweet spot') || workoutType.includes('tempo')) {
                         workoutBadgeColor = 'background: rgba(241, 196, 15, 0.1); color: #f1c40f; border: 1px solid rgba(241, 196, 15, 0.2);';
@@ -6911,7 +6910,8 @@ func getDashboardTemplate() string {
                             (workoutDuration ? '<div style="font-size: 0.65rem; opacity: 0.8; margin-top: 0.15rem;">Target: ' + workoutDuration + '</div>' : '') +
                         '</div>';
                 } else {
-                    workoutPlannedHTML = '<div style="font-size: 0.65rem; color: var(--text-secondary); font-style: italic; margin-top: 0.5rem; text-align: center;">Rest Day</div>';
+                    const statusText = d.is_fallback ? 'No Plan' : 'Rest Day';
+                    workoutPlannedHTML = '<div style="font-size: 0.65rem; color: var(--text-secondary); font-style: italic; margin-top: 0.5rem; text-align: center;">' + statusText + '</div>';
                 }
 
                 // Render completed actual rides segment
@@ -6924,7 +6924,8 @@ func getDashboardTemplate() string {
                         '</div>'
                     ).join('');
                 } else if (!isPlanned) {
-                    completedHTML = '<div style="font-style: italic; color: #2ecc71; font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">Rest Day</div>';
+                    const statusText = d.is_fallback ? 'No Plan' : 'Rest Day';
+                    completedHTML = '<div style="font-style: italic; color: #2ecc71; font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">' + statusText + '</div>';
                 } else {
                     completedHTML = '<div style="font-style: italic; color: var(--text-secondary); font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">Pending</div>';
                 }
@@ -7659,7 +7660,7 @@ func getDashboardTemplate() string {
                 };
 
                 const titleText = d.title || 'Workout';
-                const durationText = d.duration_mins ? d.duration_mins + ' mins' : 'Rest Day';
+                const durationText = d.is_fallback ? 'No Plan' : (d.duration_mins ? d.duration_mins + ' mins' : 'Rest Day');
                 const completionBadge = completedRides.length > 0 
                     ? '<span class="badge" style="background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); font-size: 0.65rem; font-weight: bold; border-radius: 4px; padding: 0.05rem 0.2rem; text-transform: uppercase; margin-top: 0.1rem; width: fit-content; display: inline-flex; align-items: center; gap: 0.15rem;">✓ Complete</span>'
                     : '';
@@ -7731,6 +7732,19 @@ func getDashboardTemplate() string {
                         .trim();
                 }
 
+                let detailsHtml = '';
+                if (!d.is_fallback) {
+                    detailsHtml = 
+                        '<div style="display: flex; gap: 1.5rem; font-size: 0.8rem; color: var(--text-secondary);">' +
+                            '<span>⏱️ <strong>' + d.duration_mins + '</strong> mins</span>' +
+                            '<span>⚡ Target TSS: <strong>' + (d.target_tss || 0) + '</strong></span>' +
+                            '<span>📈 Target IF: <strong>' + (d.target_if || 0) + '</strong></span>' +
+                        '</div>' +
+                        '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: var(--font-family); line-height: 1.4; color: var(--text-primary);">' +
+                            displayStructure +
+                        '</div>';
+                }
+
                 row.innerHTML = 
                     '<div style="flex: 0 0 160px; min-width: 160px; display: flex; flex-direction: column; gap: 0.4rem;">' +
                         '<span style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">' + d.day + '</span>' +
@@ -7743,14 +7757,7 @@ func getDashboardTemplate() string {
                         '<span style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">' + d.description + '</span>' +
                     '</div>' +
                     '<div class="calendar-day-details" style="flex: 4 1 0px; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; border-left: 1px solid rgba(255,255,255,0.05); padding-left: 1.5rem;">' +
-                        '<div style="display: flex; gap: 1.5rem; font-size: 0.8rem; color: var(--text-secondary);">' +
-                            '<span>⏱️ <strong>' + d.duration_mins + '</strong> mins</span>' +
-                            '<span>⚡ Target TSS: <strong>' + (d.target_tss || 0) + '</strong></span>' +
-                            '<span>📈 Target IF: <strong>' + (d.target_if || 0) + '</strong></span>' +
-                        '</div>' +
-                        '<div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; font-family: var(--font-family); line-height: 1.4; color: var(--text-primary);">' +
-                            displayStructure +
-                        '</div>' +
+                        detailsHtml +
                         analysisLinkHtml +
                     '</div>';
                 grid.appendChild(row);
