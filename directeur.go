@@ -3388,7 +3388,7 @@ func getDashboardTemplate() string {
                         </div>
                         
                         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Constraints for Next Week</label>
+                            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Plan Constraints</label>
                             <textarea id="calendar-constraints-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; resize: vertical; min-height: 100px; outline: none; transition: border-color 0.2s;" placeholder="e.g. Tuesday/Thursday trainer sessions capped at 1h. Long ride on Saturday. Monday/Friday Rest.">Monday and Friday are rest days. Long endurance ride on Saturday. Tuesday/Thursday trainer sessions capped at 1 hour.</textarea>
                         </div>
 
