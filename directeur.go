@@ -6658,7 +6658,7 @@ func getDashboardTemplate() string {
                 
                 // Sync plannerCalendarWeekIndex
                 if (latestPlan && latestPlan.start_date) {
-                    const planStart = new Date(latestPlan.start_date);
+                    const planStart = getMonday(new Date(latestPlan.start_date));
                     const todayMonday = getMonday(new Date());
                     const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
                     window.plannerCalendarWeekIndex = diffWeeks;
@@ -7408,7 +7408,7 @@ func getDashboardTemplate() string {
         const loadWeekFromSelect = (startDateStr) => {
             try {
                 // Sync plannerCalendarWeekIndex
-                const planStart = new Date(startDateStr);
+                const planStart = getMonday(new Date(startDateStr));
                 const todayMonday = getMonday(new Date());
                 const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
                 window.plannerCalendarWeekIndex = diffWeeks;
