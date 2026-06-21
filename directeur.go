@@ -6960,7 +6960,7 @@ func getDashboardTemplate() string {
                     completedHTML = '<div style="font-style: italic; color: var(--text-secondary); font-size: 0.7rem; text-align: center; margin-top: 0.75rem;">Pending</div>';
                 }
 
-                const displayDayLabel = d.day || (dayName.charAt(0).toUpperCase() + dayName.slice(1));
+                const displayDayLabel = dayName.charAt(0).toUpperCase() + dayName.slice(1);
                 const formattedDateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
                 gridHTML += '<div class="card" style="padding: 0.75rem; ' + cardBorder + ' display: flex; flex-direction: column; justify-content: space-between; min-height: 180px;">' +
@@ -7544,11 +7544,7 @@ func getDashboardTemplate() string {
 
             const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
-            weekdays.forEach((dayName, idx) => {
-                const dayDate = new Date(mondayDate);
-                dayDate.setDate(mondayDate.getDate() + idx);
-                const dateKey = formatLocalDateKey(dayDate);
-
+                const displayDayLabel = dayName.charAt(0).toUpperCase() + dayName.slice(1);
                 const d = data.days[idx];
 
                 let badgeColor = 'rgba(255,255,255,0.08)';
@@ -7674,7 +7670,7 @@ func getDashboardTemplate() string {
                 };
 
                 overviewCard.onclick = () => {
-                    const targetRow = document.getElementById('calendar-day-row-' + d.day);
+                    const targetRow = document.getElementById('calendar-day-row-' + dayName);
                     if (targetRow) {
                         targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         targetRow.style.boxShadow = '0 0 20px var(--accent-glow)';
@@ -7697,7 +7693,7 @@ func getDashboardTemplate() string {
 
                 overviewCard.innerHTML = 
                     '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 0.25rem;">' +
-                        '<strong style="font-size: 0.85rem; color: #ffffff; font-family: \'Outfit\';">' + d.day.substring(0, 3) + '</strong>' +
+                        '<strong style="font-size: 0.85rem; color: #ffffff; font-family: \'Outfit\';">' + displayDayLabel.substring(0, 3) + '</strong>' +
                         '<span style="font-size: 0.75rem; color: var(--text-secondary);">' + shortDateStr + '</span>' +
                     '</div>' +
                     '<div style="display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 0.1rem;">' +
@@ -7711,7 +7707,7 @@ func getDashboardTemplate() string {
 
                 // Create the detailed Day Row Card
                 const row = document.createElement('div');
-                row.id = 'calendar-day-row-' + d.day;
+                row.id = 'calendar-day-row-' + dayName;
                 row.className = 'calendar-day-row';
                 row.style.display = 'flex';
                 row.style.gap = '1.5rem';
@@ -7777,7 +7773,7 @@ func getDashboardTemplate() string {
 
                 row.innerHTML = 
                     '<div style="flex: 0 0 160px; min-width: 160px; display: flex; flex-direction: column; gap: 0.4rem;">' +
-                        '<span style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">' + d.day + '</span>' +
+                        '<span style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">' + displayDayLabel + '</span>' +
                         dateDisplay +
                         '<span class="badge" style="background: ' + badgeColor + '; color: ' + textColor + '; border: 1px solid ' + borderColor + '; font-size: 0.75rem; text-align: center; border-radius: 4px; padding: 0.15rem 0.4rem; text-transform: uppercase; width: fit-content; font-weight: 600;">' + d.workout_type + '</span>' +
                         completionBadgeRow +
@@ -7874,30 +7870,35 @@ func getDashboardTemplate() string {
             const tomorrow = new Date(today);
             tomorrow.setDate(today.getDate() + 1);
             const tomorrowStr = formatDate(tomorrow);
+
+            const todayMonday = getMonday(today);
+            const planStart = new Date(todayMonday);
+            planStart.setDate(todayMonday.getDate() + (window.plannerCalendarWeekIndex * 7));
+            const planStartStr = formatDate(planStart);
             
-            // Generate chronological list of weeks and days starting today
+            // Generate chronological list of weeks and days starting on the Monday of the planned week
             let promptDateGuides = "";
             for (let w = 0; w < weeksNum; w++) {
-                const weekStart = new Date(today);
-                weekStart.setDate(today.getDate() + (w * 7));
+                const weekStart = new Date(planStart);
+                weekStart.setDate(planStart.getDate() + (w * 7));
                 const weekStartStr = formatDate(weekStart);
-                promptDateGuides += "### Week " + (w + 1) + " (Starting " + weekStartStr + "):\n";
+                promptDateGuides += "### Week " + (w + 1) + " (Starting Monday " + weekStartStr + "):\n";
                 for (let i = 0; i < 7; i++) {
-                    const d = new Date(today);
-                    d.setDate(today.getDate() + (w * 7) + i);
+                    const d = new Date(planStart);
+                    d.setDate(planStart.getDate() + (w * 7) + i);
                     promptDateGuides += "- Day " + (i + 1) + " (" + d.toLocaleDateString('en-US', { weekday: 'long' }) + "): " + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + "\n";
                 }
                 promptDateGuides += "\n";
             }
 
-            const promptText = "You are an elite cycling coach and exercise physiologist. Design a structured multi-week training program for the next " + weeksNum + " weeks (" + (weeksNum * 7) + " days in total), starting today (" + todayStr + "), for an athlete based on their recent ride history, current FTP, training goals, constraints, and their last generated training plan.\n\n" +
+            const promptText = "You are an elite cycling coach and exercise physiologist. Design a structured multi-week training program for the next " + weeksNum + " weeks (" + (weeksNum * 7) + " days in total), starting on Monday, " + planStartStr + " (with today being " + todayStr + "), for an athlete based on their recent ride history, current FTP, training goals, constraints, and their last generated training plan.\n\n" +
                 "Date Context & Weeks:\n" +
                 "- Today is: " + todayStr + "\n" +
                 "- Tomorrow is: " + tomorrowStr + "\n\n" +
                 "Here are the specific weeks and days to plan:\n" + promptDateGuides + "\n" +
                 "IMPORTANT RULES FOR HANDLING DAYS/DATES:\n" +
                 "1. Use the today date (" + todayStr + ") to interpret relative days/dates mentioned in the constraints (e.g. if today is Tuesday, then 'yesterday' is Monday, 'tomorrow' is Wednesday, 'this Friday' is Friday, etc.).\n" +
-                "2. If the athlete says they 'just finished' or 'completed' a workout today, you MUST record that completed workout on today (Week 1, Day 1) in your training plan. DO NOT prescribe 'Rest' or a different workout for today if a workout has already been completed.\n" +
+                "2. If the athlete says they 'just finished' or 'completed' a workout today (which is " + todayStr + "), you MUST record that completed workout on the corresponding calendar date in your training plan. DO NOT prescribe 'Rest' or a different workout for that date if a workout has already been completed.\n" +
                 "3. Align all other planned workouts and rest days with the constraints (e.g. if they say they will ride 100km on Friday, place that on the Friday date; if they suggest rides for Saturday and Sunday, schedule those weekend workouts).\n" +
                 "4. Apply the training constraints to all weeks in the generated program (e.g. if Monday and Friday are rest days, apply this to each week; if Tuesday/Thursday trainer sessions are capped at 1 hour, apply this to each week) unless the constraints specify a particular date.\n" +
                 "5. Ensure continuity in training load, progression, recovery, and volume across the weeks. Start from the context of the last generated training plan if available.\n\n" +
@@ -7998,8 +7999,8 @@ func getDashboardTemplate() string {
                     
                     let firstMergedProgram = null;
                     weeks.forEach((weekData, wIdx) => {
-                        const weekStartDate = new Date(today);
-                        weekStartDate.setDate(today.getDate() + (wIdx * 7));
+                        const weekStartDate = new Date(planStart);
+                        weekStartDate.setDate(planStart.getDate() + (wIdx * 7));
                         
                         const weekProgram = {
                             start_date: weekStartDate.toISOString(),
