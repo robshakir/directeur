@@ -6752,8 +6752,15 @@ func getDashboardTemplate() string {
                         
                         // Apply legacy self-heal: adjust start_date if it was previously normalized to a Monday
                         if (plan.days[0]) {
-                            const firstDayName = (plan.days[0].day || '').toLowerCase();
-                            const offset = weekdayOffsets[firstDayName];
+                            const firstDayLower = (plan.days[0].day || '').toLowerCase();
+                            let foundDay = '';
+                            for (const name of Object.keys(weekdayOffsets)) {
+                                if (firstDayLower.includes(name)) {
+                                    foundDay = name;
+                                    break;
+                                }
+                            }
+                            const offset = foundDay ? weekdayOffsets[foundDay] : undefined;
                             if (typeof offset === 'number' && offset > 0) {
                                 const monday = getMonday(plan.start_date);
                                 const actualStart = new Date(monday);
@@ -6792,6 +6799,42 @@ func getDashboardTemplate() string {
 
         // Calendar Loader Helper
         const loadCalendarViewDetails = () => {
+            // Run self-heal on loaded plansByDate to correct any key/day-label date mismatches
+            try {
+                const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                if (plansByDateData) {
+                    const plans = JSON.parse(plansByDateData);
+                    const moves = [];
+                    Object.keys(plans).forEach(key => {
+                        const dayPlan = plans[key];
+                        if (dayPlan && dayPlan.day) {
+                            const dayStr = dayPlan.day;
+                            if (dayStr.includes(',') && (dayStr.match(/\d{4}/) || dayStr.match(/[A-Za-z]{3}\s+\d+/))) {
+                                try {
+                                    const parsedDate = new Date(dayStr);
+                                    if (!isNaN(parsedDate.getTime())) {
+                                        const correctKey = formatLocalDateKey(parsedDate);
+                                        if (correctKey !== key) {
+                                            moves.push({ from: key, to: correctKey, value: dayPlan });
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    });
+                    if (moves.length > 0) {
+                        moves.forEach(m => {
+                            delete plans[m.from];
+                            plans[m.to] = m.value;
+                            console.log("Self-healed shifted key: " + m.from + " -> " + m.to + " (from \"" + m.value.day + "\")");
+                        });
+                        localStorage.setItem('fit_training_plans_by_date', JSON.stringify(plans));
+                    }
+                }
+            } catch(e) {
+                console.error("Self-heal error:", e);
+            }
+
             // Load custom inputs from local storage if saved
             const savedGoals = localStorage.getItem('fit_calendar_goals');
             if (savedGoals) {
