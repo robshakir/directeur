@@ -11966,23 +11966,26 @@ func getDashboardTemplate() string {
                 statusEl.innerText = "Generating cycleway-attracted waypoints...";
                 const waypoints = await window.generateLoopWaypoints(startCoords.lat, startCoords.lon, distVal, towardsStr);
 
-                statusEl.innerText = "Requesting loop route geometry from OSRM...";
+                statusEl.innerText = "Requesting loop route geometry from BRouter...";
                 const coordsString = [
                     startCoords.lon + "," + startCoords.lat,
                     waypoints[0].lon + "," + waypoints[0].lat,
                     waypoints[1].lon + "," + waypoints[1].lat,
                     startCoords.lon + "," + startCoords.lat
-                ].join(";");
+                ].join("|");
 
-                const osrmUrl = "https://routing.openstreetmap.de/routed-bike/route/v1/driving/" + coordsString + "?overview=full&geometries=geojson&exclude=ferry";
-                const res = await fetch(osrmUrl);
-                if (!res.ok) throw new Error("OSRM service failed to route waypoints");
+                const brouterUrl = "https://brouter.de/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
+                const res = await fetch(brouterUrl);
+                if (!res.ok) throw new Error("BRouter service failed to route waypoints");
                 const data = await res.json();
-                if (!data.routes || data.routes.length === 0) throw new Error("No route found");
+                if (!data.features || data.features.length === 0) throw new Error("No route found");
 
-                const route = data.routes[0];
-                const distanceKm = parseFloat((route.distance / 1000).toFixed(1));
-                const durationMinutes = Math.round(route.duration / 60);
+                const route = data.features[0];
+                const trackLength = parseFloat(route.properties["track-length"]); // in meters
+                const totalTime = parseFloat(route.properties["total-time"]); // in seconds
+
+                const distanceKm = parseFloat((trackLength / 1000).toFixed(1));
+                const durationMinutes = Math.round(totalTime / 60);
 
                 window.routePlanGeometry = route.geometry.coordinates;
                 window.routePlanDistance = distanceKm;
