@@ -12508,7 +12508,7 @@ func getDashboardTemplate() string {
                 "}\n\n" +
                 "Rules:\n" +
                 "1. \"waypoints\" MUST contain exactly 2 to 4 specific, geocodable names of places, intersections, peaks, or towns in order between the start and end (or back to the start if no end is specified) to shape a realistic route. Keep them local to the starting location \"" + startLocStr + "\". Do not use general regions or coordinates, use actual names that can be looked up on OpenStreetMap.\n" +
-                "2. Ensure the total distance of the path roughly matches the target distance of " + distVal + " km.\n" +
+                "2. CRITICAL: Hitting the target distance of " + distVal + " km is your top priority. If the target distance is large (e.g. >20km or >50km), the waypoints MUST NOT be clustered close to the starting location. You MUST space the waypoints far enough apart (e.g., 10km to 25km away from the start and each other) or include distant turnaround landmarks so that the cumulative path distance roughly equals " + distVal + " km. Do not suggest a short 3-10 km loop when the target is 50 km.\n" +
                 "3. Output ONLY valid, raw JSON. Do not wrap in markdown code block formatting.";
 
             const callGemini = (apiVersion) => {
