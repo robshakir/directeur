@@ -12323,6 +12323,7 @@ func getDashboardTemplate() string {
                 statusEl.style.borderColor = "#e74c3c";
                 statusEl.style.color = "#e74c3c";
                 statusEl.innerText = "Error: " + err.message;
+            }
         };
 
         window.suggestRouteWithGemini = async () => {
