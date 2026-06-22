@@ -2136,7 +2136,8 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 
 		err := uploadHammerheadRoute(cfg.HammerheadAPI, configPath, payload.Name, payload.GPX)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusInternalServerError)
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 
@@ -12585,6 +12586,49 @@ trkpts +
                 return coords.map(c => [c[1], c[0]]);
             }
             return coords;
+        };
+
+        window.exportRouteGPX = () => {
+            if (!window.routePlanGeometry) {
+                alert("No route geometry available.");
+                return;
+            }
+            const gpxData = window.generateGPX(window.routePlanGeometry, window.routePlanName || "route");
+            const blob = new Blob([gpxData], { type: "application/gpx+xml" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = (window.routePlanName || "route").replace(/[^a-z0-9]/gi, "_").toLowerCase() + ".gpx";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        window.syncRouteToHammerhead = async () => {
+            if (!window.routePlanGeometry) {
+                alert("No route geometry available.");
+                return;
+            }
+            const gpxData = window.generateGPX(window.routePlanGeometry, window.routePlanName || "route");
+            try {
+                const res = await fetch("/api/hammerhead/sync-route", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name: window.routePlanName || "Planned Ride",
+                        gpx: gpxData
+                    })
+                });
+                const resData = await res.json();
+                if (res.ok && resData.status === "success") {
+                    alert("Successfully synced route to Karoo dashboard!");
+                } else {
+                    alert("Failed to sync: " + (resData.error || "Unknown error"));
+                }
+            } catch (err) {
+                alert("Sync request failed: " + err.message);
+            }
         };
 
         window.saveRouteSchedule = () => {
