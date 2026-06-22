@@ -11974,7 +11974,7 @@ func getDashboardTemplate() string {
                     startCoords.lon + "," + startCoords.lat
                 ].join(";");
 
-                const osrmUrl = "https://router.project-osrm.org/route/v1/bicycle/" + coordsString + "?overview=full&geometries=geojson";
+                const osrmUrl = "https://routing.openstreetmap.de/routed-bike/route/v1/driving/" + coordsString + "?overview=full&geometries=geojson";
                 const res = await fetch(osrmUrl);
                 if (!res.ok) throw new Error("OSRM service failed to route waypoints");
                 const data = await res.json();
