@@ -12159,7 +12159,7 @@ trkpts +
             const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[dateKey] || {};
 
-            const dObj = new Date(dateKey);
+            const dObj = parseLocalDate(dateKey);
             const formattedDate = dObj.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
             document.getElementById("route-planner-title").innerText = "🗺️ Route & Schedule Planner - " + formattedDate;
 
