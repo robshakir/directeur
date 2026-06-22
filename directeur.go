@@ -2144,6 +2144,26 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		w.Write([]byte(`{"status": "success"}`))
 	})
 
+	http.HandleFunc("/api/hammerhead/unlink", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		cfg := loadConfig(configPath)
+		cfg.HammerheadAPI.Enabled = false
+		cfg.HammerheadAPI.AuthToken = ""
+		cfg.HammerheadAPI.RefreshToken = ""
+		if err := saveConfig(configPath, cfg); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to save config"})
+			return
+		}
+
+		w.Write([]byte(`{"status": "success"}`))
+	})
+
 	http.HandleFunc("/api/geocode", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		q := r.URL.Query().Get("q")
@@ -4529,9 +4549,12 @@ func getDashboardTemplate() string {
                         </button>
                     </div>
 
-                    <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
                         <button onclick="exportRouteGPX()" id="btn-export-route" class="landing-btn" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; width: 100%; border-color: #2ecc71; color: #2ecc71;">
                             ⬇️ Export GPX
+                        </button>
+                        <button onclick="syncRouteToHammerhead()" id="btn-route-sync" class="landing-btn" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; width: 100%; border-color: #3498db; color: #3498db;">
+                            🔄 Sync to Karoo
                         </button>
                     </div>
 
@@ -5527,7 +5550,7 @@ func getDashboardTemplate() string {
                             const reauthLink = document.getElementById('btn-reauth-banner');
                             if (errBanner && errMessage && reauthLink) {
                                 errMessage.textContent = data.hammerhead_error;
-                                const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                                const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read%20route:write&state=directeur';
                                 reauthLink.href = authUrl;
                                 errBanner.style.display = 'block';
                             }
@@ -8275,6 +8298,7 @@ func getDashboardTemplate() string {
                         '<div style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">' + routeNameStr + '</div>' +
                         '<div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">' +
                             (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="downloadGPXForDay(\'' + dateKey + '\')">💾 GPX</button>' : '') +
+                            (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="syncGPXForDay(\'' + dateKey + '\')">🔄 Export to Karoo</button>' : '') +
                         '</div>' +
                     '</div>';
                 } else {
@@ -11067,7 +11091,7 @@ func getDashboardTemplate() string {
                         const reauthLink = document.getElementById('btn-reauth-banner');
                         if (errBanner && errMessage && reauthLink) {
                             errMessage.textContent = data.hammerhead_error;
-                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read%20route:write&state=directeur';
                             reauthLink.href = authUrl;
                             errBanner.style.display = 'block';
                         }
@@ -11158,7 +11182,7 @@ func getDashboardTemplate() string {
                         linkCard.style.gap = '1rem';
                         linkCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
                         
-                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read%20route:write&state=directeur';
                         
                         linkCard.innerHTML = '<div style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">Link Hammerhead Account</div>' +
                             '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); max-width: 400px;">Connect your Hammerhead account to directeurAI to view your Karoo activities and download telemetry logs automatically.</p>' +
@@ -11179,7 +11203,7 @@ func getDashboardTemplate() string {
                         
                         let reAuthHtml = '';
                         if (data.hammerhead_configured) {
-                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read%20route:write&state=directeur';
                             reAuthHtml = '<div style="margin-top: 1.25rem; border-top: 1px solid rgba(231, 76, 60, 0.15); padding-top: 1.25rem; text-align: center;">' +
                                 '<a href="' + authUrl + '" class="btn-action" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.6rem 1.5rem; background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #ffffff; border-radius: 10px; font-size: 0.8rem; transition: background 0.2s;">' +
                                 '🔗 Re-authorize Account' +
@@ -11209,6 +11233,47 @@ func getDashboardTemplate() string {
                             reAuthHtml;
                         listHammerheadContainer.appendChild(errorCard);
                     } else {
+                        const manageHeader = document.createElement('div');
+                        manageHeader.style.display = 'flex';
+                        manageHeader.style.justifyContent = 'space-between';
+                        manageHeader.style.alignItems = 'center';
+                        manageHeader.style.marginBottom = '1rem';
+                        manageHeader.style.padding = '0.5rem 1rem';
+                        manageHeader.style.background = 'rgba(255, 255, 255, 0.02)';
+                        manageHeader.style.borderRadius = '12px';
+                        manageHeader.style.border = '1px solid var(--border-color)';
+                        
+                        const titleSpan = document.createElement('span');
+                        titleSpan.innerText = 'Account Linked';
+                        titleSpan.style.color = 'var(--text-secondary)';
+                        titleSpan.style.fontSize = '0.85rem';
+                        titleSpan.style.fontWeight = '600';
+                        
+                        const unlinkBtn = document.createElement('button');
+                        unlinkBtn.innerText = 'Unlink Account';
+                        unlinkBtn.className = 'btn-action';
+                        unlinkBtn.style.padding = '0.3rem 0.8rem';
+                        unlinkBtn.style.fontSize = '0.75rem';
+                        unlinkBtn.style.background = 'rgba(231, 76, 60, 0.15)';
+                        unlinkBtn.style.border = '1px solid #e74c3c';
+                        unlinkBtn.style.color = '#e74c3c';
+                        unlinkBtn.style.borderRadius = '6px';
+                        unlinkBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (confirm('Are you sure you want to unlink your Hammerhead account?')) {
+                                fetch('/api/hammerhead/unlink', { method: 'POST' })
+                                    .then(res => res.json())
+                                    .then(() => {
+                                        populateRideLists(1, 1);
+                                    })
+                                    .catch(err => alert('Error unlinking account: ' + err));
+                            }
+                        });
+                        
+                        manageHeader.appendChild(titleSpan);
+                        manageHeader.appendChild(unlinkBtn);
+                        listHammerheadContainer.appendChild(manageHeader);
+
                         if (data.hammerhead && data.hammerhead.length > 0) {
                             data.hammerhead.forEach(act => {
                                 const dateStr = act.startTime ? new Date(act.startTime).toLocaleString() : 'N/A';
@@ -12372,6 +12437,8 @@ func getDashboardTemplate() string {
                     "<strong>Est. Riding Time:</strong> " + durationMinutes + " mins";
 
                 document.getElementById("btn-export-route").disabled = false;
+                const btnSync = document.getElementById("btn-route-sync");
+                if (btnSync) btnSync.disabled = false;
                 document.getElementById("btn-route-save").disabled = false;
 
             } catch (err) {
@@ -12603,6 +12670,8 @@ func getDashboardTemplate() string {
                     "<strong>Est. Riding Time:</strong> " + durationMinutes + " mins";
 
                 document.getElementById("btn-export-route").disabled = false;
+                const btnSync = document.getElementById("btn-route-sync");
+                if (btnSync) btnSync.disabled = false;
                 document.getElementById("btn-route-save").disabled = false;
 
             } catch (err) {
@@ -12679,13 +12748,22 @@ trkpts +
                 alert("No route geometry available.");
                 return;
             }
-            const gpxData = window.generateGPX(window.routePlanGeometry, window.routePlanName || "route");
+            let routeName = window.routePlanName || "Planned Ride";
+            const cleanTitle = routeName.replace(/^dsAI-\d{4}-\d{2}-\d{2}:\s*/, "");
+            if (window.activeRouteDateKey) {
+                routeName = "dsAI-" + window.activeRouteDateKey + ": " + cleanTitle;
+            } else {
+                const todayStr = new Date().toISOString().split('T')[0];
+                routeName = "dsAI-" + todayStr + ": " + cleanTitle;
+            }
+
+            const gpxData = window.generateGPX(window.routePlanGeometry, routeName);
             try {
                 const res = await fetch("/api/hammerhead/sync-route", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        name: window.routePlanName || "Planned Ride",
+                        name: routeName,
                         gpx: gpxData
                     })
                 });
@@ -12797,12 +12875,15 @@ trkpts +
                 localStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
             }
 
+            const cleanTitle = (d.title || d.route_name || "Planned Ride").replace(/^dsAI-\d{4}-\d{2}-\d{2}:\s*/, "");
+            const customRouteName = "dsAI-" + dateKey + ": " + cleanTitle;
+
             try {
                 const res = await fetch("/api/hammerhead/sync-route", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        name: d.route_name || "Planned Ride",
+                        name: customRouteName,
                         gpx: gpxData
                     })
                 });
@@ -12871,6 +12952,8 @@ trkpts +
                 : "No route generated yet. Fill in details and click \"Generate Route\".";
 
             document.getElementById("btn-export-route").disabled = !d.route_gpx;
+            const btnSync2 = document.getElementById("btn-route-sync");
+            if (btnSync2) btnSync2.disabled = !d.route_gpx;
             document.getElementById("btn-route-save").disabled = false;
 
             document.getElementById("route-planner-status").style.display = "none";
