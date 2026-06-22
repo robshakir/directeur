@@ -3576,9 +3576,42 @@ func getDashboardTemplate() string {
                 width: 100% !important;
             }
         }
+
+        #global-loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: var(--bg);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: var(--text-color);
+            transition: opacity 0.5s ease-out;
+        }
+        #global-loading-overlay .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--border);
+            border-top: 4px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
+    <!-- Global Loading Overlay -->
+    <div id="global-loading-overlay">
+        <div class="spinner"></div>
+        <h2 style="font-weight: 600; letter-spacing: 1px;">Loading directeur<span style="color: var(--accent); font-weight: 800;">AI</span>...</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">Reading local storage & syncing rides...</p>
+    </div>
+
     <!-- Global Header -->
     <header id="global-header">
         <div class="header-logo-container" onclick="switchToView('landing')" title="Go to Home">
@@ -4966,6 +4999,14 @@ func getDashboardTemplate() string {
         }
 
         // Initialize theme on load
+        window.hideLoadingOverlay = () => {
+            const overlay = document.getElementById('global-loading-overlay');
+            if (overlay) {
+                overlay.style.opacity = '0';
+                setTimeout(() => { overlay.style.display = 'none'; }, 500);
+            }
+        };
+
         window.addEventListener('DOMContentLoaded', () => {
             if (rideData && rideData.summary) {
                 const startDate = new Date(rideData.summary.start_time);
@@ -5420,7 +5461,10 @@ func getDashboardTemplate() string {
 
         function initializeBikeSelector() {
             const bikeSelector = document.getElementById('bike-selector');
-            if (!bikeSelector) return;
+            if (!bikeSelector) {
+                window.hideLoadingOverlay();
+                return;
+            }
             
             // 1. Populate from embedded configBikes if available (for static mode)
             if (typeof configBikes !== 'undefined' && configBikes && configBikes.length > 0) {
@@ -5474,10 +5518,14 @@ func getDashboardTemplate() string {
                         } else if (errBanner) {
                             errBanner.style.display = 'none';
                         }
+                        window.hideLoadingOverlay();
                     })
                     .catch(err => {
                         console.log("Could not fetch bikes from server (normal if offline/static):", err);
+                        window.hideLoadingOverlay();
                     });
+            } else {
+                window.hideLoadingOverlay();
             }
             
             function populateSelectorOptions(bikesList) {
