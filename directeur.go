@@ -4494,9 +4494,6 @@ func getDashboardTemplate() string {
                         <button onclick="suggestRouteWithGemini()" id="btn-suggest-route" class="landing-btn" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; width: 100%; background: linear-gradient(135deg, rgba(155, 89, 182, 0.2), rgba(52, 152, 219, 0.2)); border-color: #9b59b6; color: #e0aaff; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;">
                             🤖 Suggest Route with Gemini AI
                         </button>
-                        <button onclick="calculateRoute()" id="btn-generate-route" class="landing-btn landing-btn-primary" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; width: 100%;">
-                            🗺️ Calculate Route (Simple Loop)
-                        </button>
                     </div>
 
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
@@ -5473,7 +5470,7 @@ func getDashboardTemplate() string {
                             const reauthLink = document.getElementById('btn-reauth-banner');
                             if (errBanner && errMessage && reauthLink) {
                                 errMessage.textContent = data.hammerhead_error;
-                                const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                                const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read%20route:write&state=directeur';
                                 reauthLink.href = authUrl;
                                 errBanner.style.display = 'block';
                             }
@@ -11010,7 +11007,7 @@ func getDashboardTemplate() string {
                         const reauthLink = document.getElementById('btn-reauth-banner');
                         if (errBanner && errMessage && reauthLink) {
                             errMessage.textContent = data.hammerhead_error;
-                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read%20route:write&state=directeur';
                             reauthLink.href = authUrl;
                             errBanner.style.display = 'block';
                         }
@@ -11101,7 +11098,7 @@ func getDashboardTemplate() string {
                         linkCard.style.gap = '1rem';
                         linkCard.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2)';
                         
-                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                        const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read%20route:write&state=directeur';
                         
                         linkCard.innerHTML = '<div style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">Link Hammerhead Account</div>' +
                             '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); max-width: 400px;">Connect your Hammerhead account to directeurAI to view your Karoo activities and download telemetry logs automatically.</p>' +
@@ -11122,7 +11119,7 @@ func getDashboardTemplate() string {
                         
                         let reAuthHtml = '';
                         if (data.hammerhead_configured) {
-                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read&state=directeur';
+                            const authUrl = 'https://api.hammerhead.io/v1/auth/oauth/authorize?client_id=' + encodeURIComponent(data.client_id) + '&redirect_uri=' + encodeURIComponent(window.location.origin + '/callback') + '&response_type=code&scope=activity:read%20route:write&state=directeur';
                             reAuthHtml = '<div style="margin-top: 1.25rem; border-top: 1px solid rgba(231, 76, 60, 0.15); padding-top: 1.25rem; text-align: center;">' +
                                 '<a href="' + authUrl + '" class="btn-action" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; padding: 0.6rem 1.5rem; background: rgba(231, 76, 60, 0.15); border: 1px solid #e74c3c; color: #ffffff; border-radius: 10px; font-size: 0.8rem; transition: background 0.2s;">' +
                                 '🔗 Re-authorize Account' +
