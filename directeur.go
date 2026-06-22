@@ -11897,23 +11897,27 @@ func getDashboardTemplate() string {
             };
         };
 
-        window.generateLoopWaypoints = async (lat, lon, distKm, direction) => {
-            const dirMap = {
-                "north": 0, "n": 0,
-                "northeast": 45, "ne": 45,
-                "east": 90, "e": 90,
-                "southeast": 135, "se": 135,
-                "south": 180, "s": 180,
-                "southwest": 225, "sw": 225,
-                "west": 270, "w": 270,
-                "northwest": 315, "nw": 315
-            };
-            const dirClean = direction.toLowerCase().trim();
+        window.generateLoopWaypoints = async (lat, lon, distKm, directionOrBearing) => {
             let baseBearing = 0;
-            for (const key in dirMap) {
-                if (dirClean.includes(key)) {
-                    baseBearing = dirMap[key];
-                    break;
+            if (typeof directionOrBearing === "number") {
+                baseBearing = directionOrBearing;
+            } else {
+                const dirMap = {
+                    "north": 0, "n": 0,
+                    "northeast": 45, "ne": 45,
+                    "east": 90, "e": 90,
+                    "southeast": 135, "se": 135,
+                    "south": 180, "s": 180,
+                    "southwest": 225, "sw": 225,
+                    "west": 270, "w": 270,
+                    "northwest": 315, "nw": 315
+                };
+                const dirClean = (directionOrBearing || "").toLowerCase().trim();
+                for (const key in dirMap) {
+                    if (dirClean.includes(key)) {
+                        baseBearing = dirMap[key];
+                        break;
+                    }
                 }
             }
 
@@ -11963,38 +11967,110 @@ func getDashboardTemplate() string {
                     window.selectedStartCoords = startCoords;
                 }
 
-                statusEl.innerText = "Generating cycleway-attracted waypoints...";
-                const waypoints = await window.generateLoopWaypoints(startCoords.lat, startCoords.lon, distVal, towardsStr);
+                let startBearing = 0;
+                let preferredDirectionUsed = false;
+                if (towardsStr) {
+                    const dirMap = {
+                        "north": 0, "n": 0,
+                        "northeast": 45, "ne": 45,
+                        "east": 90, "e": 90,
+                        "southeast": 135, "se": 135,
+                        "south": 180, "s": 180,
+                        "southwest": 225, "sw": 225,
+                        "west": 270, "w": 270,
+                        "northwest": 315, "nw": 315
+                    };
+                    const dirClean = towardsStr.toLowerCase().trim();
+                    for (const key in dirMap) {
+                        if (dirClean.includes(key)) {
+                            startBearing = dirMap[key];
+                            preferredDirectionUsed = true;
+                            break;
+                        }
+                    }
+                }
 
-                statusEl.innerText = "Requesting loop route geometry from BRouter...";
-                const coordsString = [
-                    startCoords.lon + "," + startCoords.lat,
-                    waypoints[0].lon + "," + waypoints[0].lat,
-                    waypoints[1].lon + "," + waypoints[1].lat,
-                    startCoords.lon + "," + startCoords.lat
-                ].join("|");
+                const candidateBearings = [startBearing];
+                const allBearings = [180, 225, 270, 135, 90, 315, 45, 0];
+                for (const b of allBearings) {
+                    if (!candidateBearings.includes(b)) {
+                        candidateBearings.push(b);
+                    }
+                }
 
-                const brouterUrl = "https://brouter.de/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
-                const res = await fetch(brouterUrl);
-                if (!res.ok) throw new Error("BRouter service failed to route waypoints");
-                const data = await res.json();
-                if (!data.features || data.features.length === 0) throw new Error("No route found");
+                const bearingNames = {
+                    0: "North", 45: "Northeast", 90: "East", 135: "Southeast",
+                    180: "South", 225: "Southwest", 270: "West", 315: "Northwest"
+                };
 
-                const route = data.features[0];
-                const trackLength = parseFloat(route.properties["track-length"]); // in meters
-                const totalTime = parseFloat(route.properties["total-time"]); // in seconds
+                let finalRoute = null;
+                let finalWaypoints = null;
+                let finalBearing = startBearing;
+                let errors = [];
+
+                for (const bearing of candidateBearings) {
+                    try {
+                        statusEl.innerText = "Requesting loop route for bearing " + bearing + "°...";
+                        const waypoints = await window.generateLoopWaypoints(startCoords.lat, startCoords.lon, distVal, bearing);
+                        const coordsString = [
+                            startCoords.lon + "," + startCoords.lat,
+                            waypoints[0].lon + "," + waypoints[0].lat,
+                            waypoints[1].lon + "," + waypoints[1].lat,
+                            startCoords.lon + "," + startCoords.lat
+                        ].join("|");
+
+                        const brouterUrl = "https://brouter.de/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
+                        const res = await fetch(brouterUrl);
+                        if (!res.ok) throw new Error("BRouter failed");
+                        const data = await res.json();
+                        if (!data.features || data.features.length === 0) throw new Error("No route");
+
+                        const route = data.features[0];
+                        let hasFerry = false;
+                        if (route.properties && route.properties.messages) {
+                            const msgs = route.properties.messages;
+                            for (let i = 1; i < msgs.length; i++) {
+                                const wayTags = msgs[i][9] || "";
+                                if (wayTags.includes("route=ferry")) {
+                                    hasFerry = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (hasFerry) throw new Error("Uses ferry");
+
+                        finalRoute = route;
+                        finalWaypoints = waypoints;
+                        finalBearing = bearing;
+                        break;
+                    } catch (e) {
+                        errors.push(bearing + "°: " + e.message);
+                    }
+                }
+
+                if (!finalRoute) {
+                    throw new Error("No ferry-free route found. Tried bearings: " + errors.join("; "));
+                }
+
+                const trackLength = parseFloat(finalRoute.properties["track-length"]);
+                const totalTime = parseFloat(finalRoute.properties["total-time"]);
 
                 const distanceKm = parseFloat((trackLength / 1000).toFixed(1));
                 const durationMinutes = Math.round(totalTime / 60);
 
-                window.routePlanGeometry = route.geometry.coordinates;
+                window.routePlanGeometry = finalRoute.geometry.coordinates;
                 window.routePlanDistance = distanceKm;
-                window.routePlanName = towardsStr ? "Loop towards " + towardsStr : "Loop Route from " + startLocStr.split(",")[0];
+
+                const dirName = bearingNames[finalBearing] || "Custom";
+                window.routePlanName = towardsStr && preferredDirectionUsed
+                    ? "Loop towards " + towardsStr
+                    : "Loop towards " + dirName + " from " + startLocStr.split(",")[0];
 
                 if (window.routePlannerPolyline) {
                     window.routePlannerPolyline.remove();
                 }
-                const latLons = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                const latLons = finalRoute.geometry.coordinates.map(c => [c[1], c[0]]);
                 window.routePlannerPolyline = L.polyline(latLons, { color: "var(--accent)", weight: 5, opacity: 0.85 }).addTo(window.routePlannerMap);
                 window.routePlannerMap.fitBounds(window.routePlannerPolyline.getBounds());
 
@@ -12005,7 +12081,7 @@ func getDashboardTemplate() string {
                     .bindPopup("Start/Finish").openPopup();
                 window.routePlannerMarkers.push(startMarker);
 
-                waypoints.forEach((wp, idx) => {
+                finalWaypoints.forEach((wp, idx) => {
                     const marker = L.marker([wp.lat, wp.lon]).addTo(window.routePlannerMap)
                         .bindPopup("Waypoint " + (idx + 1));
                     window.routePlannerMarkers.push(marker);
