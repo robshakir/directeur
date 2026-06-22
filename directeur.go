@@ -12071,7 +12071,7 @@ func getDashboardTemplate() string {
                     window.routePlannerPolyline.remove();
                 }
                 const latLons = finalRoute.geometry.coordinates.map(c => [c[1], c[0]]);
-                window.routePlannerPolyline = L.polyline(latLons, { color: "var(--accent)", weight: 5, opacity: 0.85 }).addTo(window.routePlannerMap);
+                window.routePlannerPolyline = L.polyline(latLons, { color: "#ff3366", weight: 6, opacity: 0.9, lineJoin: "round" }).addTo(window.routePlannerMap);
                 window.routePlannerMap.fitBounds(window.routePlannerPolyline.getBounds());
 
                 window.routePlannerMarkers.forEach(m => m.remove());
@@ -12279,8 +12279,10 @@ trkpts +
                 const mapEl = document.getElementById("route-map");
                 if (!window.routePlannerMap) {
                     window.routePlannerMap = L.map(mapEl).setView([37.7749, -122.4194], 12);
-                    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-                        attribution: "© OpenStreetMap contributors"
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                        subdomains: 'abcd',
+                        maxZoom: 20
                     }).addTo(window.routePlannerMap);
 
                     window.routePlannerMap.on("click", async (e) => {
@@ -12316,7 +12318,7 @@ trkpts +
 
                 if (d.route_geojson && d.route_geojson.coordinates) {
                     const latLons = d.route_geojson.coordinates;
-                    window.routePlannerPolyline = L.polyline(latLons, { color: "var(--accent)", weight: 5, opacity: 0.85 }).addTo(window.routePlannerMap);
+                    window.routePlannerPolyline = L.polyline(latLons, { color: "#ff3366", weight: 6, opacity: 0.9, lineJoin: "round" }).addTo(window.routePlannerMap);
                     window.routePlannerMap.fitBounds(window.routePlannerPolyline.getBounds());
 
                     const startMarker = L.marker(latLons[0]).addTo(window.routePlannerMap)
