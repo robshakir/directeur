@@ -10098,17 +10098,15 @@
             statusEl.style.color = "#e0aaff";
             statusEl.innerText = "🤖 Querying Gemini for route suggestions based on workout goal...";
 
-            
             const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[window.activeRouteDateKey] || {};
             const workoutDesc = d.description || "";
             const workoutTitle = d.title || d.workout_name || "Ride";
             const workoutDuration = d.duration_mins || 60;
             const workoutStructure = d.structure || "";
-
             const model = localStorage.getItem('fit_calendar_model') || 'gemini-3.5-flash';
 
-            const promptText = "You are directeurAI Coach, an expert cycling route planner. The athlete wants to plan a route starting at \"" + startLocStr + "\"" + (endLocStr ? " and ending at \"" + endLocStr + "\"" : "") + ". The workout for today is:\n" +
+            let basePromptText = "You are directeurAI Coach, an expert cycling route planner. The athlete wants to plan a route starting at \"" + startLocStr + "\"" + (endLocStr ? " and ending at \"" + endLocStr + "\"" : "") + ". The workout for today is:\n" +
                 "- Date: " + window.activeRouteDateKey + "\n" +
                 "- Title: " + workoutTitle + "\n" +
                 "- Duration: " + workoutDuration + " mins\n" +
@@ -10125,8 +10123,8 @@
                 "1. \"waypoints\" MUST contain exactly 2 to 4 specific, geocodable names of places, intersections, peaks, or towns in order between the start and end (or back to the start if no end is specified) to shape a realistic route. Keep them local to the starting location \"" + startLocStr + "\". Do not use general regions or coordinates, use actual names that can be looked up on OpenStreetMap.\n" +
                 "2. CRITICAL: Hitting the target distance of " + distVal + " km is your top priority. If the target distance is large (e.g. >20km or >50km), the waypoints MUST NOT be clustered close to the starting location. You MUST space the waypoints far enough apart (e.g., 10km to 25km away from the start and each other) or include distant turnaround landmarks so that the cumulative path distance roughly equals " + distVal + " km. Do not suggest a short 3-10 km loop when the target is 50 km.\n" +
                 "3. Output ONLY valid, raw JSON. Do not wrap in markdown code block formatting.";
-
-            const callGemini = (apiVersion) => {
+ 
+            const callGemini = (promptText, apiVersion) => {
                 const url = 'https://generativelanguage.googleapis.com/' + apiVersion + '/models/' + model + ':generateContent?key=' + key;
                 return fetch(url, {
                     method: 'POST',
@@ -10148,147 +10146,166 @@
                     return res.json().then(data => ({ ok: true, data }));
                 });
             };
-
+ 
+            let attempts = 0;
+            const maxAttempts = 3;
+            let currentPrompt = basePromptText;
+            let startCoords = window.selectedStartCoords;
+            let endCoords = window.selectedEndCoords;
+ 
             try {
-                let apiRes = await callGemini('v1');
-                if (!apiRes.ok && apiRes.status === 404) {
-                    apiRes = await callGemini('v1beta');
-                }
-                if (!apiRes.ok) throw new Error(apiRes.message);
-
-                let jsonText = apiRes.data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!jsonText) throw new Error("Empty response from Gemini.");
-
-                
-                const tick = String.fromCharCode(96);
-                jsonText = jsonText.replace(new RegExp(tick + tick + tick + "json", "gi"), "")
-                                   .replace(new RegExp(tick + tick + tick, "g"), "")
-                                   .trim();
-                
-                const responseObj = JSON.parse(jsonText);
-                const routeName = responseObj.route_name || "Gemini Suggested Route";
-                const explanation = responseObj.explanation || "";
-                const waypoints = responseObj.waypoints || [];
-
-                statusEl.innerText = "🤖 Geocoding suggested waypoints...";
-                
-                let startCoords = window.selectedStartCoords;
-                if (!startCoords) {
-                    const geocodeResult = await window.geocodeLocation(startLocStr);
-                    startCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
-                    window.selectedStartCoords = startCoords;
-                }
-
-                let endCoords = null;
-                if (endLocStr) {
-                    endCoords = window.selectedEndCoords;
-                    if (!endCoords) {
-                        const geocodeResult = await window.geocodeLocation(endLocStr);
-                        endCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
-                        window.selectedEndCoords = endCoords;
-                    }
-                }
-
-                const waypointCoords = [];
-                const resolvedWaypointNames = [];
-                for (const wp of waypoints) {
+                while (attempts < maxAttempts) {
+                    attempts++;
                     try {
-                        statusEl.innerText = "🤖 Geocoding waypoint: " + wp + "...";
-                        const coords = await window.geocodeLocation(wp + ", " + startLocStr);
-                        waypointCoords.push(coords);
-                        resolvedWaypointNames.push(wp);
-                    } catch (wpErr) {
-                        console.warn("Failed to geocode waypoint " + wp + ":", wpErr);
-                        try {
-                            const coords = await window.geocodeLocation(wp);
-                            waypointCoords.push(coords);
-                            resolvedWaypointNames.push(wp);
-                        } catch (e2) {
-                            console.error("Total failure geocoding waypoint " + wp);
+                        statusEl.innerText = "🤖 Querying Gemini (Attempt " + attempts + " of " + maxAttempts + ")...";
+                        let apiRes = await callGemini(currentPrompt, 'v1');
+                        if (!apiRes.ok && apiRes.status === 404) {
+                            apiRes = await callGemini(currentPrompt, 'v1beta');
+                        }
+                        if (!apiRes.ok) throw new Error(apiRes.message);
+ 
+                        let jsonText = apiRes.data.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (!jsonText) throw new Error("Empty response from Gemini.");
+ 
+                        const tick = String.fromCharCode(96);
+                        jsonText = jsonText.replace(new RegExp(tick + tick + tick + "json", "gi"), "")
+                                           .replace(new RegExp(tick + tick + tick, "g"), "")
+                                           .trim();
+                        
+                        const responseObj = JSON.parse(jsonText);
+                        const routeName = responseObj.route_name || "Gemini Suggested Route";
+                        const explanation = responseObj.explanation || "";
+                        const waypoints = responseObj.waypoints || [];
+ 
+                        statusEl.innerText = "🤖 Geocoding suggested waypoints (Attempt " + attempts + ")...";
+                        
+                        if (!startCoords) {
+                            const geocodeResult = await window.geocodeLocation(startLocStr);
+                            startCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
+                            window.selectedStartCoords = startCoords;
+                        }
+ 
+                        if (endLocStr && !endCoords) {
+                            const geocodeResult = await window.geocodeLocation(endLocStr);
+                            endCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
+                            window.selectedEndCoords = endCoords;
+                        }
+ 
+                        const waypointCoords = [];
+                        const resolvedWaypointNames = [];
+                        for (const wp of waypoints) {
+                            try {
+                                const coords = await window.geocodeLocation(wp + ", " + startLocStr);
+                                waypointCoords.push(coords);
+                                resolvedWaypointNames.push(wp);
+                            } catch (wpErr) {
+                                try {
+                                    const coords = await window.geocodeLocation(wp);
+                                    waypointCoords.push(coords);
+                                    resolvedWaypointNames.push(wp);
+                                } catch (e2) {
+                                    console.error("Total failure geocoding waypoint " + wp);
+                                }
+                            }
+                        }
+ 
+                        if (waypointCoords.length === 0) {
+                            throw new Error("None of the suggested waypoints could be geocoded.");
+                        }
+ 
+                        statusEl.innerText = "🤖 Checking route distance with BRouter (Attempt " + attempts + ")...";
+                        
+                        const routePoints = [startCoords];
+                        waypointCoords.forEach(wp => routePoints.push(wp));
+                        if (endCoords) {
+                            routePoints.push(endCoords);
+                        } else {
+                            routePoints.push(startCoords);
+                        }
+ 
+                        const coordsString = routePoints.map(p => p.lon + "," + p.lat).join("|");
+                        const brouterUrl = "/api/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
+                        
+                        const res = await fetch(brouterUrl);
+                        let text = await res.text();
+                        if (!res.ok) throw new Error("BRouter failed to calculate route: status " + res.status);
+                        
+                        text = text.replace(/"type"\s*:\s*"LineString"\s*\n?\s*"coordinates"/g, '"type": "LineString", "coordinates"');
+                        const data = JSON.parse(text);
+                        if (!data.features || data.features.length === 0) throw new Error("No route found through the suggested waypoints.");
+ 
+                        const route = data.features[0];
+                        const trackLength = parseFloat(route.properties["track-length"]);
+                        const totalTime = parseFloat(route.properties["total-time"]);
+                        const distanceKm = parseFloat((trackLength / 1000).toFixed(1));
+                        const durationMinutes = Math.round(totalTime / 60);
+ 
+                        const isAcceptable = distanceKm >= (distVal * 0.8) || attempts >= maxAttempts;
+                        
+                        if (isAcceptable) {
+                            window.routePlanGeometry = route.geometry.coordinates;
+                            window.routePlanDistance = distanceKm;
+                            window.routePlanName = routeName;
+ 
+                            if (window.routePlannerPolyline) {
+                                window.routePlannerPolyline.remove();
+                            }
+                            const latLons = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                            window.routePlannerPolyline = L.polyline(latLons, { color: "#9b59b6", weight: 6, opacity: 0.9, lineJoin: "round" }).addTo(window.routePlannerMap);
+                            window.routePlannerMap.fitBounds(window.routePlannerPolyline.getBounds());
+ 
+                            window.routePlannerMarkers.forEach(m => m.remove());
+                            window.routePlannerMarkers = [];
+                            if (window.routePlannerStartMarker) {
+                                window.routePlannerStartMarker.remove();
+                                window.routePlannerStartMarker = null;
+                            }
+                            if (window.routePlannerEndMarker) {
+                                window.routePlannerEndMarker.remove();
+                                window.routePlannerEndMarker = null;
+                            }
+ 
+                            window.updateStartMarker(startCoords.lat, startCoords.lon);
+                            if (endCoords) {
+                                window.updateEndMarker(endCoords.lat, endCoords.lon);
+                            }
+ 
+                            waypointCoords.forEach((wp, idx) => {
+                                const marker = L.marker([wp.lat, wp.lon]).addTo(window.routePlannerMap)
+                                    .bindPopup("Waypoint " + (idx + 1) + ": " + resolvedWaypointNames[idx]);
+                                window.routePlannerMarkers.push(marker);
+                            });
+ 
+                            statusEl.style.display = "block";
+                            statusEl.style.background = "rgba(46, 204, 113, 0.1)";
+                            statusEl.style.borderColor = "#2ecc71";
+                            statusEl.style.color = "#2ecc71";
+                            statusEl.innerText = "🤖 AI Route Generated Successfully" + (attempts > 1 ? " (Refined in " + attempts + " attempts)" : "") + "!";
+ 
+                            summaryEl.innerHTML = "<strong>Route:</strong> " + routeName + "<br>" +
+                                "<strong>AI Selection:</strong> " + explanation + "<br>" +
+                                "<strong>Distance:</strong> " + distanceKm + " km (Target: " + distVal + " km)<br>" +
+                                "<strong>Est. Riding Time:</strong> " + durationMinutes + " mins";
+ 
+                            document.getElementById("btn-export-route").disabled = false;
+                            const btnSync = document.getElementById("btn-route-sync");
+                            if (btnSync) btnSync.disabled = false;
+                            document.getElementById("btn-route-save").disabled = false;
+                            return;
+                        } else {
+                            console.warn("Suggested route is too short: " + distanceKm + " km vs target: " + distVal + " km. Retrying...");
+                            currentPrompt = basePromptText + "\n\n" +
+                                "WARNING from previous attempt:\n" +
+                                "- The previous suggested waypoints: " + JSON.stringify(waypoints) + " generated a route of only " + distanceKm + " km, which is way too short compared to the target of " + distVal + " km.\n" +
+                                "- You MUST suggest a DIFFERENT route. Choose waypoints that are significantly further away from the start point \"" + startLocStr + "\" to make the route much longer. For example, if you need " + distVal + " km, ensure the furthest waypoint is roughly " + (distVal / 2) + " km away or select a much wider loop. Do not reuse the previous waypoints.";
+                        }
+                    } catch (attemptErr) {
+                        console.error("Attempt " + attempts + " failed: ", attemptErr);
+                        if (attempts >= maxAttempts) {
+                            throw attemptErr;
                         }
                     }
                 }
-
-                if (waypointCoords.length === 0) {
-                    throw new Error("Gemini suggested waypoints, but none of them could be resolved to coordinates on the map.");
-                }
-
-                statusEl.innerText = "🤖 Requesting BRouter route for the suggested path...";
-                
-                const routePoints = [startCoords];
-                waypointCoords.forEach(wp => routePoints.push(wp));
-                if (endCoords) {
-                    routePoints.push(endCoords);
-                } else {
-                    routePoints.push(startCoords);
-                }
-
-                const coordsString = routePoints.map(p => p.lon + "," + p.lat).join("|");
-                const brouterUrl = "/api/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
-                
-                const res = await fetch(brouterUrl);
-                let text = await res.text();
-                if (!res.ok) throw new Error("BRouter failed to calculate route: status " + res.status);
-                
-                text = text.replace(/"type"\s*:\s*"LineString"\s*\n?\s*"coordinates"/g, '"type": "LineString", "coordinates"');
-                const data = JSON.parse(text);
-                if (!data.features || data.features.length === 0) throw new Error("No route found through the suggested waypoints.");
-
-                const route = data.features[0];
-                const trackLength = parseFloat(route.properties["track-length"]);
-                const totalTime = parseFloat(route.properties["total-time"]);
-                const distanceKm = parseFloat((trackLength / 1000).toFixed(1));
-                const durationMinutes = Math.round(totalTime / 60);
-
-                window.routePlanGeometry = route.geometry.coordinates;
-                window.routePlanDistance = distanceKm;
-                window.routePlanName = routeName;
-
-                if (window.routePlannerPolyline) {
-                    window.routePlannerPolyline.remove();
-                }
-                const latLons = route.geometry.coordinates.map(c => [c[1], c[0]]);
-                window.routePlannerPolyline = L.polyline(latLons, { color: "#9b59b6", weight: 6, opacity: 0.9, lineJoin: "round" }).addTo(window.routePlannerMap);
-                window.routePlannerMap.fitBounds(window.routePlannerPolyline.getBounds());
-
-                window.routePlannerMarkers.forEach(m => m.remove());
-                window.routePlannerMarkers = [];
-                if (window.routePlannerStartMarker) {
-                    window.routePlannerStartMarker.remove();
-                    window.routePlannerStartMarker = null;
-                }
-                if (window.routePlannerEndMarker) {
-                    window.routePlannerEndMarker.remove();
-                    window.routePlannerEndMarker = null;
-                }
-
-                window.updateStartMarker(startCoords.lat, startCoords.lon);
-                if (endCoords) {
-                    window.updateEndMarker(endCoords.lat, endCoords.lon);
-                }
-
-                waypointCoords.forEach((wp, idx) => {
-                    const marker = L.marker([wp.lat, wp.lon]).addTo(window.routePlannerMap)
-                        .bindPopup("Waypoint " + (idx + 1) + ": " + resolvedWaypointNames[idx]);
-                    window.routePlannerMarkers.push(marker);
-                });
-
-                statusEl.style.display = "block";
-                statusEl.style.background = "rgba(46, 204, 113, 0.1)";
-                statusEl.style.borderColor = "#2ecc71";
-                statusEl.style.color = "#2ecc71";
-                statusEl.innerText = "🤖 AI Route Generated Successfully!";
-
-                summaryEl.innerHTML = "<strong>Route:</strong> " + routeName + "<br>" +
-                    "<strong>AI Selection:</strong> " + explanation + "<br>" +
-                    "<strong>Distance:</strong> " + distanceKm + " km (Target: " + distVal + " km)<br>" +
-                    "<strong>Est. Riding Time:</strong> " + durationMinutes + " mins";
-
-                document.getElementById("btn-export-route").disabled = false;
-                const btnSync = document.getElementById("btn-route-sync");
-                if (btnSync) btnSync.disabled = false;
-                document.getElementById("btn-route-save").disabled = false;
-
             } catch (err) {
                 console.error(err);
                 statusEl.style.display = "block";
