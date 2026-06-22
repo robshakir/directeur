@@ -8211,7 +8211,6 @@ func getDashboardTemplate() string {
                         '<div style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">' + routeNameStr + '</div>' +
                         '<div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">' +
                             (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="downloadGPXForDay(\'' + dateKey + '\')">💾 GPX</button>' : '') +
-                            (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="downloadGPXForDay(\'' + dateKey + '\')">⬇️ Download GPX</button>' : '') +
                         '</div>' +
                     '</div>';
                 } else {
