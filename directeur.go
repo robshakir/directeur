@@ -4812,12 +4812,28 @@ func getDashboardTemplate() string {
     </div>
 
     <!-- Data Injection & Logic -->
+    <script id="embedded-ride-data" type="application/json">{{.JSONStr}}</script>
+    <script id="embedded-schema-data" type="application/json">{{.SchemaStr}}</script>
+    <script id="embedded-bikes-data" type="application/json">{{.BikesStr}}</script>
     <script>
-        const initialRideData = {{.JSONStr}};
+        let initialRideData = null;
+        let schemaData = null;
+        let configBikes = null;
+        try {
+            const rd = document.getElementById('embedded-ride-data').textContent;
+            if (rd && rd.trim() && rd.trim() !== "null") initialRideData = JSON.parse(rd);
+        } catch(e) {}
+        try {
+            const sd = document.getElementById('embedded-schema-data').textContent;
+            if (sd && sd.trim() && sd.trim() !== "null") schemaData = JSON.parse(sd);
+        } catch(e) {}
+        try {
+            const bd = document.getElementById('embedded-bikes-data').textContent;
+            if (bd && bd.trim() && bd.trim() !== "null") configBikes = JSON.parse(bd);
+        } catch(e) {}
+
         window.initialRideData = initialRideData;
         let rideData = initialRideData;
-        const schemaData = {{.SchemaStr}};
-        const configBikes = {{.BikesStr}};
         console.log("Loaded Ride Data:", rideData);
 
         const defaultFTP = {{.FTP}} || 250;
