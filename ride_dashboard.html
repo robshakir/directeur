@@ -1935,9 +1935,12 @@
                         </button>
                     </div>
 
-                    <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
                         <button onclick="exportRouteGPX()" id="btn-export-route" class="landing-btn" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; width: 100%; border-color: #2ecc71; color: #2ecc71;">
                             ⬇️ Export GPX
+                        </button>
+                        <button onclick="syncRouteToHammerhead()" id="btn-route-sync" class="landing-btn" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; width: 100%; border-color: #3498db; color: #3498db;">
+                            🔄 Sync to Karoo
                         </button>
                     </div>
 
@@ -10006,7 +10009,7 @@
                     "<strong>Distance:</strong> " + distanceKm + " km<br>" +
                     "<strong>Est. Riding Time:</strong> " + durationMinutes + " mins";
 
-                document.getElementById("btn-route-gpx").disabled = false;
+                document.getElementById("btn-export-route").disabled = false;
                 document.getElementById("btn-route-sync").disabled = false;
                 document.getElementById("btn-route-save").disabled = false;
 
@@ -10238,7 +10241,7 @@
                     "<strong>Distance:</strong> " + distanceKm + " km (Target: " + distVal + " km)<br>" +
                     "<strong>Est. Riding Time:</strong> " + durationMinutes + " mins";
 
-                document.getElementById("btn-route-gpx").disabled = false;
+                document.getElementById("btn-export-route").disabled = false;
                 document.getElementById("btn-route-sync").disabled = false;
                 document.getElementById("btn-route-save").disabled = false;
 
@@ -10507,7 +10510,7 @@ trkpts +
                 ? "<strong>Route:</strong> " + d.route_name + "<br><strong>Distance:</strong> " + d.route_distance + " km"
                 : "No route generated yet. Fill in details and click \"Generate Route\".";
 
-            document.getElementById("btn-route-gpx").disabled = !d.route_gpx;
+            document.getElementById("btn-export-route").disabled = !d.route_gpx;
             document.getElementById("btn-route-sync").disabled = !d.route_gpx;
             document.getElementById("btn-route-save").disabled = false;
 
