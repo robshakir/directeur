@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"mime/multipart"
 	"time"
 
 	"github.com/tormoder/fit"
@@ -760,6 +761,77 @@ func fetchHammerheadActivities(cfg HammerheadConfig, configPath string, page int
 	}
 
 	return nil, 0, 0, err
+}
+
+// uploadHammerheadRoute uploads a route GPX payload to Hammerhead
+func uploadHammerheadRoute(cfg HammerheadConfig, configPath string, name, gpxContent string) error {
+	makeRequest := func(token string) (int, error) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		
+		part, err := writer.CreateFormFile("file", name + ".gpx")
+		if err != nil {
+			return 0, err
+		}
+		_, err = io.Copy(part, strings.NewReader(gpxContent))
+		if err != nil {
+			return 0, err
+		}
+		
+		err = writer.Close()
+		if err != nil {
+			return 0, err
+		}
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		req, err := http.NewRequest("POST", "https://api.hammerhead.io/v1/api/routes/file", body)
+		if err != nil {
+			return 0, err
+		}
+		req.Header.Set("Authorization", "Bearer " + token)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return resp.StatusCode, fmt.Errorf("hammerhead API error (%d): %s", resp.StatusCode, string(bodyBytes))
+		}
+		return resp.StatusCode, nil
+	}
+
+	var tokenToUse = cfg.AuthToken
+	var err error
+	var statusCode int
+
+	if tokenToUse != "" {
+		statusCode, err = makeRequest(tokenToUse)
+		if err == nil {
+			return nil
+		}
+	}
+
+	if (tokenToUse == "" || statusCode == http.StatusUnauthorized) && cfg.RefreshToken != "" && cfg.ClientID != "" && cfg.ClientSecret != "" {
+		tokenResp, refreshErr := refreshHammerheadToken(cfg.ClientID, cfg.ClientSecret, cfg.RefreshToken)
+		if refreshErr == nil {
+			currentConfig := loadConfig(configPath)
+			currentConfig.HammerheadAPI.AuthToken = tokenResp.AccessToken
+			if tokenResp.RefreshToken != "" {
+				currentConfig.HammerheadAPI.RefreshToken = tokenResp.RefreshToken
+			}
+			if saveErr := saveConfig(configPath, currentConfig); saveErr == nil {
+				_, err = makeRequest(tokenResp.AccessToken)
+				if err == nil {
+					return nil
+				}
+			}
+		}
+	}
+	return err
 }
 
 // downloadHammerheadFITFile retrieves and caches a FIT file from the Hammerhead activities API
@@ -2035,6 +2107,42 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		json.NewEncoder(w).Encode(resp)
 	})
 
+	http.HandleFunc("/api/hammerhead/sync-route", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		
+		cfg := loadConfig(configPath)
+		if !cfg.HammerheadAPI.Enabled {
+			http.Error(w, `{"error": "Hammerhead integration not enabled"}`, http.StatusBadRequest)
+			return
+		}
+
+		var payload struct {
+			Name string `json:"name"`
+			GPX  string `json:"gpx"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "invalid payload: %v"}`, err), http.StatusBadRequest)
+			return
+		}
+
+		if payload.Name == "" || payload.GPX == "" {
+			http.Error(w, `{"error": "name and gpx are required"}`, http.StatusBadRequest)
+			return
+		}
+
+		err := uploadHammerheadRoute(cfg.HammerheadAPI, configPath, payload.Name, payload.GPX)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write([]byte(`{"status": "success"}`))
+	})
+
 	http.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		cfg := loadConfig(configPath)
@@ -2493,6 +2601,103 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		}
 
 		json.NewEncoder(w).Encode(results)
+	})
+
+	http.HandleFunc("/api/hammerhead/upload-route", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+
+		cfg := loadConfig(configPath)
+		if !cfg.HammerheadAPI.Enabled || (cfg.HammerheadAPI.AuthToken == "" && cfg.HammerheadAPI.RefreshToken == "") {
+			http.Error(w, `{"error": "Hammerhead integration is not configured or disabled"}`, http.StatusBadRequest)
+			return
+		}
+
+		var req struct {
+			GPX  string `json:"gpx"`
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error": "invalid request body"}`, http.StatusBadRequest)
+			return
+		}
+
+		if req.GPX == "" {
+			http.Error(w, `{"error": "no GPX content provided"}`, http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			req.Name = "Planned Route"
+		}
+
+		// Helper function to execute the upload
+		uploadFile := func(token string) (int, string, error) {
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			
+			part, err := writer.CreateFormFile("file", req.Name+".gpx")
+			if err != nil {
+				return 0, "", err
+			}
+			_, err = part.Write([]byte(req.GPX))
+			if err != nil {
+				return 0, "", err
+			}
+			err = writer.Close()
+			if err != nil {
+				return 0, "", err
+			}
+
+			postURL := "https://api.hammerhead.io/v1/api/routes/file"
+			reqUpload, err := http.NewRequest("POST", postURL, body)
+			if err != nil {
+				return 0, "", err
+			}
+			reqUpload.Header.Set("Content-Type", writer.FormDataContentType())
+			reqUpload.Header.Set("Authorization", "Bearer "+token)
+
+			client := &http.Client{Timeout: 30 * time.Second}
+			resp, err := client.Do(reqUpload)
+			if err != nil {
+				return 0, "", err
+			}
+			defer resp.Body.Close()
+
+			respBody, _ := io.ReadAll(resp.Body)
+			return resp.StatusCode, string(respBody), nil
+		}
+
+		status, bodyStr, err := uploadFile(cfg.HammerheadAPI.AuthToken)
+		if err == nil && status == http.StatusUnauthorized && cfg.HammerheadAPI.RefreshToken != "" {
+			// Token expired, refresh it
+			tokenResp, refreshErr := refreshHammerheadToken(cfg.HammerheadAPI.ClientID, cfg.HammerheadAPI.ClientSecret, cfg.HammerheadAPI.RefreshToken)
+			if refreshErr == nil {
+				cfg.HammerheadAPI.AuthToken = tokenResp.AccessToken
+				if tokenResp.RefreshToken != "" {
+					cfg.HammerheadAPI.RefreshToken = tokenResp.RefreshToken
+				}
+				// Save config
+				if saveErr := saveConfig(configPath, cfg); saveErr == nil {
+					// Retry upload
+					status, bodyStr, err = uploadFile(cfg.HammerheadAPI.AuthToken)
+				}
+			}
+		}
+
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to upload route: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+
+		if status != http.StatusOK && status != http.StatusCreated {
+			http.Error(w, fmt.Sprintf(`{"error": "Hammerhead API error (status %d): %s"}`, status, bodyStr), http.StatusBadRequest)
+			return
+		}
+
+		w.Write([]byte(`{"status": "success", "message": "Route uploaded to Hammerhead successfully!"}`))
 	})
 
 	err = http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
@@ -4137,6 +4342,82 @@ func getDashboardTemplate() string {
                 <button onclick="saveIntervalsConfig()" id="btn-intervals-save" class="landing-btn landing-btn-primary" style="flex: 1; justify-content: center; font-size: 0.85rem; padding: 0.6rem 0;">
                     💾 Save Settings
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Workout Route Planner & Scheduler -->
+    <div id="route-planner-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center; padding: 2rem;">
+        <div style="width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 1.25rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; padding: 1.75rem; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px var(--accent-glow); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                <div style="font-size: 1.3rem; font-weight: 700; background: linear-gradient(135deg, #ffffff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-family: 'Outfit';">🗺️ Workout Route Planner & Scheduler</div>
+                <button onclick="hideRoutePlannerModal()" class="btn-action" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">Close</button>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start;">
+                <!-- Left Column: Controls -->
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Start Location</label>
+                        <input type="text" id="route-start-location" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none; transition: border-color 0.2s;" placeholder="Type address or click on the map">
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Direction Bias ("Towards")</label>
+                        <input type="text" id="route-towards" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;" placeholder="e.g., Marin, Oakland, Pacifica (optional)">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                            <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Avg Speed (km/h)</label>
+                            <input type="number" id="route-avg-speed" step="0.1" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;" oninput="updateTargetDistance()">
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                            <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Target Dist (km)</label>
+                            <input type="number" id="route-target-dist" step="0.1" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                            <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Start Time</label>
+                            <input type="time" id="route-start-time" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;" oninput="updateFinishTime()">
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                            <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Finish Time</label>
+                            <input type="time" id="route-finish-time" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;">
+                        </div>
+                    </div>
+
+                    <div id="route-planner-status" style="display: none; padding: 0.6rem 0.75rem; border-radius: 8px; font-size: 0.8rem; line-height: 1.4; font-weight: 500;">
+                    </div>
+
+                    <button onclick="calculateRoute()" id="btn-generate-route" class="landing-btn landing-btn-primary" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; width: 100%;">
+                        🗺️ Calculate Loop Route
+                    </button>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
+                        <button onclick="exportRouteGPX()" id="btn-route-gpx" class="landing-btn" style="justify-content: center; font-size: 0.8rem; padding: 0.6rem 0;" disabled>
+                            💾 Export GPX
+                        </button>
+                        <button onclick="syncRouteToHammerhead()" id="btn-route-sync" class="landing-btn" style="justify-content: center; font-size: 0.8rem; padding: 0.6rem 0;" disabled>
+                            📲 Sync to Karoo
+                        </button>
+                    </div>
+
+                    <button onclick="saveRouteSchedule()" id="btn-route-save" class="landing-btn landing-btn-primary" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; margin-top: 0.5rem; width: 100%;" disabled>
+                        🗓️ Save Schedule & Route
+                    </button>
+                </div>
+
+                <!-- Right Column: Leaflet Map -->
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div id="route-map" style="width: 100%; height: 350px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; position: relative; z-index: 1;">
+                    </div>
+                    <div id="route-summary-info" style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                        No route generated yet.
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -6660,10 +6941,12 @@ func getDashboardTemplate() string {
                 const dateKey = formatLocalDateKey(dayDate);
                 const dayPlan = plansByDate[dateKey];
                 if (dayPlan) {
+                    dayPlan.date_key = dateKey;
                     synthesizedDays.push(dayPlan);
                 } else {
                     synthesizedDays.push({
                         day: dayDate.toLocaleDateString('en-US', { weekday: 'long' }),
+                        date_key: dateKey,
                         workout_type: "No Plan",
                         title: "No Plan",
                         duration_mins: 0,
@@ -7825,6 +8108,34 @@ func getDashboardTemplate() string {
                         '</div>';
                 }
 
+                let routeScheduleHtml = '';
+                if (!type.includes('rest') && !type.includes('recovery') && type !== 'no plan') {
+                    const isPlanned = d.scheduled_start_time || d.route_name;
+                    if (isPlanned) {
+                        const timeStr = (d.scheduled_start_time && d.scheduled_finish_time) 
+                            ? '⏰ ' + d.scheduled_start_time + ' - ' + d.scheduled_finish_time
+                            : (d.scheduled_start_time ? '⏰ Starts ' + d.scheduled_start_time : '⏰ Not Scheduled');
+                        
+                        const routeNameStr = d.route_name ? '🗺️ ' + d.route_name + ' (' + (d.route_distance || 0) + ' km)' : '🗺️ No route generated';
+                        
+                        routeScheduleHtml = '<div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; background: rgba(255, 255, 255, 0.02); border: 1px dashed var(--border-color); border-radius: 8px; padding: 0.5rem 0.75rem;">' +
+                            '<div style="font-size: 0.75rem; font-weight: 600; color: #ffffff; display: flex; justify-content: space-between;"><span>Schedule & Route</span><span style="color: var(--accent); cursor: pointer; font-size: 0.7rem;" onclick="showRoutePlannerModal(\'' + dateKey + '\')">✏️ Edit</span></div>' +
+                            '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + timeStr + '</div>' +
+                            '<div style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">' + routeNameStr + '</div>' +
+                            '<div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">' +
+                                (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="downloadGPXForDay(\'' + dateKey + '\')">💾 GPX</button>' : '') +
+                                (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="syncGPXForDay(\'' + dateKey + '\')">📲 Sync Karoo</button>' : '') +
+                            '</div>' +
+                        '</div>';
+                    } else {
+                        routeScheduleHtml = '<div style="margin-top: 0.5rem;">' +
+                            '<button class="btn-action" style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; padding: 0.25rem 0.5rem; font-weight: 600;" onclick="showRoutePlannerModal(\'' + dateKey + '\')">' +
+                                '🗺️ Schedule & Route' +
+                            '</button>' +
+                        '</div>';
+                    }
+                }
+
                 row.innerHTML = 
                     '<div style="flex: 0 0 160px; min-width: 160px; display: flex; flex-direction: column; gap: 0.4rem;">' +
                         '<span style="font-size: 1.15rem; font-weight: 700; color: #ffffff; font-family: \'Outfit\';">' + displayDayLabel + '</span>' +
@@ -7839,6 +8150,7 @@ func getDashboardTemplate() string {
                     '<div class="calendar-day-details" style="flex: 4 1 0px; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; border-left: 1px solid rgba(255,255,255,0.05); padding-left: 1.5rem;">' +
                         detailsHtml +
                         analysisLinkHtml +
+                        routeScheduleHtml +
                     '</div>';
                 grid.appendChild(row);
             });
@@ -11507,6 +11819,462 @@ func getDashboardTemplate() string {
                 if (savedDataImportBtn) savedDataImportBtn.click();
             });
         }
+
+        // Route & Schedule Planner Integration
+        window.activeRouteDateKey = null;
+        window.selectedStartCoords = null;
+        window.routePlanGeometry = null;
+        window.routePlanName = "";
+        window.routePlanDistance = 0;
+        window.routePlannerMarkers = [];
+        window.routePlannerPolyline = null;
+        window.routePlannerMap = null;
+
+        const addMinutesToTimeString = (timeStr, mins) => {
+            if (!timeStr) return "";
+            const parts = timeStr.split(":");
+            if (parts.length < 2) return "";
+            let h = parseInt(parts[0]);
+            let m = parseInt(parts[1]);
+            m += mins;
+            h += Math.floor(m / 60);
+            m = m % 60;
+            h = h % 24;
+            return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+        };
+
+        window.updateTargetDistance = () => {
+            const speed = parseFloat(document.getElementById("route-avg-speed").value);
+            const dateKey = window.activeRouteDateKey;
+            if (!dateKey) return;
+            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const d = plansByDate[dateKey];
+            if (d && d.duration_mins && !isNaN(speed)) {
+                const targetDist = ((d.duration_mins / 60) * speed).toFixed(1);
+                document.getElementById("route-target-dist").value = targetDist;
+            }
+        };
+
+        window.updateFinishTime = () => {
+            const startTime = document.getElementById("route-start-time").value;
+            const dateKey = window.activeRouteDateKey;
+            if (!dateKey) return;
+            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const d = plansByDate[dateKey];
+            if (d && d.duration_mins && startTime) {
+                document.getElementById("route-finish-time").value = addMinutesToTimeString(startTime, d.duration_mins);
+            }
+        };
+
+        window.calculateHistoricalAvgSpeed = () => {
+            const activities = JSON.parse(localStorage.getItem("fit_activities") || "[]");
+            if (activities.length > 0) {
+                let totalDist = 0;
+                let totalTime = 0;
+                let validCount = 0;
+                activities.forEach(act => {
+                    if (act.distance_meters && act.duration_seconds) {
+                        totalDist += act.distance_meters / 1000;
+                        totalTime += act.duration_seconds / 3600;
+                        validCount++;
+                    }
+                });
+                if (validCount > 0 && totalTime > 0) {
+                    return (totalDist / totalTime).toFixed(1);
+                }
+            }
+            return "25.0";
+        };
+
+        window.destinationPoint = (lat, lon, distanceKm, bearingDegrees) => {
+            const R = 6371;
+            const d = distanceKm;
+            const brng = (bearingDegrees * Math.PI) / 180;
+            const lat1 = (lat * Math.PI) / 180;
+            const lon1 = (lon * Math.PI) / 180;
+
+            const lat2 = Math.asin(
+                Math.sin(lat1) * Math.cos(d / R) +
+                Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng)
+            );
+            const lon2 = lon1 + Math.atan2(
+                Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1),
+                Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2)
+            );
+
+            return {
+                lat: (lat2 * 180) / Math.PI,
+                lon: (lon2 * 180) / Math.PI
+            };
+        };
+
+        window.generateLoopWaypoints = async (lat, lon, distKm, direction) => {
+            const dirMap = {
+                "north": 0, "n": 0,
+                "northeast": 45, "ne": 45,
+                "east": 90, "e": 90,
+                "southeast": 135, "se": 135,
+                "south": 180, "s": 180,
+                "southwest": 225, "sw": 225,
+                "west": 270, "w": 270,
+                "northwest": 315, "nw": 315
+            };
+            const dirClean = direction.toLowerCase().trim();
+            let baseBearing = 0;
+            for (const key in dirMap) {
+                if (dirClean.includes(key)) {
+                    baseBearing = dirMap[key];
+                    break;
+                }
+            }
+
+            const legDist = distKm / 3.2;
+            const wp1 = window.destinationPoint(lat, lon, legDist, baseBearing - 30);
+            const wp2 = window.destinationPoint(lat, lon, legDist, baseBearing + 30);
+            return [wp1, wp2];
+        };
+
+        window.geocodeLocation = async (query) => {
+            const res = await fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(query) + "&limit=1", {
+                headers: { "User-Agent": "directeurAI/1.0" }
+            });
+            if (!res.ok) throw new Error("Geocoding service unavailable");
+            const data = await res.json();
+            if (data.length === 0) throw new Error("Location not found");
+            return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+        };
+
+        window.calculateRoute = async () => {
+            const statusEl = document.getElementById("route-planner-status");
+            const summaryEl = document.getElementById("route-summary-info");
+            const startLocStr = document.getElementById("route-start-location").value.trim();
+            const towardsStr = document.getElementById("route-towards").value.trim();
+            const distVal = parseFloat(document.getElementById("route-target-dist").value);
+
+            if (!startLocStr || isNaN(distVal) || distVal <= 0) {
+                statusEl.style.display = "block";
+                statusEl.style.background = "rgba(231, 76, 60, 0.1)";
+                statusEl.style.borderColor = "#e74c3c";
+                statusEl.style.color = "#e74c3c";
+                statusEl.innerText = "Error: Please specify a starting location and a target distance.";
+                return;
+            }
+
+            statusEl.style.display = "block";
+            statusEl.style.background = "rgba(52, 152, 219, 0.1)";
+            statusEl.style.borderColor = "#3498db";
+            statusEl.style.color = "#3498db";
+            statusEl.innerText = "Geocoding start location...";
+
+            try {
+                let startCoords = window.selectedStartCoords;
+                if (!startCoords) {
+                    const geocodeResult = await window.geocodeLocation(startLocStr);
+                    startCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
+                    window.selectedStartCoords = startCoords;
+                }
+
+                statusEl.innerText = "Generating cycleway-attracted waypoints...";
+                const waypoints = await window.generateLoopWaypoints(startCoords.lat, startCoords.lon, distVal, towardsStr);
+
+                statusEl.innerText = "Requesting loop route geometry from OSRM...";
+                const coordsString = [
+                    startCoords.lon + "," + startCoords.lat,
+                    waypoints[0].lon + "," + waypoints[0].lat,
+                    waypoints[1].lon + "," + waypoints[1].lat,
+                    startCoords.lon + "," + startCoords.lat
+                ].join(";");
+
+                const osrmUrl = "https://router.project-osrm.org/route/v1/bicycle/" + coordsString + "?overview=full&geometries=geojson";
+                const res = await fetch(osrmUrl);
+                if (!res.ok) throw new Error("OSRM service failed to route waypoints");
+                const data = await res.json();
+                if (!data.routes || data.routes.length === 0) throw new Error("No route found");
+
+                const route = data.routes[0];
+                const distanceKm = parseFloat((route.distance / 1000).toFixed(1));
+                const durationMinutes = Math.round(route.duration / 60);
+
+                window.routePlanGeometry = route.geometry.coordinates;
+                window.routePlanDistance = distanceKm;
+                window.routePlanName = towardsStr ? "Loop towards " + towardsStr : "Loop Route from " + startLocStr.split(",")[0];
+
+                if (window.routePlannerPolyline) {
+                    window.routePlannerPolyline.remove();
+                }
+                const latLons = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                window.routePlannerPolyline = L.polyline(latLons, { color: "var(--accent)", weight: 5, opacity: 0.85 }).addTo(window.routePlannerMap);
+                window.routePlannerMap.fitBounds(window.routePlannerPolyline.getBounds());
+
+                window.routePlannerMarkers.forEach(m => m.remove());
+                window.routePlannerMarkers = [];
+
+                const startMarker = L.marker([startCoords.lat, startCoords.lon]).addTo(window.routePlannerMap)
+                    .bindPopup("Start/Finish").openPopup();
+                window.routePlannerMarkers.push(startMarker);
+
+                waypoints.forEach((wp, idx) => {
+                    const marker = L.marker([wp.lat, wp.lon]).addTo(window.routePlannerMap)
+                        .bindPopup("Waypoint " + (idx + 1));
+                    window.routePlannerMarkers.push(marker);
+                });
+
+                statusEl.style.display = "block";
+                statusEl.style.background = "rgba(46, 204, 113, 0.1)";
+                statusEl.style.borderColor = "#2ecc71";
+                statusEl.style.color = "#2ecc71";
+                statusEl.innerText = "Route successfully generated!";
+
+                summaryEl.innerHTML = "<strong>Route:</strong> " + window.routePlanName + "<br>" +
+                    "<strong>Distance:</strong> " + distanceKm + " km<br>" +
+                    "<strong>Est. Riding Time:</strong> " + durationMinutes + " mins";
+
+                document.getElementById("btn-route-gpx").disabled = false;
+                document.getElementById("btn-route-sync").disabled = false;
+                document.getElementById("btn-route-save").disabled = false;
+
+            } catch (err) {
+                statusEl.style.display = "block";
+                statusEl.style.background = "rgba(231, 76, 60, 0.1)";
+                statusEl.style.borderColor = "#e74c3c";
+                statusEl.style.color = "#e74c3c";
+                statusEl.innerText = "Error: " + err.message;
+            }
+        };
+
+        window.generateGPX = (coords, name) => {
+            let trkpts = "";
+            coords.forEach(pt => {
+                trkpts += '<trkpt lat="' + pt[0] + '" lon="' + pt[1] + '"></trkpt>\n';
+            });
+            return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+'<gpx version="1.1" creator="directeurAI" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+'  <metadata>\n' +
+'    <name>' + name + '</name>\n' +
+'  </metadata>\n' +
+'  <trk>\n' +
+'    <name>' + name + '</name>\n' +
+'    <trkseg>\n' +
+trkpts +
+'    </trkseg>\n' +
+'  </trk>\n' +
+'</gpx>';
+        };
+
+        window.saveRouteSchedule = () => {
+            const dateKey = window.activeRouteDateKey;
+            if (!dateKey) return;
+
+            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            if (!plansByDate[dateKey]) {
+                plansByDate[dateKey] = {
+                    day: new Date(dateKey).toLocaleDateString("en-US", { weekday: "long" }),
+                    workout_type: "No Plan",
+                    title: "Planned Ride",
+                    description: "User planned workout route",
+                };
+            }
+
+            const d = plansByDate[dateKey];
+            d.scheduled_start_time = document.getElementById("route-start-time").value;
+            d.scheduled_finish_time = document.getElementById("route-finish-time").value;
+            d.route_name = window.routePlanName;
+            d.route_distance = window.routePlanDistance;
+            
+            if (window.routePlanGeometry) {
+                d.route_geojson = {
+                    type: "LineString",
+                    coordinates: window.routePlanGeometry.map(c => [c[1], c[0]])
+                };
+                d.route_gpx = window.generateGPX(d.route_geojson.coordinates, window.routePlanName);
+            }
+
+            d.route_start_name = document.getElementById("route-start-location").value;
+            d.route_towards = document.getElementById("route-towards").value;
+
+            localStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
+
+            const avgSpeed = parseFloat(document.getElementById("route-avg-speed").value);
+            if (!isNaN(avgSpeed)) {
+                localStorage.setItem("fit_route_avg_speed", avgSpeed.toString());
+            }
+
+            if (window.currentCalendarProgram && window.currentCalendarProgram.start_date) {
+                const program = window.currentCalendarProgram;
+                const matchIdx = program.days.findIndex(day => day.date_key === dateKey);
+                if (matchIdx !== -1) {
+                    program.days[matchIdx] = d;
+                    localStorage.setItem("fit_training_program", JSON.stringify(program));
+                }
+            }
+
+            window.hideRoutePlannerModal();
+            
+            if (window.currentCalendarProgram) {
+                renderTrainingCalendar(window.currentCalendarProgram);
+            } else {
+                const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
+                renderTrainingCalendar(synthesizedWeek);
+            }
+        };
+
+        window.downloadGPXForDay = (dateKey) => {
+            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const d = plansByDate[dateKey];
+            if (d && d.route_gpx) {
+                const blob = new Blob([d.route_gpx], { type: "application/gpx+xml" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = (d.route_name || "route").replace(/[^a-z0-9]/gi, "_").toLowerCase() + ".gpx";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                alert("No GPX data found for this day.");
+            }
+        };
+
+        window.syncGPXForDay = async (dateKey) => {
+            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const d = plansByDate[dateKey];
+            if (!d || !d.route_gpx) {
+                alert("No route GPX to sync.");
+                return;
+            }
+
+            try {
+                const res = await fetch("/api/hammerhead/sync-route", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name: d.route_name || "Planned Ride",
+                        gpx: d.route_gpx
+                    })
+                });
+                const resData = await res.json();
+                if (res.ok && resData.status === "success") {
+                    alert("Successfully synced route to Karoo dashboard!");
+                } else {
+                    alert("Failed to sync: " + (resData.error || "Unknown error"));
+                }
+            } catch (err) {
+                alert("Sync request failed: " + err.message);
+            }
+        };
+
+        window.showRoutePlannerModal = (dateKey) => {
+            window.activeRouteDateKey = dateKey;
+            
+            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const d = plansByDate[dateKey] || {};
+
+            const dObj = new Date(dateKey);
+            const formattedDate = dObj.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+            document.getElementById("route-planner-title").innerText = "🗺️ Route & Schedule Planner - " + formattedDate;
+
+            const avgSpeed = parseFloat(localStorage.getItem("fit_route_avg_speed") || window.calculateHistoricalAvgSpeed());
+            document.getElementById("route-avg-speed").value = avgSpeed;
+
+            const duration = d.duration_mins || 60;
+            const targetDist = d.route_distance || ((duration / 60) * avgSpeed).toFixed(1);
+            document.getElementById("route-target-dist").value = targetDist;
+
+            document.getElementById("route-start-time").value = d.scheduled_start_time || "08:00";
+            document.getElementById("route-finish-time").value = d.scheduled_finish_time || addMinutesToTimeString(d.scheduled_start_time || "08:00", duration);
+
+            document.getElementById("route-start-location").value = d.route_start_name || "San Francisco, CA";
+            document.getElementById("route-towards").value = d.route_towards || "";
+
+            window.selectedStartCoords = null;
+            window.routePlanGeometry = null;
+            window.routePlanName = d.route_name || "";
+            window.routePlanDistance = d.route_distance || 0;
+
+            if (d.route_geojson) {
+                window.routePlanGeometry = d.route_geojson.coordinates.map(c => [c[1], c[0]]);
+            }
+
+            document.getElementById("route-summary-info").innerHTML = d.route_name 
+                ? "<strong>Route:</strong> " + d.route_name + "<br><strong>Distance:</strong> " + d.route_distance + " km"
+                : "No route generated yet. Fill in details and click \"Generate Route\".";
+
+            document.getElementById("btn-route-gpx").disabled = !d.route_gpx;
+            document.getElementById("btn-route-sync").disabled = !d.route_gpx;
+            document.getElementById("btn-route-save").disabled = false;
+
+            document.getElementById("route-planner-status").style.display = "none";
+            document.getElementById("route-planner-modal").style.display = "flex";
+
+            setTimeout(() => {
+                const mapEl = document.getElementById("route-map");
+                if (!window.routePlannerMap) {
+                    window.routePlannerMap = L.map(mapEl).setView([37.7749, -122.4194], 12);
+                    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                        attribution: "© OpenStreetMap contributors"
+                    }).addTo(window.routePlannerMap);
+
+                    window.routePlannerMap.on("click", async (e) => {
+                        const lat = e.latlng.lat;
+                        const lon = e.latlng.lng;
+                        window.selectedStartCoords = { lat, lon };
+                        window.updateStartMarker(lat, lon);
+                        
+                        document.getElementById("route-start-location").value = lat.toFixed(5) + ", " + lon.toFixed(5);
+                        
+                        try {
+                            const res = await fetch("https://nominatim.openstreetmap.org/reverse?format=json&lat=" + lat + "&lon=" + lon, {
+                                headers: { "User-Agent": "directeurAI/1.0" }
+                            });
+                            if (res.ok) {
+                                const data = await res.json();
+                                document.getElementById("route-start-location").value = data.display_name.split(",").slice(0, 3).join(",");
+                            }
+                        } catch (err) {
+                            console.error("Reverse geocode failed:", err);
+                        }
+                    });
+                } else {
+                    window.routePlannerMap.invalidateSize();
+                }
+
+                window.routePlannerMarkers.forEach(m => m.remove());
+                window.routePlannerMarkers = [];
+                if (window.routePlannerPolyline) {
+                    window.routePlannerPolyline.remove();
+                    window.routePlannerPolyline = null;
+                }
+
+                if (d.route_geojson && d.route_geojson.coordinates) {
+                    const latLons = d.route_geojson.coordinates;
+                    window.routePlannerPolyline = L.polyline(latLons, { color: "var(--accent)", weight: 5, opacity: 0.85 }).addTo(window.routePlannerMap);
+                    window.routePlannerMap.fitBounds(window.routePlannerPolyline.getBounds());
+
+                    const startMarker = L.marker(latLons[0]).addTo(window.routePlannerMap)
+                        .bindPopup("Start/Finish").openPopup();
+                    window.routePlannerMarkers.push(startMarker);
+                    window.selectedStartCoords = { lat: latLons[0][0], lon: latLons[0][1] };
+                } else {
+                    window.routePlannerMap.setView([37.7749, -122.4194], 12);
+                }
+            }, 100);
+        };
+
+        window.hideRoutePlannerModal = () => {
+            document.getElementById("route-planner-modal").style.display = "none";
+        };
+
+        window.updateStartMarker = (lat, lon) => {
+            if (window.routePlannerMarkers.length > 0) {
+                window.routePlannerMarkers[0].setLatLng([lat, lon]);
+            } else {
+                const marker = L.marker([lat, lon]).addTo(window.routePlannerMap)
+                    .bindPopup("Start/Finish").openPopup();
+                window.routePlannerMarkers.unshift(marker);
+            }
+            window.routePlannerMap.panTo([lat, lon]);
+        };
 
         // Global/Window-level functions called by onclick events in HTML templates
         window.exportAllLocalStorage = () => {
