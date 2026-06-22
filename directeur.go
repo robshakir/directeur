@@ -6955,9 +6955,8 @@ func getDashboardTemplate() string {
                 const isToday = dayDate.toDateString() === new Date().toDateString();
                 const cardBorder = isToday ? 'border-color: var(--accent); background: rgba(255, 107, 107, 0.05);' : 'border-color: var(--border-color);';
 
-                // Classify planned workout badge styling
                 const workoutType = (d.workout_type || '').toLowerCase();
-                const isPlanned = d.workout_type && !workoutType.includes('rest') && !workoutType.includes('recovery') && !workoutType.includes('no plan');
+                const isPlanned = d.workout_type && !workoutType.includes('rest') && !workoutType.includes('no plan');
 
                 let workoutBadgeColor = 'background: rgba(255,255,255,0.06); color: var(--text-secondary);';
                 if (isPlanned) {
@@ -6969,6 +6968,8 @@ func getDashboardTemplate() string {
                         workoutBadgeColor = 'background: rgba(230, 126, 34, 0.1); color: #e67e22; border: 1px solid rgba(230, 126, 34, 0.2);';
                     } else if (workoutType.includes('vo2') || workoutType.includes('anaerobic')) {
                         workoutBadgeColor = 'background: rgba(155, 89, 182, 0.1); color: #9b59b6; border: 1px solid rgba(155, 89, 182, 0.2);';
+                    } else if (workoutType.includes('recovery')) {
+                        workoutBadgeColor = 'background: rgba(46, 204, 113, 0.1); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.2);';
                     }
                 }
 
@@ -8076,6 +8077,9 @@ func getDashboardTemplate() string {
                         window.currentCalendarProgram = synthesizedWeek;
                         renderTrainingCalendar(synthesizedWeek);
                         renderPlannerHistory();
+                        if (typeof renderUnifiedLandingCalendar === 'function') {
+                            renderUnifiedLandingCalendar();
+                        }
                     }
                 })
                 .catch(err => {
