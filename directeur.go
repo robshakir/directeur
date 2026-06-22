@@ -12553,18 +12553,32 @@ func getDashboardTemplate() string {
             }
         };
 
+        window.escapeXML = (str) => {
+            if (!str) return "Route";
+            return str.replace(/[<>&'"]/g, function (c) {
+                switch (c) {
+                    case '<': return '&lt;';
+                    case '>': return '&gt;';
+                    case '&': return '&amp;';
+                    case '\'': return '&apos;';
+                    case '"': return '&quot;';
+                }
+            });
+        };
+
         window.generateGPX = (coords, name) => {
             let trkpts = "";
             coords.forEach(pt => {
                 trkpts += '<trkpt lat="' + pt[1] + '" lon="' + pt[0] + '"></trkpt>\n';
             });
+            const safeName = window.escapeXML(name);
             return '<?xml version="1.0" encoding="UTF-8"?>\n' +
 '<gpx version="1.1" creator="directeurAI" xmlns="http://www.topografix.com/GPX/1/1">\n' +
 '  <metadata>\n' +
-'    <name>' + name + '</name>\n' +
+'    <name>' + safeName + '</name>\n' +
 '  </metadata>\n' +
 '  <trk>\n' +
-'    <name>' + name + '</name>\n' +
+'    <name>' + safeName + '</name>\n' +
 '    <trkseg>\n' +
 trkpts +
 '    </trkseg>\n' +
