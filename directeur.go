@@ -12465,6 +12465,13 @@ trkpts +
             document.getElementById("route-end-location").value = d.route_end_name || "";
             document.getElementById("route-towards").value = d.route_towards || "";
 
+            document.getElementById("route-start-location").oninput = () => {
+                window.selectedStartCoords = null;
+            };
+            document.getElementById("route-end-location").oninput = () => {
+                window.selectedEndCoords = null;
+            };
+
             window.selectedStartCoords = null;
             window.selectedEndCoords = null;
             window.routePlanGeometry = null;
