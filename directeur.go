@@ -7136,17 +7136,8 @@ func getDashboardTemplate() string {
                 document.getElementById('calendar-weeks-select').value = savedWeeks;
             }
 
-            // Sync plannerCalendarWeekIndex to the latest plan's week if available, else 0
-            const weeksWithPlans = getWeeksWithPlans();
-            if (weeksWithPlans.length > 0) {
-                const latestPlan = weeksWithPlans[0];
-                const planStart = getMonday(latestPlan.start_date);
-                const todayMonday = getMonday(new Date());
-                const diffWeeks = Math.round((planStart.getTime() - todayMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
-                window.plannerCalendarWeekIndex = diffWeeks;
-            } else {
-                window.plannerCalendarWeekIndex = 0;
-            }
+            // Sync plannerCalendarWeekIndex to the week of the current day (offset 0)
+            window.plannerCalendarWeekIndex = 0;
 
             const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
             window.currentCalendarProgram = synthesizedWeek;
@@ -8109,31 +8100,29 @@ func getDashboardTemplate() string {
                 }
 
                 let routeScheduleHtml = '';
-                if (!type.includes('rest') && !type.includes('recovery') && type !== 'no plan') {
-                    const isPlanned = d.scheduled_start_time || d.route_name;
-                    if (isPlanned) {
-                        const timeStr = (d.scheduled_start_time && d.scheduled_finish_time) 
-                            ? '⏰ ' + d.scheduled_start_time + ' - ' + d.scheduled_finish_time
-                            : (d.scheduled_start_time ? '⏰ Starts ' + d.scheduled_start_time : '⏰ Not Scheduled');
-                        
-                        const routeNameStr = d.route_name ? '🗺️ ' + d.route_name + ' (' + (d.route_distance || 0) + ' km)' : '🗺️ No route generated';
-                        
-                        routeScheduleHtml = '<div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; background: rgba(255, 255, 255, 0.02); border: 1px dashed var(--border-color); border-radius: 8px; padding: 0.5rem 0.75rem;">' +
-                            '<div style="font-size: 0.75rem; font-weight: 600; color: #ffffff; display: flex; justify-content: space-between;"><span>Schedule & Route</span><span style="color: var(--accent); cursor: pointer; font-size: 0.7rem;" onclick="showRoutePlannerModal(\'' + dateKey + '\')">✏️ Edit</span></div>' +
-                            '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + timeStr + '</div>' +
-                            '<div style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">' + routeNameStr + '</div>' +
-                            '<div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">' +
-                                (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="downloadGPXForDay(\'' + dateKey + '\')">💾 GPX</button>' : '') +
-                                (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="syncGPXForDay(\'' + dateKey + '\')">📲 Sync Karoo</button>' : '') +
-                            '</div>' +
-                        '</div>';
-                    } else {
-                        routeScheduleHtml = '<div style="margin-top: 0.5rem;">' +
-                            '<button class="btn-action" style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; padding: 0.25rem 0.5rem; font-weight: 600;" onclick="showRoutePlannerModal(\'' + dateKey + '\')">' +
-                                '🗺️ Schedule & Route' +
-                            '</button>' +
-                        '</div>';
-                    }
+                const isPlanned = d.scheduled_start_time || d.route_name;
+                if (isPlanned) {
+                    const timeStr = (d.scheduled_start_time && d.scheduled_finish_time) 
+                        ? '⏰ ' + d.scheduled_start_time + ' - ' + d.scheduled_finish_time
+                        : (d.scheduled_start_time ? '⏰ Starts ' + d.scheduled_start_time : '⏰ Not Scheduled');
+                    
+                    const routeNameStr = d.route_name ? '🗺️ ' + d.route_name + ' (' + (d.route_distance || 0) + ' km)' : '🗺️ No route generated';
+                    
+                    routeScheduleHtml = '<div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; background: rgba(255, 255, 255, 0.02); border: 1px dashed var(--border-color); border-radius: 8px; padding: 0.5rem 0.75rem;">' +
+                        '<div style="font-size: 0.75rem; font-weight: 600; color: #ffffff; display: flex; justify-content: space-between;"><span>Schedule & Route</span><span style="color: var(--accent); cursor: pointer; font-size: 0.7rem;" onclick="showRoutePlannerModal(\'' + dateKey + '\')">✏️ Edit</span></div>' +
+                        '<div style="font-size: 0.75rem; color: var(--text-secondary);">' + timeStr + '</div>' +
+                        '<div style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">' + routeNameStr + '</div>' +
+                        '<div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">' +
+                            (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="downloadGPXForDay(\'' + dateKey + '\')">💾 GPX</button>' : '') +
+                            (d.route_gpx ? '<button class="btn-action" style="padding: 0.15rem 0.35rem; font-size: 0.65rem;" onclick="syncGPXForDay(\'' + dateKey + '\')">📲 Sync Karoo</button>' : '') +
+                        '</div>' +
+                    '</div>';
+                } else {
+                    routeScheduleHtml = '<div style="margin-top: 0.5rem;">' +
+                        '<button class="btn-action" style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; padding: 0.25rem 0.5rem; font-weight: 600;" onclick="showRoutePlannerModal(\'' + dateKey + '\')">' +
+                            '🗺️ Schedule & Route' +
+                        '</button>' +
+                    '</div>';
                 }
 
                 row.innerHTML = 
