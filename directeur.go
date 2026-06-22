@@ -12321,7 +12321,7 @@ func getDashboardTemplate() string {
         window.generateGPX = (coords, name) => {
             let trkpts = "";
             coords.forEach(pt => {
-                trkpts += '<trkpt lat="' + pt[0] + '" lon="' + pt[1] + '"></trkpt>\n';
+                trkpts += '<trkpt lat="' + pt[1] + '" lon="' + pt[0] + '"></trkpt>\n';
             });
             return '<?xml version="1.0" encoding="UTF-8"?>\n' +
 '<gpx version="1.1" creator="directeurAI" xmlns="http://www.topografix.com/GPX/1/1">\n' +
@@ -12360,7 +12360,7 @@ trkpts +
             if (window.routePlanGeometry) {
                 d.route_geojson = {
                     type: "LineString",
-                    coordinates: window.routePlanGeometry.map(c => [c[1], c[0]])
+                    coordinates: window.routePlanGeometry
                 };
                 d.route_gpx = window.generateGPX(d.route_geojson.coordinates, window.routePlanName);
             }
@@ -12482,7 +12482,7 @@ trkpts +
             if (startRadio) startRadio.checked = true;
 
             if (d.route_geojson && d.route_geojson.coordinates && d.route_geojson.coordinates.length > 0) {
-                window.routePlanGeometry = d.route_geojson.coordinates.map(c => [c[1], c[0]]);
+                window.routePlanGeometry = d.route_geojson.coordinates;
                 const coords = d.route_geojson.coordinates;
                 const len = coords.length;
                 window.selectedStartCoords = { lat: coords[0][1], lon: coords[0][0] };
