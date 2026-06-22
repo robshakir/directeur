@@ -2143,6 +2143,85 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		w.Write([]byte(`{"status": "success"}`))
 	})
 
+	http.HandleFunc("/api/geocode", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		q := r.URL.Query().Get("q")
+		if q == "" {
+			http.Error(w, `{"error": "query parameter 'q' is required"}`, http.StatusBadRequest)
+			return
+		}
+
+		targetURL := fmt.Sprintf("https://nominatim.openstreetmap.org/search?format=json&q=%s&limit=1", url.QueryEscape(q))
+		req, err := http.NewRequest(http.MethodGet, targetURL, nil)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "%v"}`, err), http.StatusInternalServerError)
+			return
+		}
+		req.Header.Set("User-Agent", "directeurAI/1.0")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "%v"}`, err), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	})
+
+	http.HandleFunc("/api/reverse-geocode", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		lat := r.URL.Query().Get("lat")
+		lon := r.URL.Query().Get("lon")
+		if lat == "" || lon == "" {
+			http.Error(w, `{"error": "parameters 'lat' and 'lon' are required"}`, http.StatusBadRequest)
+			return
+		}
+
+		targetURL := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?format=json&lat=%s&lon=%s", url.QueryEscape(lat), url.QueryEscape(lon))
+		req, err := http.NewRequest(http.MethodGet, targetURL, nil)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "%v"}`, err), http.StatusInternalServerError)
+			return
+		}
+		req.Header.Set("User-Agent", "directeurAI/1.0")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "%v"}`, err), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	})
+
+	http.HandleFunc("/api/brouter", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		targetURL := "https://brouter.de/brouter?" + r.URL.RawQuery
+		req, err := http.NewRequest(http.MethodGet, targetURL, nil)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "%v"}`, err), http.StatusInternalServerError)
+			return
+		}
+		req.Header.Set("User-Agent", "directeurAI/1.0")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "%v"}`, err), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	})
+
 	http.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		cfg := loadConfig(configPath)
@@ -4358,12 +4437,27 @@ func getDashboardTemplate() string {
                 <!-- Left Column: Controls -->
                 <div style="display: flex; flex-direction: column; gap: 1rem;">
                     <div style="display: flex; flex-direction: column; gap: 0.4rem;">
-                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Start Location</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Start Location</label>
+                            <label style="font-size: 0.7rem; color: var(--accent); cursor: pointer; display: inline-flex; align-items: center; gap: 3px;">
+                                <input type="radio" name="map-click-target" value="start" checked style="accent-color: var(--accent); margin: 0; cursor: pointer;"> Click map to set
+                            </label>
+                        </div>
                         <input type="text" id="route-start-location" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none; transition: border-color 0.2s;" placeholder="Type address or click on the map">
                     </div>
                     
                     <div style="display: flex; flex-direction: column; gap: 0.4rem;">
-                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Direction Bias ("Towards")</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">End Location (Optional)</label>
+                            <label style="font-size: 0.7rem; color: var(--accent); cursor: pointer; display: inline-flex; align-items: center; gap: 3px;">
+                                <input type="radio" name="map-click-target" value="end" style="accent-color: var(--accent); margin: 0; cursor: pointer;"> Click map to set
+                            </label>
+                        </div>
+                        <input type="text" id="route-end-location" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none; transition: border-color 0.2s;" placeholder="Type address or click on the map to set end">
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+                        <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Direction Bias ("Towards") (Loop Only)</label>
                         <input type="text" id="route-towards" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;" placeholder="e.g., Marin, Oakland, Pacifica (optional)">
                     </div>
 
@@ -4393,7 +4487,7 @@ func getDashboardTemplate() string {
                     </div>
 
                     <button onclick="calculateRoute()" id="btn-generate-route" class="landing-btn landing-btn-primary" style="justify-content: center; font-size: 0.85rem; padding: 0.65rem 0; width: 100%;">
-                        🗺️ Calculate Loop Route
+                        🗺️ Calculate Route
                     </button>
 
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
@@ -11812,10 +11906,13 @@ func getDashboardTemplate() string {
         // Route & Schedule Planner Integration
         window.activeRouteDateKey = null;
         window.selectedStartCoords = null;
+        window.selectedEndCoords = null;
         window.routePlanGeometry = null;
         window.routePlanName = "";
         window.routePlanDistance = 0;
         window.routePlannerMarkers = [];
+        window.routePlannerStartMarker = null;
+        window.routePlannerEndMarker = null;
         window.routePlannerPolyline = null;
         window.routePlannerMap = null;
 
@@ -11928,9 +12025,12 @@ func getDashboardTemplate() string {
         };
 
         window.geocodeLocation = async (query) => {
-            const res = await fetch("https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(query) + "&limit=1", {
-                headers: { "User-Agent": "directeurAI/1.0" }
-            });
+            const coordsRegex = /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/;
+            const match = query.match(coordsRegex);
+            if (match) {
+                return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
+            }
+            const res = await fetch("/api/geocode?q=" + encodeURIComponent(query));
             if (!res.ok) throw new Error("Geocoding service unavailable");
             const data = await res.json();
             if (data.length === 0) throw new Error("Location not found");
@@ -11941,6 +12041,7 @@ func getDashboardTemplate() string {
             const statusEl = document.getElementById("route-planner-status");
             const summaryEl = document.getElementById("route-summary-info");
             const startLocStr = document.getElementById("route-start-location").value.trim();
+            const endLocStr = document.getElementById("route-end-location").value.trim();
             const towardsStr = document.getElementById("route-towards").value.trim();
             const distVal = parseFloat(document.getElementById("route-target-dist").value);
 
@@ -11967,90 +12068,133 @@ func getDashboardTemplate() string {
                     window.selectedStartCoords = startCoords;
                 }
 
-                let startBearing = 0;
-                let preferredDirectionUsed = false;
-                if (towardsStr) {
-                    const dirMap = {
-                        "north": 0, "n": 0,
-                        "northeast": 45, "ne": 45,
-                        "east": 90, "e": 90,
-                        "southeast": 135, "se": 135,
-                        "south": 180, "s": 180,
-                        "southwest": 225, "sw": 225,
-                        "west": 270, "w": 270,
-                        "northwest": 315, "nw": 315
-                    };
-                    const dirClean = towardsStr.toLowerCase().trim();
-                    for (const key in dirMap) {
-                        if (dirClean.includes(key)) {
-                            startBearing = dirMap[key];
-                            preferredDirectionUsed = true;
-                            break;
-                        }
+                let endCoords = null;
+                if (endLocStr) {
+                    statusEl.innerText = "Geocoding end location...";
+                    endCoords = window.selectedEndCoords;
+                    if (!endCoords) {
+                        const geocodeResult = await window.geocodeLocation(endLocStr);
+                        endCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
+                        window.selectedEndCoords = endCoords;
                     }
                 }
-
-                const candidateBearings = [startBearing];
-                const allBearings = [180, 225, 270, 135, 90, 315, 45, 0];
-                for (const b of allBearings) {
-                    if (!candidateBearings.includes(b)) {
-                        candidateBearings.push(b);
-                    }
-                }
-
-                const bearingNames = {
-                    0: "North", 45: "Northeast", 90: "East", 135: "Southeast",
-                    180: "South", 225: "Southwest", 270: "West", 315: "Northwest"
-                };
 
                 let finalRoute = null;
                 let finalWaypoints = null;
-                let finalBearing = startBearing;
-                let errors = [];
+                let finalBearing = 0;
+                let routeType = "loop";
 
-                for (const bearing of candidateBearings) {
-                    try {
-                        statusEl.innerText = "Requesting loop route for bearing " + bearing + "°...";
-                        const waypoints = await window.generateLoopWaypoints(startCoords.lat, startCoords.lon, distVal, bearing);
-                        const coordsString = [
-                            startCoords.lon + "," + startCoords.lat,
-                            waypoints[0].lon + "," + waypoints[0].lat,
-                            waypoints[1].lon + "," + waypoints[1].lat,
-                            startCoords.lon + "," + startCoords.lat
-                        ].join("|");
+                if (endCoords) {
+                    routeType = "point-to-point";
+                    statusEl.innerText = "Requesting point-to-point route...";
+                    const coordsString = [
+                        startCoords.lon + "," + startCoords.lat,
+                        endCoords.lon + "," + endCoords.lat
+                    ].join("|");
 
-                        const brouterUrl = "https://brouter.de/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
-                        const res = await fetch(brouterUrl);
-                        if (!res.ok) throw new Error("BRouter failed");
-                        const data = await res.json();
-                        if (!data.features || data.features.length === 0) throw new Error("No route");
-
-                        const route = data.features[0];
-                        let hasFerry = false;
-                        if (route.properties && route.properties.messages) {
-                            const msgs = route.properties.messages;
-                            for (let i = 1; i < msgs.length; i++) {
-                                const wayTags = msgs[i][9] || "";
-                                if (wayTags.includes("route=ferry")) {
-                                    hasFerry = true;
-                                    break;
-                                }
+                    const brouterUrl = "/api/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
+                    const res = await fetch(brouterUrl);
+                    if (!res.ok) throw new Error("BRouter failed to calculate point-to-point route.");
+                    const data = await res.json();
+                    if (!data.features || data.features.length === 0) throw new Error("No route found between start and end locations.");
+                    
+                    const route = data.features[0];
+                    let hasFerry = false;
+                    if (route.properties && route.properties.messages) {
+                        const msgs = route.properties.messages;
+                        for (let i = 1; i < msgs.length; i++) {
+                            const wayTags = msgs[i][9] || "";
+                            if (wayTags.includes("route=ferry")) {
+                                hasFerry = true;
+                                break;
                             }
                         }
-
-                        if (hasFerry) throw new Error("Uses ferry");
-
-                        finalRoute = route;
-                        finalWaypoints = waypoints;
-                        finalBearing = bearing;
-                        break;
-                    } catch (e) {
-                        errors.push(bearing + "°: " + e.message);
                     }
-                }
+                    if (hasFerry) throw new Error("The route uses a ferry.");
+                    finalRoute = route;
+                    finalWaypoints = [];
+                } else {
+                    let startBearing = 0;
+                    let preferredDirectionUsed = false;
+                    if (towardsStr) {
+                        const dirMap = {
+                            "north": 0, "n": 0,
+                            "northeast": 45, "ne": 45,
+                            "east": 90, "e": 90,
+                            "southeast": 135, "se": 135,
+                            "south": 180, "s": 180,
+                            "southwest": 225, "sw": 225,
+                            "west": 270, "w": 270,
+                            "northwest": 315, "nw": 315
+                        };
+                        const dirClean = towardsStr.toLowerCase().trim();
+                        for (const key in dirMap) {
+                            if (dirClean.includes(key)) {
+                                startBearing = dirMap[key];
+                                preferredDirectionUsed = true;
+                                break;
+                            }
+                        }
+                    }
 
-                if (!finalRoute) {
-                    throw new Error("No ferry-free route found. Tried bearings: " + errors.join("; "));
+                    const candidateBearings = [startBearing];
+                    const allBearings = [180, 225, 270, 135, 90, 315, 45, 0];
+                    for (const b of allBearings) {
+                        if (!candidateBearings.includes(b)) {
+                            candidateBearings.push(b);
+                        }
+                    }
+
+                    const bearingNames = {
+                        0: "North", 45: "Northeast", 90: "East", 135: "Southeast",
+                        180: "South", 225: "Southwest", 270: "West", 315: "Northwest"
+                    };
+
+                    let errors = [];
+                    for (const bearing of candidateBearings) {
+                        try {
+                            statusEl.innerText = "Requesting loop route for bearing " + bearing + "°...";
+                            const waypoints = await window.generateLoopWaypoints(startCoords.lat, startCoords.lon, distVal, bearing);
+                            const coordsString = [
+                                startCoords.lon + "," + startCoords.lat,
+                                waypoints[0].lon + "," + waypoints[0].lat,
+                                waypoints[1].lon + "," + waypoints[1].lat,
+                                startCoords.lon + "," + startCoords.lat
+                            ].join("|");
+
+                            const brouterUrl = "/api/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
+                            const res = await fetch(brouterUrl);
+                            if (!res.ok) throw new Error("BRouter failed");
+                            const data = await res.json();
+                            if (!data.features || data.features.length === 0) throw new Error("No route");
+
+                            const route = data.features[0];
+                            let hasFerry = false;
+                            if (route.properties && route.properties.messages) {
+                                const msgs = route.properties.messages;
+                                for (let i = 1; i < msgs.length; i++) {
+                                    const wayTags = msgs[i][9] || "";
+                                    if (wayTags.includes("route=ferry")) {
+                                        hasFerry = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (hasFerry) throw new Error("Uses ferry");
+
+                            finalRoute = route;
+                            finalWaypoints = waypoints;
+                            finalBearing = bearing;
+                            break;
+                        } catch (e) {
+                            errors.push(bearing + "°: " + e.message);
+                        }
+                    }
+
+                    if (!finalRoute) {
+                        throw new Error("No ferry-free route found. Tried bearings: " + errors.join("; "));
+                    }
                 }
 
                 const trackLength = parseFloat(finalRoute.properties["track-length"]);
@@ -12062,10 +12206,18 @@ func getDashboardTemplate() string {
                 window.routePlanGeometry = finalRoute.geometry.coordinates;
                 window.routePlanDistance = distanceKm;
 
-                const dirName = bearingNames[finalBearing] || "Custom";
-                window.routePlanName = towardsStr && preferredDirectionUsed
-                    ? "Loop towards " + towardsStr
-                    : "Loop towards " + dirName + " from " + startLocStr.split(",")[0];
+                if (routeType === "point-to-point") {
+                    window.routePlanName = "Route: " + startLocStr.split(",")[0] + " to " + endLocStr.split(",")[0];
+                } else {
+                    const bearingNames = {
+                        0: "North", 45: "Northeast", 90: "East", 135: "Southeast",
+                        180: "South", 225: "Southwest", 270: "West", 315: "Northwest"
+                    };
+                    const dirName = bearingNames[finalBearing] || "Custom";
+                    window.routePlanName = towardsStr && preferredDirectionUsed
+                        ? "Loop towards " + towardsStr
+                        : "Loop towards " + dirName + " from " + startLocStr.split(",")[0];
+                }
 
                 if (window.routePlannerPolyline) {
                     window.routePlannerPolyline.remove();
@@ -12076,16 +12228,27 @@ func getDashboardTemplate() string {
 
                 window.routePlannerMarkers.forEach(m => m.remove());
                 window.routePlannerMarkers = [];
+                if (window.routePlannerStartMarker) {
+                    window.routePlannerStartMarker.remove();
+                    window.routePlannerStartMarker = null;
+                }
+                if (window.routePlannerEndMarker) {
+                    window.routePlannerEndMarker.remove();
+                    window.routePlannerEndMarker = null;
+                }
 
-                const startMarker = L.marker([startCoords.lat, startCoords.lon]).addTo(window.routePlannerMap)
-                    .bindPopup("Start/Finish").openPopup();
-                window.routePlannerMarkers.push(startMarker);
+                window.updateStartMarker(startCoords.lat, startCoords.lon);
+                if (endCoords) {
+                    window.updateEndMarker(endCoords.lat, endCoords.lon);
+                }
 
-                finalWaypoints.forEach((wp, idx) => {
-                    const marker = L.marker([wp.lat, wp.lon]).addTo(window.routePlannerMap)
-                        .bindPopup("Waypoint " + (idx + 1));
-                    window.routePlannerMarkers.push(marker);
-                });
+                if (finalWaypoints && finalWaypoints.length > 0) {
+                    finalWaypoints.forEach((wp, idx) => {
+                        const marker = L.marker([wp.lat, wp.lon]).addTo(window.routePlannerMap)
+                            .bindPopup("Waypoint " + (idx + 1));
+                        window.routePlannerMarkers.push(marker);
+                    });
+                }
 
                 statusEl.style.display = "block";
                 statusEl.style.background = "rgba(46, 204, 113, 0.1)";
@@ -12158,6 +12321,7 @@ trkpts +
             }
 
             d.route_start_name = document.getElementById("route-start-location").value;
+            d.route_end_name = document.getElementById("route-end-location").value;
             d.route_towards = document.getElementById("route-towards").value;
 
             localStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
@@ -12253,15 +12417,24 @@ trkpts +
             document.getElementById("route-finish-time").value = d.scheduled_finish_time || addMinutesToTimeString(d.scheduled_start_time || "08:00", duration);
 
             document.getElementById("route-start-location").value = d.route_start_name || "San Francisco, CA";
+            document.getElementById("route-end-location").value = d.route_end_name || "";
             document.getElementById("route-towards").value = d.route_towards || "";
 
             window.selectedStartCoords = null;
+            window.selectedEndCoords = null;
             window.routePlanGeometry = null;
             window.routePlanName = d.route_name || "";
             window.routePlanDistance = d.route_distance || 0;
 
-            if (d.route_geojson) {
+            const startRadio = document.querySelector('input[name="map-click-target"][value="start"]');
+            if (startRadio) startRadio.checked = true;
+
+            if (d.route_geojson && d.route_geojson.coordinates && d.route_geojson.coordinates.length > 0) {
                 window.routePlanGeometry = d.route_geojson.coordinates.map(c => [c[1], c[0]]);
+                const coords = d.route_geojson.coordinates;
+                const len = coords.length;
+                window.selectedStartCoords = { lat: coords[0][1], lon: coords[0][0] };
+                window.selectedEndCoords = { lat: coords[len-1][1], lon: coords[len-1][0] };
             }
 
             document.getElementById("route-summary-info").innerHTML = d.route_name 
@@ -12288,18 +12461,30 @@ trkpts +
                     window.routePlannerMap.on("click", async (e) => {
                         const lat = e.latlng.lat;
                         const lon = e.latlng.lng;
-                        window.selectedStartCoords = { lat, lon };
-                        window.updateStartMarker(lat, lon);
                         
-                        document.getElementById("route-start-location").value = lat.toFixed(5) + ", " + lon.toFixed(5);
+                        const clickTargetEl = document.querySelector('input[name="map-click-target"]:checked');
+                        const isEnd = clickTargetEl && clickTargetEl.value === 'end';
+                        
+                        if (isEnd) {
+                            window.selectedEndCoords = { lat, lon };
+                            window.updateEndMarker(lat, lon);
+                            document.getElementById("route-end-location").value = lat.toFixed(5) + ", " + lon.toFixed(5);
+                        } else {
+                            window.selectedStartCoords = { lat, lon };
+                            window.updateStartMarker(lat, lon);
+                            document.getElementById("route-start-location").value = lat.toFixed(5) + ", " + lon.toFixed(5);
+                        }
                         
                         try {
-                            const res = await fetch("https://nominatim.openstreetmap.org/reverse?format=json&lat=" + lat + "&lon=" + lon, {
-                                headers: { "User-Agent": "directeurAI/1.0" }
-                            });
+                            const res = await fetch("/api/reverse-geocode?lat=" + lat + "&lon=" + lon);
                             if (res.ok) {
                                 const data = await res.json();
-                                document.getElementById("route-start-location").value = data.display_name.split(",").slice(0, 3).join(",");
+                                const val = data.display_name.split(",").slice(0, 3).join(",");
+                                if (isEnd) {
+                                    document.getElementById("route-end-location").value = val;
+                                } else {
+                                    document.getElementById("route-start-location").value = val;
+                                }
                             }
                         } catch (err) {
                             console.error("Reverse geocode failed:", err);
@@ -12311,20 +12496,31 @@ trkpts +
 
                 window.routePlannerMarkers.forEach(m => m.remove());
                 window.routePlannerMarkers = [];
+                if (window.routePlannerStartMarker) {
+                    window.routePlannerStartMarker.remove();
+                    window.routePlannerStartMarker = null;
+                }
+                if (window.routePlannerEndMarker) {
+                    window.routePlannerEndMarker.remove();
+                    window.routePlannerEndMarker = null;
+                }
                 if (window.routePlannerPolyline) {
                     window.routePlannerPolyline.remove();
                     window.routePlannerPolyline = null;
                 }
 
-                if (d.route_geojson && d.route_geojson.coordinates) {
-                    const latLons = d.route_geojson.coordinates;
+                if (d.route_geojson && d.route_geojson.coordinates && d.route_geojson.coordinates.length > 0) {
+                    const coords = d.route_geojson.coordinates;
+                    const latLons = coords.map(c => [c[1], c[0]]);
                     window.routePlannerPolyline = L.polyline(latLons, { color: "#ff3366", weight: 6, opacity: 0.9, lineJoin: "round" }).addTo(window.routePlannerMap);
                     window.routePlannerMap.fitBounds(window.routePlannerPolyline.getBounds());
 
-                    const startMarker = L.marker(latLons[0]).addTo(window.routePlannerMap)
-                        .bindPopup("Start/Finish").openPopup();
-                    window.routePlannerMarkers.push(startMarker);
-                    window.selectedStartCoords = { lat: latLons[0][0], lon: latLons[0][1] };
+                    window.updateStartMarker(coords[0][1], coords[0][0]);
+                    const lastIdx = coords.length - 1;
+                    const distToStart = Math.hypot(coords[lastIdx][1] - coords[0][1], coords[lastIdx][0] - coords[0][0]);
+                    if (distToStart > 0.0001) {
+                        window.updateEndMarker(coords[lastIdx][1], coords[lastIdx][0]);
+                    }
                 } else {
                     window.routePlannerMap.setView([37.7749, -122.4194], 12);
                 }
@@ -12336,12 +12532,33 @@ trkpts +
         };
 
         window.updateStartMarker = (lat, lon) => {
-            if (window.routePlannerMarkers.length > 0) {
-                window.routePlannerMarkers[0].setLatLng([lat, lon]);
+            if (window.routePlannerStartMarker) {
+                window.routePlannerStartMarker.setLatLng([lat, lon]);
             } else {
-                const marker = L.marker([lat, lon]).addTo(window.routePlannerMap)
-                    .bindPopup("Start/Finish").openPopup();
-                window.routePlannerMarkers.unshift(marker);
+                window.routePlannerStartMarker = L.marker([lat, lon], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: "<div style='background-color:#48bb78; color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px; border:2px solid white;'>S</div>",
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    })
+                }).addTo(window.routePlannerMap).bindPopup("Start Location").openPopup();
+            }
+            window.routePlannerMap.panTo([lat, lon]);
+        };
+
+        window.updateEndMarker = (lat, lon) => {
+            if (window.routePlannerEndMarker) {
+                window.routePlannerEndMarker.setLatLng([lat, lon]);
+            } else {
+                window.routePlannerEndMarker = L.marker([lat, lon], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: "<div style='background-color:#f56565; color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:12px; border:2px solid white;'>E</div>",
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    })
+                }).addTo(window.routePlannerMap).bindPopup("End Location").openPopup();
             }
             window.routePlannerMap.panTo([lat, lon]);
         };
