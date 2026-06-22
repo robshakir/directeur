@@ -12030,9 +12030,22 @@ func getDashboardTemplate() string {
             if (match) {
                 return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
             }
-            const res = await fetch("/api/geocode?q=" + encodeURIComponent(query));
-            if (!res.ok) throw new Error("Geocoding service unavailable");
-            const data = await res.json();
+            console.log("Geocoding query:", query);
+            const url = "/api/geocode?q=" + encodeURIComponent(query);
+            const res = await fetch(url);
+            console.log("Geocode response status:", res.status);
+            const text = await res.text();
+            console.log("Geocode raw body:", text);
+            if (!res.ok) throw new Error("Geocoding service unavailable: status " + res.status);
+            
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                console.error("Failed to parse Geocode JSON:", e);
+                throw new Error("Invalid JSON response from geocoding service: " + e.message);
+            }
+            
             if (data.length === 0) throw new Error("Location not found");
             return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
         };
@@ -12093,9 +12106,20 @@ func getDashboardTemplate() string {
                     ].join("|");
 
                     const brouterUrl = "/api/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
+                    console.log("Point-to-point BRouter URL:", brouterUrl);
                     const res = await fetch(brouterUrl);
-                    if (!res.ok) throw new Error("BRouter failed to calculate point-to-point route.");
-                    const data = await res.json();
+                    console.log("BRouter point-to-point response status:", res.status);
+                    const text = await res.text();
+                    console.log("BRouter point-to-point raw body:", text);
+                    if (!res.ok) throw new Error("BRouter failed to calculate point-to-point route: status " + res.status);
+                    
+                    let data;
+                    try {
+                        data = JSON.parse(text);
+                    } catch (e) {
+                        console.error("Failed to parse BRouter JSON:", e);
+                        throw new Error("Invalid JSON response from routing service: " + e.message);
+                    }
                     if (!data.features || data.features.length === 0) throw new Error("No route found between start and end locations.");
                     
                     const route = data.features[0];
@@ -12163,9 +12187,20 @@ func getDashboardTemplate() string {
                             ].join("|");
 
                             const brouterUrl = "/api/brouter?lonlats=" + coordsString + "&profile=trekking&alternativeidx=0&format=geojson";
+                            console.log("Loop BRouter URL:", brouterUrl);
                             const res = await fetch(brouterUrl);
-                            if (!res.ok) throw new Error("BRouter failed");
-                            const data = await res.json();
+                            console.log("BRouter loop response status:", res.status);
+                            const text = await res.text();
+                            console.log("BRouter loop raw body:", text);
+                            if (!res.ok) throw new Error("BRouter failed: status " + res.status);
+                            
+                            let data;
+                            try {
+                                data = JSON.parse(text);
+                            } catch (e) {
+                                console.error("Failed to parse BRouter loop JSON:", e);
+                                throw new Error("Invalid JSON response from routing service: " + e.message);
+                            }
                             if (!data.features || data.features.length === 0) throw new Error("No route");
 
                             const route = data.features[0];
