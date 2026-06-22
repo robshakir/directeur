@@ -12699,8 +12699,14 @@ trkpts +
         window.downloadGPXForDay = (dateKey) => {
             const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[dateKey];
-            if (d && d.route_gpx) {
-                const blob = new Blob([d.route_gpx], { type: "application/gpx+xml" });
+            if (d && (d.route_gpx || d.route_geojson)) {
+                let gpxData = d.route_gpx;
+                if (d.route_geojson && d.route_geojson.coordinates) {
+                    gpxData = window.generateGPX(d.route_geojson.coordinates, d.route_name || "route");
+                    d.route_gpx = gpxData;
+                    localStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
+                }
+                const blob = new Blob([gpxData], { type: "application/gpx+xml" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
@@ -12717,9 +12723,16 @@ trkpts +
         window.syncGPXForDay = async (dateKey) => {
             const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[dateKey];
-            if (!d || !d.route_gpx) {
+            if (!d || (!d.route_gpx && !d.route_geojson)) {
                 alert("No route GPX to sync.");
                 return;
+            }
+            
+            let gpxData = d.route_gpx;
+            if (d.route_geojson && d.route_geojson.coordinates) {
+                gpxData = window.generateGPX(d.route_geojson.coordinates, d.route_name || "route");
+                d.route_gpx = gpxData;
+                localStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
             }
 
             try {
@@ -12728,7 +12741,7 @@ trkpts +
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         name: d.route_name || "Planned Ride",
-                        gpx: d.route_gpx
+                        gpx: gpxData
                     })
                 });
                 const resData = await res.json();
