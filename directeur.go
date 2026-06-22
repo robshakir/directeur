@@ -12099,6 +12099,13 @@ func getDashboardTemplate() string {
 
                 if (endCoords) {
                     routeType = "point-to-point";
+                    
+                    const latDiff = Math.abs(startCoords.lat - endCoords.lat);
+                    const lonDiff = Math.abs(startCoords.lon - endCoords.lon);
+                    if (latDiff < 0.0001 && lonDiff < 0.0001) {
+                        throw new Error("Start and end locations are identical. Please choose a different destination, or use the Loop Route option.");
+                    }
+
                     statusEl.innerText = "Requesting point-to-point route...";
                     const coordsString = [
                         startCoords.lon + "," + startCoords.lat,
@@ -12109,9 +12116,12 @@ func getDashboardTemplate() string {
                     console.log("Point-to-point BRouter URL:", brouterUrl);
                     const res = await fetch(brouterUrl);
                     console.log("BRouter point-to-point response status:", res.status);
-                    const text = await res.text();
+                    let text = await res.text();
                     console.log("BRouter point-to-point raw body:", text);
                     if (!res.ok) throw new Error("BRouter failed to calculate point-to-point route: status " + res.status);
+                    
+                    // Fix BRouter JSON syntax error when coordinates is empty or similar layout missing commas
+                    text = text.replace(/"type"\s*:\s*"LineString"\s*\n?\s*"coordinates"/g, '"type": "LineString", "coordinates"');
                     
                     let data;
                     try {
