@@ -4350,7 +4350,7 @@ func getDashboardTemplate() string {
     <div id="route-planner-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center; padding: 2rem;">
         <div style="width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 1.25rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 20px; padding: 1.75rem; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px var(--accent-glow); max-height: 90vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
-                <div style="font-size: 1.3rem; font-weight: 700; background: linear-gradient(135deg, #ffffff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-family: 'Outfit';">🗺️ Workout Route Planner & Scheduler</div>
+                <div id="route-planner-title" style="font-size: 1.3rem; font-weight: 700; background: linear-gradient(135deg, #ffffff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-family: 'Outfit';">🗺️ Workout Route Planner & Scheduler</div>
                 <button onclick="hideRoutePlannerModal()" class="btn-action" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">Close</button>
             </div>
             
