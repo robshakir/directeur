@@ -24,6 +24,10 @@ WORKDIR /app
 # Install CA certificates for HTTPS requests (e.g. Gemini API)
 RUN apk --no-cache add ca-certificates tzdata
 
+# Create data directory and set environment variable
+ENV DIRECTEUR_DATA_DIR=/data
+RUN mkdir -p /data
+
 # Copy the binary from the builder stage
 COPY --from=builder /app/directeur /usr/local/bin/directeur
 
