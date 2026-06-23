@@ -205,6 +205,60 @@ func TestConfigLoadSave(t *testing.T) {
 	}
 }
 
+func TestResolveConfigPath(t *testing.T) {
+	// 1. If config flag is explicitly passed, it should be returned directly
+	if got := resolveConfigPath("custom.json", true); got != "custom.json" {
+		t.Errorf("resolveConfigPath('custom.json', true) = %q, expected 'custom.json'", got)
+	}
+
+	// 2. Test environment variable DIRECTEUR_DATA_DIR override when flag is not explicitly passed
+	tempDir, err := os.MkdirTemp("", "directeur_test_data")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	tempConfigPath := filepath.Join(tempDir, "config.json")
+
+	oldEnv := os.Getenv("DIRECTEUR_DATA_DIR")
+	defer os.Setenv("DIRECTEUR_DATA_DIR", oldEnv)
+
+	os.Setenv("DIRECTEUR_DATA_DIR", tempDir)
+	if got := resolveConfigPath("config.json", false); got != tempConfigPath {
+		t.Errorf("resolveConfigPath('config.json', false) with DIRECTEUR_DATA_DIR set = %q, expected %q", got, tempConfigPath)
+	}
+
+	// 3. Test home directory fallback when flag is not explicitly passed and DIRECTEUR_DATA_DIR is not set
+	os.Unsetenv("DIRECTEUR_DATA_DIR")
+
+	// Create mock home dir
+	homeTempDir, err := os.MkdirTemp("", "directeur_test_home")
+	if err != nil {
+		t.Fatalf("Failed to create temp home dir: %v", err)
+	}
+	defer os.RemoveAll(homeTempDir)
+
+	oldHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", oldHome)
+	os.Setenv("HOME", homeTempDir)
+
+	// Create ~/.directeur/config.json structure
+	mockDirecteurDir := filepath.Join(homeTempDir, ".directeur")
+	if err := os.MkdirAll(mockDirecteurDir, 0755); err != nil {
+		t.Fatalf("Failed to create mock .directeur dir: %v", err)
+	}
+	mockHomeConfig := filepath.Join(mockDirecteurDir, "config.json")
+	if err := os.WriteFile(mockHomeConfig, []byte("{}"), 0644); err != nil {
+		t.Fatalf("Failed to write mock home config: %v", err)
+	}
+
+	if got := resolveConfigPath("config.json", false); got != mockHomeConfig {
+		t.Errorf("resolveConfigPath('config.json', false) with mock HOME set = %q, expected %q", got, mockHomeConfig)
+	}
+}
+
+
+
 func TestHammerheadActivityUnmarshalJSON(t *testing.T) {
 	tests := []struct {
 		name            string

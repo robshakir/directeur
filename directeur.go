@@ -185,6 +185,26 @@ func analyzeFITFile(filePath string, config Config) (RideAnalysis, error) {
 	return analysis, nil
 }
 
+func resolveConfigPath(flagVal string, configPassed bool) string {
+	if configPassed {
+		return flagVal
+	}
+	if dataDir := os.Getenv("DIRECTEUR_DATA_DIR"); dataDir != "" {
+		return filepath.Join(dataDir, "config.json")
+	}
+	homeDir, _ := os.UserHomeDir()
+	if homeDir != "" {
+		homeDirConfig := filepath.Join(homeDir, ".directeur", "config.json")
+		homeConfig := filepath.Join(homeDir, ".directeur.config.json")
+		if _, err := os.Stat(homeDirConfig); err == nil {
+			return homeDirConfig
+		} else if _, err := os.Stat(homeConfig); err == nil {
+			return homeConfig
+		}
+	}
+	return flagVal
+}
+
 func main() {
 	inputFile := flag.String("input", "example.fit", "Path to input .FIT file")
 	configFile := flag.String("config", "config.json", "Path to gear configuration file")
@@ -203,32 +223,13 @@ func main() {
 	flag.Parse()
 
 	// 1. Load config
-	resolvedConfigPath := *configFile
 	configPassed := false
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "config" {
 			configPassed = true
 		}
 	})
-
-	if !configPassed {
-		if dataDir := os.Getenv("DIRECTEUR_DATA_DIR"); dataDir != "" {
-			dataConfig := filepath.Join(dataDir, "config.json")
-			if _, err := os.Stat(dataConfig); err == nil {
-				resolvedConfigPath = dataConfig
-			} else {
-				resolvedConfigPath = dataConfig
-			}
-		} else {
-			homeDir, _ := os.UserHomeDir()
-			if homeDir != "" {
-				homeConfig := filepath.Join(homeDir, ".directeur.config.json")
-				if _, err := os.Stat(homeConfig); err == nil {
-					resolvedConfigPath = homeConfig
-				}
-			}
-		}
-	}
+	resolvedConfigPath := resolveConfigPath(*configFile, configPassed)
 
 	config := loadConfig(resolvedConfigPath)
 
@@ -365,11 +366,11 @@ func main() {
 
 		// Generate HTML Dashboard
 		fmt.Printf("Generating HTML dashboard to %s...\n", *outputHTML)
-		writeHTML(*outputHTML, resolvedAnalysis, config, startupSource, startupParam, startupParam2)
+		writeHTML(*outputHTML, resolvedAnalysis, config, startupSource, startupParam, startupParam2, resolvedConfigPath)
 		fmt.Println("Analysis completed successfully!")
 	} else {
 		// Generate blank dashboard to serve as base if in serveMode but no initial data found
-		writeHTML(*outputHTML, RideAnalysis{}, config, "", "", "")
+		writeHTML(*outputHTML, RideAnalysis{}, config, "", "", "", resolvedConfigPath)
 	}
 
 	// Serve Mode if requested
@@ -1748,7 +1749,7 @@ func writeJSON(path string, analysis RideAnalysis) {
 	}
 }
 
-func writeHTML(path string, analysis RideAnalysis, config Config, source string, param string, param2 string) {
+func writeHTML(path string, analysis RideAnalysis, config Config, source string, param string, param2 string, configPath string) {
 	tmplSrc := getDashboardTemplate()
 	tmpl, err := template.New("dashboard").Parse(tmplSrc)
 	if err != nil {
@@ -1790,27 +1791,29 @@ func writeHTML(path string, analysis RideAnalysis, config Config, source string,
 	defer f.Close()
 
 	type TmplData struct {
-		JSONStr   template.JS
-		SchemaStr template.JS
-		BikesStr  template.JS
-		Summary   RideSummary
-		GearUsage []GearStats
-		FTP       int
-		Source    string
-		Param     string
-		Param2    string
+		JSONStr    template.JS
+		SchemaStr  template.JS
+		BikesStr   template.JS
+		Summary    RideSummary
+		GearUsage  []GearStats
+		FTP        int
+		Source     string
+		Param      string
+		Param2     string
+		ConfigPath string
 	}
 
 	data := TmplData{
-		JSONStr:   template.JS(jsonData),
-		SchemaStr: template.JS(schemaBytes),
-		BikesStr:  template.JS(bikesData),
-		Summary:   analysis.Summary,
-		GearUsage: analysis.GearUsage,
-		FTP:       config.FTP,
-		Source:    source,
-		Param:     param,
-		Param2:    param2,
+		JSONStr:    template.JS(jsonData),
+		SchemaStr:  template.JS(schemaBytes),
+		BikesStr:   template.JS(bikesData),
+		Summary:    analysis.Summary,
+		GearUsage:  analysis.GearUsage,
+		FTP:        config.FTP,
+		Source:     source,
+		Param:      param,
+		Param2:     param2,
+		ConfigPath: configPath,
 	}
 
 	if err := tmpl.Execute(f, data); err != nil {
@@ -1845,7 +1848,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		// Load fresh config
 		cfg := loadConfig(configPath)
 		if cfg.HammerheadAPI.ClientID == "" || cfg.HammerheadAPI.ClientSecret == "" {
-			http.Error(w, "Client credentials not configured in config.json", http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Client credentials not configured in config file at %s", configPath), http.StatusInternalServerError)
 			return
 		}
 
@@ -1943,7 +1946,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		// Load fresh config
 		cfg := loadConfig(configPath)
 		if cfg.WahooAPI.ClientID == "" || cfg.WahooAPI.ClientSecret == "" {
-			http.Error(w, "Wahoo client credentials not configured in config.json", http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Wahoo client credentials not configured in config file at %s", configPath), http.StatusInternalServerError)
 			return
 		}
 
@@ -11480,7 +11483,7 @@ func getDashboardTemplate() string {
                             '<li>Log in to the <a href="https://dashboard.hammerhead.io/" target="_blank" style="color: var(--accent); text-decoration: none; font-weight: 600; border-bottom: 1px dotted var(--accent);">Hammerhead Dashboard</a>.</li>' +
                             '<li>Navigate to settings and register a developer application.</li>' +
                             '<li>Add <code>' + window.location.origin + '/callback</code> as a callback URL.</li>' +
-                            '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>config.json</code> under <code>"hammerhead_api"</code> and restart the server.</li>' +
+                            '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>{{.ConfigPath}}</code> under <code>"hammerhead_api"</code> and restart the server.</li>' +
                             '</ol>' +
                             '<p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #ffffff; font-weight: 600;">Method B: Manual Session Token (Expires after 1 hour)</p>' +
                             '<ol style="margin: 0; padding-left: 1.25rem; font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.4rem; color: var(--text-secondary);">' +
@@ -11488,7 +11491,7 @@ func getDashboardTemplate() string {
                             '<li>Open Developer Tools (press <kbd style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 0.75rem; color: #ffffff;">F12</kbd>).</li>' +
                             '<li>Switch to the <strong>Network</strong> tab, refresh, and filter requests by <code>activities</code>.</li>' +
                             '<li>Select the request, copy the token string after <code>Bearer </code> in the <code>Authorization</code> header.</li>' +
-                            '<li>Paste it into <code>config.json</code> under <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
+                            '<li>Paste it into <code>{{.ConfigPath}}</code> under <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
                             '</ol>';
                         listHammerheadContainer.appendChild(promptCard);
                     } else if (data.hammerhead_configured && !data.hammerhead_linked) {
@@ -11553,7 +11556,7 @@ func getDashboardTemplate() string {
                             '<li>Filter/search requests by <code>activities</code>.</li>' +
                             '<li>Select the request and find the <strong>Request Headers</strong>.</li>' +
                             '<li>Copy the token string after <code>Bearer </code> in the <code>Authorization</code> header.</li>' +
-                            '<li>Paste it into <code>config.json</code> under <code>"hammerhead_api"</code> &rarr; <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
+                            '<li>Paste it into <code>{{.ConfigPath}}</code> under <code>"hammerhead_api"</code> &rarr; <code>"auth_token"</code>, set <code>"enabled": true</code>, and restart the server.</li>' +
                             '</ol>' +
                             reAuthHtml;
                         listHammerheadContainer.appendChild(errorCard);
@@ -11714,7 +11717,7 @@ func getDashboardTemplate() string {
                             '<li>Log in to the <a href="https://developers.wahooligan.com/" target="_blank" style="color: #9b59b6; text-decoration: none; font-weight: 600; border-bottom: 1px dotted #9b59b6;">Wahoo Developer Portal</a>.</li>' +
                             '<li>Register a developer application.</li>' +
                             '<li>Add <code>' + window.location.origin + '/wahoo-callback</code> as a callback URL.</li>' +
-                            '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>config.json</code> under <code>"wahoo_api"</code> and restart the server.</li>' +
+                            '<li>Add the generated <code>client_id</code> and <code>client_secret</code> to <code>{{.ConfigPath}}</code> under <code>"wahoo_api"</code> and restart the server.</li>' +
                             '</ol>';
                         listWahooContainer.appendChild(promptCard);
                     } else if (data.wahoo_configured && !data.wahoo_linked) {
