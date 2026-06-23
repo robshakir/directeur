@@ -212,11 +212,20 @@ func main() {
 	})
 
 	if !configPassed {
-		homeDir, _ := os.UserHomeDir()
-		if homeDir != "" {
-			homeConfig := filepath.Join(homeDir, ".directeur.config.json")
-			if _, err := os.Stat(homeConfig); err == nil {
-				resolvedConfigPath = homeConfig
+		if dataDir := os.Getenv("DIRECTEUR_DATA_DIR"); dataDir != "" {
+			dataConfig := filepath.Join(dataDir, "config.json")
+			if _, err := os.Stat(dataConfig); err == nil {
+				resolvedConfigPath = dataConfig
+			} else {
+				resolvedConfigPath = dataConfig
+			}
+		} else {
+			homeDir, _ := os.UserHomeDir()
+			if homeDir != "" {
+				homeConfig := filepath.Join(homeDir, ".directeur.config.json")
+				if _, err := os.Stat(homeConfig); err == nil {
+					resolvedConfigPath = homeConfig
+				}
 			}
 		}
 	}
@@ -407,14 +416,30 @@ func loadConfig(path string) Config {
 	if len(config.Bikes) == 0 {
 		config.Bikes = defaultConfig.Bikes
 	}
+	dataDir := os.Getenv("DIRECTEUR_DATA_DIR")
+	if config.LocalDirectory == "" && dataDir != "" {
+		config.LocalDirectory = filepath.Join(dataDir, "rides")
+	}
 	if config.HammerheadAPI.DownloadDir == "" {
-		config.HammerheadAPI.DownloadDir = "./fit_downloads"
+		if dataDir != "" {
+			config.HammerheadAPI.DownloadDir = filepath.Join(dataDir, "fit_downloads")
+		} else {
+			config.HammerheadAPI.DownloadDir = "./fit_downloads"
+		}
 	}
 	if config.WahooAPI.DownloadDir == "" {
-		config.WahooAPI.DownloadDir = "./wahoo_downloads"
+		if dataDir != "" {
+			config.WahooAPI.DownloadDir = filepath.Join(dataDir, "wahoo_downloads")
+		} else {
+			config.WahooAPI.DownloadDir = "./wahoo_downloads"
+		}
 	}
 	if config.IntervalsAPI.DownloadDir == "" {
-		config.IntervalsAPI.DownloadDir = "./intervals_downloads"
+		if dataDir != "" {
+			config.IntervalsAPI.DownloadDir = filepath.Join(dataDir, "intervals_downloads")
+		} else {
+			config.IntervalsAPI.DownloadDir = "./intervals_downloads"
+		}
 	}
 	return config
 }
@@ -1745,7 +1770,14 @@ func writeHTML(path string, analysis RideAnalysis, config Config, source string,
 	}
 
 	// Read schema
-	schemaBytes, err := os.ReadFile("schema.json")
+	schemaPath := "schema.json"
+	if dataDir := os.Getenv("DIRECTEUR_DATA_DIR"); dataDir != "" {
+		dataSchema := filepath.Join(dataDir, "schema.json")
+		if _, err := os.Stat(dataSchema); err == nil {
+			schemaPath = dataSchema
+		}
+	}
+	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
 		schemaBytes = []byte(`{"error": "schema.json not found"}`)
 	}
@@ -1797,6 +1829,9 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 	fmt.Println("Press Ctrl+C to stop.")
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
 		http.ServeFile(w, r, absPath)
 	})
 
@@ -2749,6 +2784,10 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 	})
 
 	getStoragePath := func() string {
+		if dataDir := os.Getenv("DIRECTEUR_DATA_DIR"); dataDir != "" {
+			os.MkdirAll(dataDir, 0755)
+			return filepath.Join(dataDir, "storage.json")
+		}
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			return "directeur_storage.json"
