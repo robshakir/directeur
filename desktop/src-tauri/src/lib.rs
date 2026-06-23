@@ -53,7 +53,34 @@ fn start_local_engine(app: tauri::AppHandle) -> Result<(), String> {
         ])
         .env("DIRECTEUR_DATA_DIR", app_data.to_str().ok_or("Invalid data dir")?);
 
-    sidecar_command.spawn().map_err(|e| e.to_string())?;
+    let log_path = app_data.join("sidecar.log");
+    let _ = std::fs::remove_file(&log_path);
+
+    let (mut rx, _child) = sidecar_command.spawn().map_err(|e| e.to_string())?;
+
+    tauri::async_runtime::spawn(async move {
+        use tauri_plugin_shell::process::CommandEvent;
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line_bytes) => {
+                    let line = String::from_utf8_lossy(&line_bytes);
+                    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                        let _ = file.write_all(line.as_bytes());
+                    }
+                }
+                CommandEvent::Stderr(line_bytes) => {
+                    let line = String::from_utf8_lossy(&line_bytes);
+                    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                        let _ = file.write_all(line.as_bytes());
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+
     Ok(())
 }
 
