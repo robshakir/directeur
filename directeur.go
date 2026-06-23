@@ -5072,6 +5072,44 @@ func getDashboardTemplate() string {
         };
         window.formatLocalDateKey = formatLocalDateKey;
 
+        const selfHealTrainingPlans = () => {
+            try {
+                const plansByDateData = clientStorage.getItem('fit_training_plans_by_date');
+                if (plansByDateData) {
+                    const plans = JSON.parse(plansByDateData);
+                    const moves = [];
+                    Object.keys(plans).forEach(key => {
+                        const dayPlan = plans[key];
+                        if (dayPlan && dayPlan.day) {
+                            const dayStr = dayPlan.day;
+                            if (dayStr.includes(',') && (dayStr.match(/\d{4}/) || dayStr.match(/[A-Za-z]{3}\s+\d+/))) {
+                                try {
+                                    const parsedDate = new Date(dayStr);
+                                    if (!isNaN(parsedDate.getTime())) {
+                                        const correctKey = formatLocalDateKey(parsedDate);
+                                        if (correctKey !== key) {
+                                            moves.push({ from: key, to: correctKey, value: dayPlan });
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                    });
+                    if (moves.length > 0) {
+                        moves.forEach(m => {
+                            delete plans[m.from];
+                            plans[m.to] = m.value;
+                            console.log("Self-healed shifted key: " + m.from + " -> " + m.to + " (from \"" + m.value.day + "\")");
+                        });
+                        clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plans));
+                    }
+                }
+            } catch(e) {
+                console.error("Self-heal error:", e);
+            }
+        };
+        window.selfHealTrainingPlans = selfHealTrainingPlans;
+
         const getMonday = (d) => {
             const date = parseLocalDate(d);
             const day = date.getDay(); // 0 is Sunday, 1 is Monday, ..., 6 is Saturday
@@ -5235,6 +5273,82 @@ func getDashboardTemplate() string {
 
         window.addEventListener('DOMContentLoaded', async () => {
             await clientStorage.init();
+
+            // Perform one-time migration of history to flat dictionary format
+            try {
+                if (!clientStorage.getItem('fit_training_plans_by_date')) {
+                    const plansByDate = {};
+                    const weeklySummaries = {};
+                    
+                    let historyList = [];
+                    try {
+                        const historyData = clientStorage.getItem('fit_training_programs_history');
+                        if (historyData) historyList = JSON.parse(historyData);
+                    } catch(e) {}
+                    
+                    try {
+                        const legacyPlan = clientStorage.getItem('fit_training_program');
+                        if (legacyPlan) {
+                            const parsed = JSON.parse(legacyPlan);
+                            if (parsed && !historyList.some(p => p.start_date === parsed.start_date)) {
+                                historyList.push(parsed);
+                            }
+                        }
+                    } catch(e) {}
+
+                    const weekdayOffsets = {
+                        'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6
+                    };
+
+                    historyList.forEach(plan => {
+                        if (plan && plan.start_date && plan.days) {
+                            let planStart = parseLocalDate(plan.start_date);
+                            
+                            // Apply legacy self-heal: adjust start_date if it was previously normalized to a Monday
+                            if (plan.days[0]) {
+                                const firstDayLower = (plan.days[0].day || '').toLowerCase();
+                                let foundDay = '';
+                                for (const name of Object.keys(weekdayOffsets)) {
+                                    if (firstDayLower.includes(name)) {
+                                        foundDay = name;
+                                        break;
+                                    }
+                                }
+                                const offset = foundDay ? weekdayOffsets[foundDay] : undefined;
+                                if (typeof offset === 'number' && offset > 0) {
+                                    const monday = getMonday(plan.start_date);
+                                    const actualStart = new Date(monday);
+                                    actualStart.setDate(monday.getDate() + offset);
+                                    planStart = actualStart;
+                                }
+                            }
+                            planStart.setHours(0,0,0,0);
+                            const mondayStr = formatLocalDateKey(getMonday(planStart));
+                            if (plan.weekly_summary) {
+                                weeklySummaries[mondayStr] = plan.weekly_summary;
+                            }
+                            
+                            plan.days.forEach((day, idx) => {
+                                const dDate = new Date(planStart);
+                                dDate.setDate(planStart.getDate() + idx);
+                                const key = formatLocalDateKey(dDate);
+                                plansByDate[key] = day;
+                            });
+                        }
+                    });
+
+                    clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+                    clientStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
+                }
+            } catch(e) {
+                console.error("Migration error:", e);
+            }
+
+            try {
+                selfHealTrainingPlans();
+            } catch(e) {
+                console.error("Error running startup self-heal:", e);
+            }
             
             if (rideData && rideData.summary) {
                 const startDate = new Date(rideData.summary.start_time);
@@ -7376,75 +7490,7 @@ func getDashboardTemplate() string {
         };
         window.getWeeksWithPlans = getWeeksWithPlans;
 
-        // Perform one-time migration of history to flat dictionary format
-        try {
-            if (!clientStorage.getItem('fit_training_plans_by_date')) {
-                const plansByDate = {};
-                const weeklySummaries = {};
-                
-                let historyList = [];
-                try {
-                    const historyData = clientStorage.getItem('fit_training_programs_history');
-                    if (historyData) historyList = JSON.parse(historyData);
-                } catch(e) {}
-                
-                try {
-                    const legacyPlan = clientStorage.getItem('fit_training_program');
-                    if (legacyPlan) {
-                        const parsed = JSON.parse(legacyPlan);
-                        if (parsed && !historyList.some(p => p.start_date === parsed.start_date)) {
-                            historyList.push(parsed);
-                        }
-                    }
-                } catch(e) {}
-
-                const weekdayOffsets = {
-                    'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6
-                };
-
-                historyList.forEach(plan => {
-                    if (plan && plan.start_date && plan.days) {
-                        let planStart = parseLocalDate(plan.start_date);
-                        
-                        // Apply legacy self-heal: adjust start_date if it was previously normalized to a Monday
-                        if (plan.days[0]) {
-                            const firstDayLower = (plan.days[0].day || '').toLowerCase();
-                            let foundDay = '';
-                            for (const name of Object.keys(weekdayOffsets)) {
-                                if (firstDayLower.includes(name)) {
-                                    foundDay = name;
-                                    break;
-                                }
-                            }
-                            const offset = foundDay ? weekdayOffsets[foundDay] : undefined;
-                            if (typeof offset === 'number' && offset > 0) {
-                                const monday = getMonday(plan.start_date);
-                                const actualStart = new Date(monday);
-                                actualStart.setDate(monday.getDate() + offset);
-                                planStart = actualStart;
-                            }
-                        }
-                        planStart.setHours(0,0,0,0);
-                        const mondayStr = formatLocalDateKey(getMonday(planStart));
-                        if (plan.weekly_summary) {
-                            weeklySummaries[mondayStr] = plan.weekly_summary;
-                        }
-                        
-                        plan.days.forEach((day, idx) => {
-                            const dDate = new Date(planStart);
-                            dDate.setDate(planStart.getDate() + idx);
-                            const key = formatLocalDateKey(dDate);
-                            plansByDate[key] = day;
-                        });
-                    }
-                });
-
-                clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
-                clientStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
-            }
-        } catch(e) {
-            console.error("Migration error:", e);
-        }
+        // Migration logic moved to DOMContentLoaded initialization
 
         // Legacy compatibility wrapper functions
         const showLandingView = () => switchToView('landing');
