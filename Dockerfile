@@ -25,10 +25,10 @@ WORKDIR /app
 RUN apk --no-cache add ca-certificates tzdata
 
 # Copy the binary from the builder stage
-COPY --from=builder /app/directeur .
+COPY --from=builder /app/directeur /usr/local/bin/directeur
 
 # Expose the web server port
 EXPOSE 8080
 
 # Run the binary in -serve mode
-ENTRYPOINT ["/app/directeur", "-serve"]
+ENTRYPOINT ["/usr/local/bin/directeur", "-serve"]
