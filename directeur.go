@@ -2487,6 +2487,8 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		}
 
 		type PlannedWorkout struct {
+			Date                  string  `json:"date"`
+			DateKey               string  `json:"date_key"`
 			Day                   string  `json:"day"`
 			WorkoutType           string  `json:"workout_type"`
 			Title                 string  `json:"title"`
@@ -2530,8 +2532,39 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			athleteID = "0"
 		}
 
-		oldest := parsedStart.Format("2006-01-02")
-		newest := parsedStart.AddDate(0, 0, 7).Format("2006-01-02")
+		// Dynamically compute query range for existing events based on input workouts
+		var oldest, newest string
+		for _, wkt := range req.Workouts {
+			dStr := wkt.Date
+			if dStr == "" {
+				dStr = wkt.DateKey
+			}
+			if dStr == "" {
+				continue
+			}
+			if len(dStr) > 10 {
+				dStr = dStr[:10]
+			}
+			if oldest == "" || dStr < oldest {
+				oldest = dStr
+			}
+			if newest == "" || dStr > newest {
+				newest = dStr
+			}
+		}
+
+		if oldest == "" {
+			oldest = parsedStart.Format("2006-01-02")
+		}
+		if newest == "" {
+			newest = parsedStart.AddDate(0, 0, 7).Format("2006-01-02")
+		} else {
+			// Add 1 day to newest to make query range inclusive
+			tMax, err := time.Parse("2006-01-02", newest)
+			if err == nil {
+				newest = tMax.AddDate(0, 0, 1).Format("2006-01-02")
+			}
+		}
 
 		getURL := fmt.Sprintf("https://intervals.icu/api/v1/athlete/%s/events?oldest=%s&newest=%s", athleteID, oldest, newest)
 		client := &http.Client{Timeout: 15 * time.Second}
@@ -2589,7 +2622,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		var results []ExportResult
 
 		for _, wkt := range req.Workouts {
-			if wkt.DurationMins <= 0 || strings.ToLower(wkt.WorkoutType) == "rest" || strings.ToLower(wkt.WorkoutType) == "rest day" {
+			if wkt.DurationMins <= 0 || strings.ToLower(wkt.WorkoutType) == "rest" || strings.ToLower(wkt.WorkoutType) == "rest day" || strings.ToLower(wkt.WorkoutType) == "no plan" {
 				results = append(results, ExportResult{
 					Name:   wkt.Title,
 					Day:    wkt.Day,
@@ -2598,29 +2631,38 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 				continue
 			}
 
-			offset := calculateDayOffset(parsedStart.Weekday(), wkt.Day)
-			targetDate := parsedStart.AddDate(0, 0, offset)
-			targetDateStr := targetDate.Format("2006-01-02")
-
-			alreadyExists := false
-			targetWktNameLower := strings.TrimSpace(strings.ToLower(wkt.Title))
-
-			for _, ev := range existingEvents {
-				if len(ev.StartDateLocal) >= 10 && ev.StartDateLocal[:10] == targetDateStr {
-					if strings.TrimSpace(strings.ToLower(ev.Name)) == targetWktNameLower {
-						alreadyExists = true
-						break
-					}
+			// Get the target date formatted as YYYY-MM-DD
+			targetDateStr := wkt.Date
+			if targetDateStr == "" {
+				targetDateStr = wkt.DateKey
+			}
+			if targetDateStr == "" {
+				offset := calculateDayOffset(parsedStart.Weekday(), wkt.Day)
+				targetDate := parsedStart.AddDate(0, 0, offset)
+				targetDateStr = targetDate.Format("2006-01-02")
+			} else {
+				if len(targetDateStr) > 10 {
+					targetDateStr = targetDateStr[:10]
 				}
 			}
 
-			if alreadyExists {
-				results = append(results, ExportResult{
-					Name:   wkt.Title,
-					Day:    wkt.Day,
-					Status: "already_exists",
-				})
-				continue
+			targetWktNameLower := strings.TrimSpace(strings.ToLower(wkt.Title))
+
+			// Delete existing matching workout if found
+			for _, ev := range existingEvents {
+				if len(ev.StartDateLocal) >= 10 && ev.StartDateLocal[:10] == targetDateStr {
+					if strings.TrimSpace(strings.ToLower(ev.Name)) == targetWktNameLower {
+						deleteURL := fmt.Sprintf("https://intervals.icu/api/v1/athlete/%s/events/%d", athleteID, ev.ID)
+						delReq, err := http.NewRequest("DELETE", deleteURL, nil)
+						if err == nil {
+							delReq.SetBasicAuth("API_KEY", cfg.IntervalsAPI.APIKey)
+							delResp, err := client.Do(delReq)
+							if err == nil {
+								delResp.Body.Close()
+							}
+						}
+					}
+				}
 			}
 
 			indoor := false
@@ -2704,6 +2746,50 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		}
 
 		json.NewEncoder(w).Encode(results)
+	})
+
+	getStoragePath := func() string {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "directeur_storage.json"
+		}
+		dir := filepath.Join(homeDir, ".directeur")
+		os.MkdirAll(dir, 0755)
+		return filepath.Join(dir, "storage.json")
+	}
+
+	http.HandleFunc("/api/storage", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		storagePath := getStoragePath()
+
+		if r.Method == http.MethodGet {
+			data, err := os.ReadFile(storagePath)
+			if err != nil || len(data) == 0 {
+				w.Write([]byte("{}"))
+				return
+			}
+			w.Write(data)
+			return
+		}
+
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, `{"error": "bad request"}`, http.StatusBadRequest)
+				return
+			}
+			defer r.Body.Close()
+			
+			err = os.WriteFile(storagePath, body, 0644)
+			if err != nil {
+				http.Error(w, `{"error": "failed to write storage"}`, http.StatusInternalServerError)
+				return
+			}
+			w.Write([]byte(`{"success": true}`))
+			return
+		}
+
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
 	})
 
 	http.HandleFunc("/api/hammerhead/upload-route", func(w http.ResponseWriter, r *http.Request) {
@@ -3603,7 +3689,9 @@ func getDashboardTemplate() string {
             left: 0;
             width: 100vw;
             height: 100vh;
-            background: var(--bg);
+            background: rgba(10, 10, 12, 0.65);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             z-index: 9999;
             display: flex;
             flex-direction: column;
@@ -4842,6 +4930,66 @@ func getDashboardTemplate() string {
         let initialRideData = null;
         let schemaData = null;
         let configBikes = null;
+
+        const clientStorage = {
+            cache: {},
+            async init() {
+                try {
+                    const res = await fetch('/api/storage');
+                    if (res.ok) {
+                        this.cache = await res.json();
+                    }
+                    
+                    // Migration from local browser storage
+                    let migrated = false;
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && (key.startsWith('fit_') || key.startsWith('directeur_') || key === 'gemini_api_key')) {
+                            if (this.cache[key] === undefined) {
+                                this.cache[key] = localStorage.getItem(key);
+                                migrated = true;
+                            }
+                        }
+                    }
+                    if (migrated) {
+                        await this.sync();
+                        // Clear localStorage once migrated
+                        for (let key in this.cache) {
+                            localStorage.removeItem(key);
+                        }
+                    }
+                } catch (e) {
+                    console.error("Storage initialization failed", e);
+                }
+            },
+            getItem(key) {
+                return this.cache.hasOwnProperty(key) ? this.cache[key] : null;
+            },
+            setItem(key, value) {
+                this.cache[key] = String(value);
+                this.sync(); // Async save
+            },
+            removeItem(key) {
+                delete this.cache[key];
+                this.sync();
+            },
+            clear() {
+                this.cache = {};
+                this.sync();
+            },
+            async sync() {
+                try {
+                    await fetch('/api/storage', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.cache)
+                    });
+                } catch (e) {
+                    console.error("Failed to sync storage to server", e);
+                }
+            }
+        };
+
         try {
             const rd = document.getElementById('embedded-ride-data').textContent;
             if (rd && rd.trim() && rd.trim() !== "null") initialRideData = JSON.parse(rd);
@@ -4860,7 +5008,7 @@ func getDashboardTemplate() string {
         console.log("Loaded Ride Data:", rideData);
 
         const defaultFTP = {{.FTP}} || 250;
-        let athleteFTP = parseInt(localStorage.getItem('fit_athlete_ftp')) || defaultFTP;
+        let athleteFTP = parseInt(clientStorage.getItem('fit_athlete_ftp')) || defaultFTP;
 
         // Global Chart and Map references for dynamic updating
         let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline, quadrantAnalysisChart;
@@ -5046,7 +5194,9 @@ func getDashboardTemplate() string {
             }
         };
 
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
+            await clientStorage.init();
+            
             if (rideData && rideData.summary) {
                 const startDate = new Date(rideData.summary.start_time);
                 const rideMonth = startDate.getMonth() + 1; // 1-12
@@ -5066,7 +5216,7 @@ func getDashboardTemplate() string {
             }
 
             // Restore active view or default to landing
-            const activeView = localStorage.getItem('directeur_active_view') || 'landing';
+            const activeView = clientStorage.getItem('directeur_active_view') || 'landing';
             if (typeof switchToView === 'function') {
                 switchToView(activeView);
             }
@@ -5086,13 +5236,13 @@ func getDashboardTemplate() string {
                     
                     // Persist selected bike to localStorage
                     if (selectedBikeName) {
-                        localStorage.setItem('directeur_selected_bike', selectedBikeName);
+                        clientStorage.setItem('directeur_selected_bike', selectedBikeName);
                     } else {
-                        localStorage.removeItem('directeur_selected_bike');
+                        clientStorage.removeItem('directeur_selected_bike');
                     }
 
                     // Save association in fit_ride_history for the current ride
-                    const historyData = localStorage.getItem('fit_ride_history');
+                    const historyData = clientStorage.getItem('fit_ride_history');
                     if (historyData) {
                         try {
                             const history = JSON.parse(historyData);
@@ -5101,7 +5251,7 @@ func getDashboardTemplate() string {
                                 const ride = history.find(r => r.id === rideId);
                                 if (ride) {
                                     ride.bike = selectedBikeName;
-                                    localStorage.setItem('fit_ride_history', JSON.stringify(history));
+                                    clientStorage.setItem('fit_ride_history', JSON.stringify(history));
                                     try {
                                         renderRidesCalendar();
                                     } catch(e){}
@@ -5270,7 +5420,7 @@ func getDashboardTemplate() string {
                     });
                 }
 
-                const historyData = localStorage.getItem('fit_ride_history');
+                const historyData = clientStorage.getItem('fit_ride_history');
                 const historyList = historyData ? JSON.parse(historyData) : [];
 
                 if (statsSpan) {
@@ -5428,18 +5578,18 @@ func getDashboardTemplate() string {
                     calContent.style.opacity = '0';
                     calArrow.textContent = '▼';
                     calBtnToggle.innerHTML = '▼ Show Calendar';
-                    localStorage.setItem('directeur_calendar_collapsed', 'true');
+                    clientStorage.setItem('directeur_calendar_collapsed', 'true');
                 } else {
                     calContent.style.maxHeight = '500px';
                     calContent.style.opacity = '1';
                     calArrow.textContent = '▲';
                     calBtnToggle.innerHTML = '▲ Collapse';
-                    localStorage.setItem('directeur_calendar_collapsed', 'false');
+                    clientStorage.setItem('directeur_calendar_collapsed', 'false');
                 }
             };
             
             const toggleCalendar = (e) => {
-                const isCollapsed = localStorage.getItem('directeur_calendar_collapsed') === 'true';
+                const isCollapsed = clientStorage.getItem('directeur_calendar_collapsed') === 'true';
                 setCalendarCollapsed(!isCollapsed);
             };
             
@@ -5449,7 +5599,7 @@ func getDashboardTemplate() string {
                 toggleCalendar();
             });
             
-            const initialCollapsed = localStorage.getItem('directeur_calendar_collapsed') !== 'false';
+            const initialCollapsed = clientStorage.getItem('directeur_calendar_collapsed') !== 'false';
             setCalendarCollapsed(initialCollapsed);
 
             const btnPrev = document.getElementById('btn-prev-week');
@@ -5587,7 +5737,7 @@ func getDashboardTemplate() string {
                 if (!initialBike) {
                     const rideId = rideData && rideData.summary ? rideData.summary.start_time : null;
                     if (rideId) {
-                        const historyData = localStorage.getItem('fit_ride_history');
+                        const historyData = clientStorage.getItem('fit_ride_history');
                         if (historyData) {
                             try {
                                 const history = JSON.parse(historyData);
@@ -5600,7 +5750,7 @@ func getDashboardTemplate() string {
                     }
                 }
                 if (!initialBike) {
-                    initialBike = localStorage.getItem('directeur_selected_bike');
+                    initialBike = clientStorage.getItem('directeur_selected_bike');
                 }
                 
                 if (initialBike && bikesList.some(b => b.name === initialBike)) {
@@ -6900,7 +7050,7 @@ func getDashboardTemplate() string {
             // 2. Historical Estimates
             const ftpHistoryList = document.getElementById('ftp-history-list');
             if (ftpHistoryList) {
-                const historyData = localStorage.getItem('fit_ride_history');
+                const historyData = clientStorage.getItem('fit_ride_history');
                 let history = [];
                 if (historyData) {
                     try {
@@ -6940,7 +7090,7 @@ func getDashboardTemplate() string {
             athleteFTP = parseInt(newFTP);
             if (isNaN(athleteFTP) || athleteFTP <= 0) athleteFTP = 250;
             
-            localStorage.setItem('fit_athlete_ftp', athleteFTP);
+            clientStorage.setItem('fit_athlete_ftp', athleteFTP);
             
             const ftpInput = document.getElementById('ftp-input');
             if (ftpInput) {
@@ -6959,7 +7109,7 @@ func getDashboardTemplate() string {
             if (!rideId) return;
 
             // 1. Check history for this ride to get metadata
-            const historyData = localStorage.getItem('fit_ride_history');
+            const historyData = clientStorage.getItem('fit_ride_history');
             if (historyData) {
                 try {
                     const history = JSON.parse(historyData);
@@ -7038,7 +7188,7 @@ func getDashboardTemplate() string {
         // Global View Router
         const switchToView = (viewName) => {
             // Update active view tracking in localStorage
-            localStorage.setItem('directeur_active_view', viewName);
+            clientStorage.setItem('directeur_active_view', viewName);
 
             // Hide all view containers
             const views = ['landing-view', 'dashboard-view', 'calendar-view', 'settings-view', 'data-view'];
@@ -7108,13 +7258,13 @@ func getDashboardTemplate() string {
 
             let plansByDate = {};
             try {
-                const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                const plansByDateData = clientStorage.getItem('fit_training_plans_by_date');
                 if (plansByDateData) plansByDate = JSON.parse(plansByDateData);
             } catch(e) {}
 
             let weeklySummaries = {};
             try {
-                const summariesData = localStorage.getItem('fit_weekly_summaries');
+                const summariesData = clientStorage.getItem('fit_weekly_summaries');
                 if (summariesData) weeklySummaries = JSON.parse(summariesData);
             } catch(e) {}
 
@@ -7153,13 +7303,13 @@ func getDashboardTemplate() string {
         const getWeeksWithPlans = () => {
             let plansByDate = {};
             try {
-                const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                const plansByDateData = clientStorage.getItem('fit_training_plans_by_date');
                 if (plansByDateData) plansByDate = JSON.parse(plansByDateData);
             } catch(e) {}
 
             let weeklySummaries = {};
             try {
-                const summariesData = localStorage.getItem('fit_weekly_summaries');
+                const summariesData = clientStorage.getItem('fit_weekly_summaries');
                 if (summariesData) weeklySummaries = JSON.parse(summariesData);
             } catch(e) {}
 
@@ -7189,18 +7339,18 @@ func getDashboardTemplate() string {
 
         // Perform one-time migration of history to flat dictionary format
         try {
-            if (!localStorage.getItem('fit_training_plans_by_date')) {
+            if (!clientStorage.getItem('fit_training_plans_by_date')) {
                 const plansByDate = {};
                 const weeklySummaries = {};
                 
                 let historyList = [];
                 try {
-                    const historyData = localStorage.getItem('fit_training_programs_history');
+                    const historyData = clientStorage.getItem('fit_training_programs_history');
                     if (historyData) historyList = JSON.parse(historyData);
                 } catch(e) {}
                 
                 try {
-                    const legacyPlan = localStorage.getItem('fit_training_program');
+                    const legacyPlan = clientStorage.getItem('fit_training_program');
                     if (legacyPlan) {
                         const parsed = JSON.parse(legacyPlan);
                         if (parsed && !historyList.some(p => p.start_date === parsed.start_date)) {
@@ -7250,8 +7400,8 @@ func getDashboardTemplate() string {
                     }
                 });
 
-                localStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
-                localStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
+                clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+                clientStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
             }
         } catch(e) {
             console.error("Migration error:", e);
@@ -7268,7 +7418,7 @@ func getDashboardTemplate() string {
         const loadCalendarViewDetails = () => {
             // Run self-heal on loaded plansByDate to correct any key/day-label date mismatches
             try {
-                const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                const plansByDateData = clientStorage.getItem('fit_training_plans_by_date');
                 if (plansByDateData) {
                     const plans = JSON.parse(plansByDateData);
                     const moves = [];
@@ -7295,7 +7445,7 @@ func getDashboardTemplate() string {
                             plans[m.to] = m.value;
                             console.log("Self-healed shifted key: " + m.from + " -> " + m.to + " (from \"" + m.value.day + "\")");
                         });
-                        localStorage.setItem('fit_training_plans_by_date', JSON.stringify(plans));
+                        clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plans));
                     }
                 }
             } catch(e) {
@@ -7303,19 +7453,19 @@ func getDashboardTemplate() string {
             }
 
             // Load custom inputs from local storage if saved
-            const savedGoals = localStorage.getItem('fit_calendar_goals');
+            const savedGoals = clientStorage.getItem('fit_calendar_goals');
             if (savedGoals) {
                 document.getElementById('calendar-goals-input').value = savedGoals;
             }
-            const savedConstraints = localStorage.getItem('fit_calendar_constraints');
+            const savedConstraints = clientStorage.getItem('fit_calendar_constraints');
             if (savedConstraints) {
                 document.getElementById('calendar-constraints-input').value = savedConstraints;
             }
-            const savedModel = localStorage.getItem('fit_calendar_model');
+            const savedModel = clientStorage.getItem('fit_calendar_model');
             if (savedModel) {
                 document.getElementById('calendar-model-select').value = savedModel;
             }
-            const savedWeeks = localStorage.getItem('fit_calendar_weeks');
+            const savedWeeks = clientStorage.getItem('fit_calendar_weeks');
             if (savedWeeks) {
                 document.getElementById('calendar-weeks-select').value = savedWeeks;
             }
@@ -7361,7 +7511,7 @@ func getDashboardTemplate() string {
             }
 
             // Load completed ride history for match-ups
-            const historyData = localStorage.getItem('fit_ride_history');
+            const historyData = clientStorage.getItem('fit_ride_history');
             let completedRidesHistory = [];
             if (historyData) {
                 try {
@@ -7513,7 +7663,7 @@ func getDashboardTemplate() string {
 
             // Gemini Key
             const apiKeyEl = document.getElementById('settings-api-key-input');
-            if (apiKeyEl) apiKeyEl.value = localStorage.getItem('gemini_api_key') || '';
+            if (apiKeyEl) apiKeyEl.value = clientStorage.getItem('gemini_api_key') || '';
 
             // Intervals.icu
             fetch('/api/intervals/config')
@@ -7553,13 +7703,13 @@ func getDashboardTemplate() string {
 
         const saveAPIKeyFromSettings = () => {
             const key = document.getElementById('settings-api-key-input').value.trim();
-            localStorage.setItem('gemini_api_key', key);
+            clientStorage.setItem('gemini_api_key', key);
             alert('Gemini API Key updated successfully!');
         };
         window.saveAPIKeyFromSettings = saveAPIKeyFromSettings;
 
         const clearAPIKeyFromSettings = () => {
-            localStorage.removeItem('gemini_api_key');
+            clientStorage.removeItem('gemini_api_key');
             document.getElementById('settings-api-key-input').value = '';
             alert('Gemini API Key cleared.');
         };
@@ -7572,9 +7722,9 @@ func getDashboardTemplate() string {
                 dashBike.dispatchEvent(new Event('change'));
             } else {
                 if (value) {
-                    localStorage.setItem('directeur_selected_bike', value);
+                    clientStorage.setItem('directeur_selected_bike', value);
                 } else {
-                    localStorage.removeItem('directeur_selected_bike');
+                    clientStorage.removeItem('directeur_selected_bike');
                 }
             }
         };
@@ -7662,7 +7812,7 @@ func getDashboardTemplate() string {
             if (clearBtn) {
                 clearBtn.onclick = () => {
                     if (confirm("⚠️ WARNING: This will permanently wipe all local storage data, including your Gemini API key, ride history, default bike settings, and training programs. This cannot be undone!\n\nAre you sure you want to clear all data?")) {
-                        localStorage.clear();
+                        clientStorage.clear();
                         alert("Local storage wiped successfully. Reloading...");
                         window.location.reload();
                     }
@@ -7845,13 +7995,13 @@ func getDashboardTemplate() string {
 
                 let plansByDate = {};
                 try {
-                    const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                    const plansByDateData = clientStorage.getItem('fit_training_plans_by_date');
                     if (plansByDateData) plansByDate = JSON.parse(plansByDateData);
                 } catch(e) {}
 
                 let weeklySummaries = {};
                 try {
-                    const summariesData = localStorage.getItem('fit_weekly_summaries');
+                    const summariesData = clientStorage.getItem('fit_weekly_summaries');
                     if (summariesData) weeklySummaries = JSON.parse(summariesData);
                 } catch(e) {}
 
@@ -7866,8 +8016,8 @@ func getDashboardTemplate() string {
                 // Delete the weekly summary
                 delete weeklySummaries[mondayStr];
 
-                localStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
-                localStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
+                clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+                clientStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
 
                 // Re-render
                 const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
@@ -7885,13 +8035,13 @@ func getDashboardTemplate() string {
             try {
                 let plansByDate = {};
                 try {
-                    const plansByDateData = localStorage.getItem('fit_training_plans_by_date');
+                    const plansByDateData = clientStorage.getItem('fit_training_plans_by_date');
                     if (plansByDateData) plansByDate = JSON.parse(plansByDateData);
                 } catch(e) {}
 
                 let weeklySummaries = {};
                 try {
-                    const summariesData = localStorage.getItem('fit_weekly_summaries');
+                    const summariesData = clientStorage.getItem('fit_weekly_summaries');
                     if (summariesData) weeklySummaries = JSON.parse(summariesData);
                 } catch(e) {}
 
@@ -7953,8 +8103,8 @@ func getDashboardTemplate() string {
                     }
                 }
 
-                localStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
-                localStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
+                clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+                clientStorage.setItem('fit_weekly_summaries', JSON.stringify(weeklySummaries));
 
                 // Re-render
                 renderPlannerHistory();
@@ -8036,7 +8186,7 @@ func getDashboardTemplate() string {
             overviewGrid.innerHTML = '';
             
             // Retrieve local ride history for matching completed rides
-            const historyData = localStorage.getItem('fit_ride_history');
+            const historyData = clientStorage.getItem('fit_ride_history');
             let history = [];
             if (historyData) {
                 try {
@@ -8330,7 +8480,7 @@ func getDashboardTemplate() string {
 
             if (needsHistorySave) {
                 try {
-                    localStorage.setItem('fit_ride_history', JSON.stringify(history));
+                    clientStorage.setItem('fit_ride_history', JSON.stringify(history));
                 } catch (e) {
                     console.error("Failed to update history with resolved metadata:", e);
                 }
@@ -8342,7 +8492,7 @@ func getDashboardTemplate() string {
         window.renderTrainingCalendar = renderTrainingCalendar;
 
         const generateTrainingCalendar = () => {
-            const key = localStorage.getItem('gemini_api_key');
+            const key = clientStorage.getItem('gemini_api_key');
             if (!key) {
                 alert('Gemini API Key missing! Please configure your API key first.');
                 return;
@@ -8354,10 +8504,10 @@ func getDashboardTemplate() string {
             const weeksNum = parseInt(document.getElementById('calendar-weeks-select').value) || 1;
             
             // Persist parameters in local storage
-            localStorage.setItem('fit_calendar_goals', goals);
-            localStorage.setItem('fit_calendar_constraints', constraints);
-            localStorage.setItem('fit_calendar_model', model);
-            localStorage.setItem('fit_calendar_weeks', weeksNum);
+            clientStorage.setItem('fit_calendar_goals', goals);
+            clientStorage.setItem('fit_calendar_constraints', constraints);
+            clientStorage.setItem('fit_calendar_model', model);
+            clientStorage.setItem('fit_calendar_weeks', weeksNum);
 
             // Show loading, hide outputs
             document.getElementById('calendar-loading').style.display = 'flex';
@@ -8369,7 +8519,7 @@ func getDashboardTemplate() string {
             
             // Build recent ride history context
             let historyText = "No previous ride history found.";
-            const historyData = localStorage.getItem('fit_ride_history');
+            const historyData = clientStorage.getItem('fit_ride_history');
             if (historyData) {
                 try {
                     const parsed = JSON.parse(historyData);
@@ -8385,7 +8535,7 @@ func getDashboardTemplate() string {
 
             // Retrieve last generated training program from localStorage for context
             let lastPlanText = "No previous training plan found in local storage.";
-            const lastPlanData = localStorage.getItem('fit_training_program');
+            const lastPlanData = clientStorage.getItem('fit_training_program');
             if (lastPlanData) {
                 try {
                     const parsed = JSON.parse(lastPlanData);
@@ -8555,7 +8705,7 @@ func getDashboardTemplate() string {
                     });
                     
                     if (firstMergedProgram) {
-                        localStorage.setItem('fit_training_program', JSON.stringify(firstMergedProgram));
+                        clientStorage.setItem('fit_training_program', JSON.stringify(firstMergedProgram));
                         
                         // Sync current calendar display view to the current selected week index
                         const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
@@ -8598,10 +8748,10 @@ func getDashboardTemplate() string {
         window.promptFTPConfig = promptFTPConfig;
 
         const promptAPIConfig = () => {
-            const currentKey = localStorage.getItem('gemini_api_key') || '';
+            const currentKey = clientStorage.getItem('gemini_api_key') || '';
             const newKey = prompt('Enter your Gemini API Key:', currentKey);
             if (newKey !== null) {
-                localStorage.setItem('gemini_api_key', newKey.trim());
+                clientStorage.setItem('gemini_api_key', newKey.trim());
                 alert('Gemini API Key updated successfully!');
             }
         };
@@ -8720,7 +8870,7 @@ func getDashboardTemplate() string {
         window.saveIntervalsConfig = saveIntervalsConfig;
 
         const distillWorkoutStructure = async (title, description, oldStructure) => {
-            const key = localStorage.getItem('gemini_api_key');
+            const key = clientStorage.getItem('gemini_api_key');
             if (!key) return oldStructure;
 
             const modelSelect = document.getElementById('calendar-model-select');
@@ -8793,18 +8943,102 @@ func getDashboardTemplate() string {
                 return /^\s*-\s+\d+/m.test(str) || /^\s*\d+x/m.test(str);
             };
 
-            const program = window.currentCalendarProgram;
+            const plansByDate = JSON.parse(clientStorage.getItem('fit_training_plans_by_date') || '{}');
+            
+            // Ensure all workouts from current day forward exist
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const existingWeeks = getWeeksWithPlans() || [];
+            let maxDate = new Date(today);
+            maxDate.setDate(maxDate.getDate() + 6); // default to end of current week
+            
+            existingWeeks.forEach(w => {
+                const wStart = parseLocalDate(w.start_date);
+                const wEnd = new Date(wStart);
+                wEnd.setDate(wEnd.getDate() + 6);
+                if (wEnd.getTime() > maxDate.getTime()) {
+                    maxDate = wEnd;
+                }
+            });
+
+            let storageChanged = false;
+            for (let d = new Date(today); d.getTime() <= maxDate.getTime(); d.setDate(d.getDate() + 1)) {
+                const key = formatLocalDateKey(d);
+                if (!plansByDate[key]) {
+                    plansByDate[key] = {
+                        day: d.toLocaleDateString('en-US', { weekday: 'long' }),
+                        date: key,
+                        date_key: key,
+                        workout_type: "No Plan",
+                        title: "No Plan",
+                        duration_mins: 0,
+                        target_tss: 0,
+                        target_if: 0,
+                        description: "No training plan focus generated for this day.",
+                        is_fallback: true
+                    };
+                    storageChanged = true;
+                }
+            }
+
+            if (storageChanged) {
+                clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+            }
+
+            const activeMonday = getMonday(window.currentCalendarProgram.start_date);
+            const activeMondayTime = activeMonday.getTime();
+
+            // Find all weeks with plans from history starting from activeMonday onwards
+            const weeksWithPlans = getWeeksWithPlans() || [];
+            const weeksToSync = weeksWithPlans.filter(w => {
+                const wStart = parseLocalDate(w.start_date);
+                return wStart.getTime() >= activeMondayTime;
+            });
+
+            // Sort chronologically
+            weeksToSync.sort((a, b) => parseLocalDate(a.start_date).getTime() - parseLocalDate(b.start_date).getTime());
+
+            // Build full list of workouts for all these weeks
+            const allWorkouts = [];
+            for (const week of weeksToSync) {
+                const weekMonday = getMonday(week.start_date);
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date(weekMonday);
+                    d.setDate(weekMonday.getDate() + i);
+                    const key = formatLocalDateKey(d);
+                    const dayPlan = plansByDate[key];
+                    if (dayPlan) {
+                        dayPlan.date_key = key;
+                        if (!dayPlan.date) dayPlan.date = key;
+                        allWorkouts.push(dayPlan);
+                    } else {
+                        allWorkouts.push({
+                            day: d.toLocaleDateString('en-US', { weekday: 'long' }),
+                            date: key,
+                            date_key: key,
+                            workout_type: "No Plan",
+                            title: "No Plan",
+                            duration_mins: 0,
+                            target_tss: 0,
+                            target_if: 0,
+                            description: "No training plan focus generated for this day.",
+                            is_fallback: true
+                        });
+                    }
+                }
+            }
+
             let updated = false;
-            const workoutsCopy = JSON.parse(JSON.stringify(program.days));
+            const workoutsCopy = JSON.parse(JSON.stringify(allWorkouts));
 
             for (let i = 0; i < workoutsCopy.length; i++) {
                 const w = workoutsCopy[i];
-                if (w.duration_mins > 0 && w.workout_type.toLowerCase() !== 'rest' && w.workout_type.toLowerCase() !== 'rest day') {
+                if (w.duration_mins > 0 && w.workout_type.toLowerCase() !== 'rest' && w.workout_type.toLowerCase() !== 'rest day' && w.workout_type.toLowerCase() !== 'no plan') {
                     if (!w.intervals_icu_structure || !isIntervalsFormat(w.intervals_icu_structure)) {
                         const sourceText = w.intervals_icu_structure || w.structure || '';
                         if (!isIntervalsFormat(sourceText)) {
                             if (btn) {
-                                btn.innerHTML = '<span style="width:12px; height:12px; border:2px solid #fff; border-top:2px solid transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; margin-right:4px;"></span> Distilling ' + w.day + '...';
+                                btn.innerHTML = '<span style="width:12px; height:12px; border:2px solid #fff; border-top:2px solid transparent; border-radius:50%; animation:spin 1s linear infinite; display:inline-block; margin-right:4px;"></span> Distilling ' + (w.date || w.day) + '...';
                             }
                             const distilled = await distillWorkoutStructure(w.title, w.description, sourceText);
                             w.intervals_icu_structure = distilled;
@@ -8818,9 +9052,17 @@ func getDashboardTemplate() string {
             }
 
             if (updated) {
-                window.currentCalendarProgram.days = workoutsCopy;
-                saveProgramToHistory(window.currentCalendarProgram);
-                renderTrainingCalendar(window.currentCalendarProgram);
+                // Save updated workouts back to plansByDate
+                workoutsCopy.forEach(w => {
+                    if (w.date_key) {
+                        plansByDate[w.date_key] = w;
+                    }
+                });
+                clientStorage.setItem('fit_training_plans_by_date', JSON.stringify(plansByDate));
+                // Re-render
+                const synthesizedWeek = getSynthesizedWeek(window.plannerCalendarWeekIndex);
+                window.currentCalendarProgram = synthesizedWeek;
+                renderTrainingCalendar(synthesizedWeek);
             }
 
             if (btn) {
@@ -8832,7 +9074,7 @@ func getDashboardTemplate() string {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     start_date: window.currentCalendarProgram.start_date,
-                    workouts: window.currentCalendarProgram.days
+                    workouts: workoutsCopy
                 })
             })
             .then(r => {
@@ -8843,14 +9085,12 @@ func getDashboardTemplate() string {
             })
             .then(results => {
                 var created = 0;
-                var exists = 0;
                 var skipped = 0;
                 var failed = 0;
                 var failedMsgs = [];
 
                 results.forEach(res => {
                     if (res.status === 'created') created++;
-                    else if (res.status === 'already_exists') exists++;
                     else if (res.status === 'skipped') skipped++;
                     else {
                         failed++;
@@ -8859,15 +9099,15 @@ func getDashboardTemplate() string {
                 });
 
                 var msg = "Workouts Sync Results:\n";
-                if (created > 0) msg += "• " + created + " workouts successfully added to calendar\n";
-                if (exists > 0) msg += "• " + exists + " workouts already existed (skipped to prevent duplicates)\n";
-                if (skipped > 0) msg += "• " + skipped + " rest days/empty days skipped\n";
+                if (created > 0) msg += "• " + created + " workouts successfully synced (deleted old version if present)\n";
+                if (skipped > 0) msg += "• " + skipped + " rest/empty days skipped\n";
                 if (failed > 0) {
                     msg += "• " + failed + " exports failed:\n  " + failedMsgs.join('\n  ') + "\n";
                 }
 
                 alert(msg);
-            })            .catch(err => {
+            })
+            .catch(err => {
                 alert('Export failed: ' + err.message);
             })
             .finally(() => {
@@ -8887,7 +9127,7 @@ func getDashboardTemplate() string {
                 const val = parseInt(e.target.value);
                 if (!isNaN(val) && val > 0) {
                     athleteFTP = val;
-                    localStorage.setItem('fit_athlete_ftp', athleteFTP);
+                    clientStorage.setItem('fit_athlete_ftp', athleteFTP);
                     if (window.updateIFDisplay) window.updateIFDisplay();
                     if (window.renderZones) window.renderZones();
                     renderFtpEstimates();
@@ -8907,7 +9147,7 @@ func getDashboardTemplate() string {
             if (!container) return;
             container.innerHTML = '';
 
-            const savedCardsData = localStorage.getItem('directeur_custom_cards');
+            const savedCardsData = clientStorage.getItem('directeur_custom_cards');
             const savedCards = savedCardsData ? JSON.parse(savedCardsData) : [];
 
             savedCards.forEach(card => {
@@ -9000,11 +9240,11 @@ func getDashboardTemplate() string {
                         bodyEl.style.display = 'none';
                         refinePanel.style.display = 'none';
                         collapseBtn.innerHTML = '▼ Show';
-                        localStorage.setItem('directeur_card_collapsed_' + card.id, 'true');
+                        clientStorage.setItem('directeur_card_collapsed_' + card.id, 'true');
                     } else {
                         bodyEl.style.display = 'flex';
                         collapseBtn.innerHTML = '▲ Collapse';
-                        localStorage.setItem('directeur_card_collapsed_' + card.id, 'false');
+                        clientStorage.setItem('directeur_card_collapsed_' + card.id, 'false');
                         setTimeout(() => {
                             window.dispatchEvent(new Event('resize'));
                         }, 50);
@@ -9013,13 +9253,13 @@ func getDashboardTemplate() string {
 
                 collapseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const currentlyCollapsed = localStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
+                    const currentlyCollapsed = clientStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
                     updateCollapseState(!currentlyCollapsed);
                 });
 
                 refineBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const currentlyCollapsed = localStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
+                    const currentlyCollapsed = clientStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
                     if (currentlyCollapsed) {
                         updateCollapseState(false);
                     }
@@ -9051,7 +9291,7 @@ func getDashboardTemplate() string {
                     cancelBtn.disabled = true;
                     statusText.innerHTML = '<div style="width: 12px; height: 12px; border: 2px solid var(--border-color); border-top: 2px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div> Asking Gemini...';
 
-                    const key = localStorage.getItem('gemini_api_key');
+                    const key = clientStorage.getItem('gemini_api_key');
                     if (!key) {
                         alert('Please configure your Gemini API Key first (at the bottom of the page or in Settings).');
                         submitBtn.disabled = false;
@@ -9175,12 +9415,12 @@ func getDashboardTemplate() string {
                                 throw new Error("Syntax error in generated JavaScript: " + compileErr.message);
                             }
 
-                            const savedCardsData = localStorage.getItem('directeur_custom_cards');
+                            const savedCardsData = clientStorage.getItem('directeur_custom_cards');
                             let savedCards = savedCardsData ? JSON.parse(savedCardsData) : [];
 
                             savedCards = savedCards.filter(c => c.id !== resultCard.id);
                             savedCards.push(resultCard);
-                            localStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
+                            clientStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
 
                             alert('Card adjusted successfully!');
                             
@@ -9210,17 +9450,17 @@ func getDashboardTemplate() string {
                         '</div>';
                 }
 
-                const isCollapsed = localStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
+                const isCollapsed = clientStorage.getItem('directeur_card_collapsed_' + card.id) === 'true';
                 updateCollapseState(isCollapsed);
             });
         }
         window.renderDynamicCards = renderDynamicCards;
 
         function deleteDynamicCard(id) {
-            const savedCardsData = localStorage.getItem('directeur_custom_cards');
+            const savedCardsData = clientStorage.getItem('directeur_custom_cards');
             let savedCards = savedCardsData ? JSON.parse(savedCardsData) : [];
             savedCards = savedCards.filter(c => c.id !== id);
-            localStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
+            clientStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
             if (rideData) {
                 renderDashboard(rideData);
             }
@@ -9264,13 +9504,13 @@ func getDashboardTemplate() string {
                             el.style.display = 'none';
                         });
                         collapseBtn.innerHTML = '▼ Show';
-                        localStorage.setItem(storageKey, 'true');
+                        clientStorage.setItem(storageKey, 'true');
                     } else {
                         childrenToToggle.forEach(el => {
                             el.style.display = '';
                         });
                         collapseBtn.innerHTML = '▲ Collapse';
-                        localStorage.setItem(storageKey, 'false');
+                        clientStorage.setItem(storageKey, 'false');
                         // Dispatch resize and Leaflet map size invalidation
                         setTimeout(() => {
                             window.dispatchEvent(new Event('resize'));
@@ -9283,12 +9523,12 @@ func getDashboardTemplate() string {
 
                 collapseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const currentlyCollapsed = localStorage.getItem(storageKey) === 'true';
+                    const currentlyCollapsed = clientStorage.getItem(storageKey) === 'true';
                     updateStaticCollapseState(!currentlyCollapsed);
                 });
 
                 // Apply initial state
-                const isCollapsed = localStorage.getItem(storageKey) === 'true';
+                const isCollapsed = clientStorage.getItem(storageKey) === 'true';
                 updateStaticCollapseState(isCollapsed);
             });
         }
@@ -9354,7 +9594,7 @@ func getDashboardTemplate() string {
                 return;
             }
 
-            const key = localStorage.getItem('gemini_api_key');
+            const key = clientStorage.getItem('gemini_api_key');
             if (!key) {
                 alert('Gemini API Key missing! Please configure your API key first.');
                 return;
@@ -9478,12 +9718,12 @@ func getDashboardTemplate() string {
                         throw new Error("Syntax error in generated JavaScript: " + compileErr.message);
                     }
 
-                    const savedCardsData = localStorage.getItem('directeur_custom_cards');
+                    const savedCardsData = clientStorage.getItem('directeur_custom_cards');
                     let savedCards = savedCardsData ? JSON.parse(savedCardsData) : [];
 
                     savedCards = savedCards.filter(c => c.id !== resultCard.id);
                     savedCards.push(resultCard);
-                    localStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
+                    clientStorage.setItem('directeur_custom_cards', JSON.stringify(savedCards));
 
                     if (promptInput) promptInput.value = '';
                     alert('Dashboard evolved successfully! Added card: "' + resultCard.title + '".');
@@ -9974,7 +10214,7 @@ func getDashboardTemplate() string {
             const historyList = document.getElementById('coach-history-list');
             const clearHistoryBtn = document.getElementById('coach-clear-history-btn');
             if (!historyList) return;
-            const historyData = localStorage.getItem('fit_ride_history');
+            const historyData = clientStorage.getItem('fit_ride_history');
             
             if (!historyData) {
                 historyList.innerHTML = '<div style="font-style: italic; text-align: center; padding-top: 1rem; color: var(--text-secondary);">No previous ride analyses stored. Your first analysis will be saved here automatically.</div>';
@@ -10019,13 +10259,13 @@ func getDashboardTemplate() string {
         };
 
         const checkCachedReport = (autoNavigate = false) => {
-            const currentPlan = localStorage.getItem('fit_athlete_training_plan') || '';
+            const currentPlan = clientStorage.getItem('fit_athlete_training_plan') || '';
             const currentModel = coachModelSelect.value;
             const rideId = rideData.summary.start_time;
             const currentNotes = document.getElementById('coach-ride-notes') ? document.getElementById('coach-ride-notes').value.trim() : '';
             const cacheStatus = document.getElementById('coach-cache-status');
             
-            const historyData = localStorage.getItem('fit_ride_history');
+            const historyData = clientStorage.getItem('fit_ride_history');
             if (historyData) {
                 try {
                     const history = JSON.parse(historyData);
@@ -10097,7 +10337,7 @@ func getDashboardTemplate() string {
         btnGeminiCoach.addEventListener('click', () => {
             coachModal.style.display = 'flex';
             forceSetupView = false;
-            const savedKey = localStorage.getItem('gemini_api_key');
+            const savedKey = clientStorage.getItem('gemini_api_key');
             if (savedKey) {
                 coachKeyPanel.style.display = 'none';
                 coachAnalysisPanel.style.display = 'flex';
@@ -10106,14 +10346,14 @@ func getDashboardTemplate() string {
                 // Load Training Plan and History
                 const planInput = document.getElementById('coach-plan-input');
                 if (planInput) {
-                    planInput.value = localStorage.getItem('fit_athlete_training_plan') || '';
+                    planInput.value = clientStorage.getItem('fit_athlete_training_plan') || '';
                 }
                 
                 // Load Ride Notes (keyed by ride start time)
                 const rideNotesInput = document.getElementById('coach-ride-notes');
                 if (rideNotesInput && rideData && rideData.summary) {
                     const noteKey = 'fit_ride_notes_' + rideData.summary.start_time;
-                    rideNotesInput.value = localStorage.getItem(noteKey) || '';
+                    rideNotesInput.value = clientStorage.getItem(noteKey) || '';
                     const savedBadge = document.getElementById('coach-notes-saved-badge');
                     if (rideNotesInput.value && savedBadge) {
                         savedBadge.style.display = 'inline';
@@ -10143,7 +10383,7 @@ func getDashboardTemplate() string {
         const planInput = document.getElementById('coach-plan-input');
         if (planInput) {
             planInput.addEventListener('input', (e) => {
-                localStorage.setItem('fit_athlete_training_plan', e.target.value);
+                clientStorage.setItem('fit_athlete_training_plan', e.target.value);
             });
             planInput.addEventListener('blur', () => {
                 checkCachedReport(false);
@@ -10163,7 +10403,7 @@ func getDashboardTemplate() string {
                 notesSaveTimeout = setTimeout(() => {
                     if (rideData && rideData.summary) {
                         const noteKey = 'fit_ride_notes_' + rideData.summary.start_time;
-                        localStorage.setItem(noteKey, rideNotesInput.value);
+                        clientStorage.setItem(noteKey, rideNotesInput.value);
                         if (savedBadge) {
                             savedBadge.style.display = 'inline';
                             setTimeout(() => { savedBadge.style.display = 'none'; }, 2000);
@@ -10181,7 +10421,7 @@ func getDashboardTemplate() string {
         if (clearHistoryBtn) {
             clearHistoryBtn.addEventListener('click', () => {
                 if (confirm('Are you sure you want to clear your analyzed rides history? This will delete all past coaching summaries from this browser.')) {
-                    localStorage.removeItem('fit_ride_history');
+                    clientStorage.removeItem('fit_ride_history');
                     renderHistory();
                     checkCachedReport(false);
                 }
@@ -10192,7 +10432,7 @@ func getDashboardTemplate() string {
         coachSaveKeyBtn.addEventListener('click', () => {
             const key = coachKeyInput.value.trim();
             if (key) {
-                localStorage.setItem('gemini_api_key', key);
+                clientStorage.setItem('gemini_api_key', key);
                 coachKeyPanel.style.display = 'none';
                 coachAnalysisPanel.style.display = 'flex';
                 coachClearKeyBtn.style.display = 'inline-block';
@@ -10205,7 +10445,7 @@ func getDashboardTemplate() string {
         // Clear key
         coachClearKeyBtn.addEventListener('click', () => {
             if (confirm('Clear saved API key?')) {
-                localStorage.removeItem('gemini_api_key');
+                clientStorage.removeItem('gemini_api_key');
                 coachKeyPanel.style.display = 'flex';
                 coachAnalysisPanel.style.display = 'none';
                 coachClearKeyBtn.style.display = 'none';
@@ -10242,7 +10482,7 @@ func getDashboardTemplate() string {
         };
 
         const runCoachingAnalysis = () => {
-            const key = localStorage.getItem('gemini_api_key');
+            const key = clientStorage.getItem('gemini_api_key');
             if (!key) {
                 alert('API key missing!');
                 return;
@@ -10389,7 +10629,7 @@ func getDashboardTemplate() string {
             }
             
             let historyContext = "";
-            const historyData = localStorage.getItem('fit_ride_history');
+            const historyData = clientStorage.getItem('fit_ride_history');
             if (historyData) {
                 try {
                     const parsedHistory = JSON.parse(historyData);
@@ -10652,7 +10892,7 @@ func getDashboardTemplate() string {
 
                     // Save this ride analysis to local history
                     try {
-                        const historyData = localStorage.getItem('fit_ride_history');
+                        const historyData = clientStorage.getItem('fit_ride_history');
                         let history = [];
                         if (historyData) {
                             history = JSON.parse(historyData);
@@ -10697,7 +10937,7 @@ func getDashboardTemplate() string {
                             history.push(newRecord);
                         }
                         
-                        localStorage.setItem('fit_ride_history', JSON.stringify(history));
+                        clientStorage.setItem('fit_ride_history', JSON.stringify(history));
                         try {
                             renderRidesCalendar();
                         } catch(e) {
@@ -10739,7 +10979,7 @@ func getDashboardTemplate() string {
             const userMsg = coachChatInput.value.trim();
             if (!userMsg) return;
 
-            const key = localStorage.getItem('gemini_api_key');
+            const key = clientStorage.getItem('gemini_api_key');
             if (!key) {
                 alert('API key missing!');
                 return;
@@ -10850,7 +11090,7 @@ func getDashboardTemplate() string {
 
                     // Re-save entire history list to localStorage
                     try {
-                        const historyData = localStorage.getItem('fit_ride_history');
+                        const historyData = clientStorage.getItem('fit_ride_history');
                         if (historyData) {
                             const history = JSON.parse(historyData);
                             const rideId = rideData.summary.start_time;
@@ -10864,7 +11104,7 @@ func getDashboardTemplate() string {
                             });
                             if (idx !== -1) {
                                 history[idx].chatHistory = coachChatHistory;
-                                localStorage.setItem('fit_ride_history', JSON.stringify(history));
+                                clientStorage.setItem('fit_ride_history', JSON.stringify(history));
                             }
                         }
                     } catch (e) {
@@ -11045,7 +11285,7 @@ func getDashboardTemplate() string {
                     
                     forceSetupView = true;
                     if (document.getElementById('coach-plan-input')) {
-                        document.getElementById('coach-plan-input').value = localStorage.getItem('fit_athlete_training_plan') || '';
+                        document.getElementById('coach-plan-input').value = clientStorage.getItem('fit_athlete_training_plan') || '';
                     }
                     coachGenerateView.style.display = 'flex';
                     coachLoadingView.style.display = 'none';
@@ -11664,11 +11904,11 @@ func getDashboardTemplate() string {
             savedDataContent.innerHTML = '';
 
             // Category 1: Settings & Credentials
-            const savedKey = localStorage.getItem('gemini_api_key') || '';
+            const savedKey = clientStorage.getItem('gemini_api_key') || '';
             const maskedKey = savedKey ? (savedKey.substring(0, 6) + '...' + savedKey.substring(savedKey.length - 4)) : 'Not Configured';
-            const planVal = localStorage.getItem('fit_athlete_training_plan') || '';
+            const planVal = clientStorage.getItem('fit_athlete_training_plan') || '';
             const planPreview = planVal ? (planVal.length > 50 ? planVal.substring(0, 50) + '...' : planVal) : 'Not Configured';
-            const selectedBikeVal = localStorage.getItem('directeur_selected_bike') || '';
+            const selectedBikeVal = clientStorage.getItem('directeur_selected_bike') || '';
             const bikePreview = selectedBikeVal ? ('🚲 ' + selectedBikeVal) : 'Default Gears';
 
             const settingsSection = document.createElement('div');
@@ -11706,7 +11946,7 @@ func getDashboardTemplate() string {
             if (sdClearKeyBtn) {
                 sdClearKeyBtn.addEventListener('click', () => {
                     if (confirm('Are you sure you want to clear your saved Gemini API Key?')) {
-                        localStorage.removeItem('gemini_api_key');
+                        clientStorage.removeItem('gemini_api_key');
                         const coachKeyPanel = document.getElementById('coach-key-panel');
                         const coachAnalysisPanel = document.getElementById('coach-analysis-panel');
                         const coachClearKeyBtn = document.getElementById('coach-clear-key-btn');
@@ -11722,7 +11962,7 @@ func getDashboardTemplate() string {
             if (sdClearPlanBtn) {
                 sdClearPlanBtn.addEventListener('click', () => {
                     if (confirm('Are you sure you want to clear your Training Plan & Goals?')) {
-                        localStorage.removeItem('fit_athlete_training_plan');
+                        clientStorage.removeItem('fit_athlete_training_plan');
                         const planInput = document.getElementById('coach-plan-input');
                         if (planInput) planInput.value = '';
                         checkCachedReport(false);
@@ -11735,7 +11975,7 @@ func getDashboardTemplate() string {
             if (sdClearBikeBtn) {
                 sdClearBikeBtn.addEventListener('click', () => {
                     if (confirm('Are you sure you want to reset your default bike to Default Gears?')) {
-                        localStorage.removeItem('directeur_selected_bike');
+                        clientStorage.removeItem('directeur_selected_bike');
                         const bikeSelector = document.getElementById('bike-selector');
                         if (bikeSelector) {
                             bikeSelector.value = '';
@@ -11755,7 +11995,7 @@ func getDashboardTemplate() string {
             
             let historyHtml = '<h4 style="margin: 0 0 1rem 0; font-family: \'Outfit\'; color: var(--accent); font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">📋 Analyzed Ride History</h4>';
             
-            const historyData = localStorage.getItem('fit_ride_history');
+            const historyData = clientStorage.getItem('fit_ride_history');
             let history = [];
             if (historyData) {
                 try {
@@ -11792,7 +12032,7 @@ func getDashboardTemplate() string {
                     const rideId = e.target.getAttribute('data-id');
                     if (confirm('Are you sure you want to delete this ride coaching report and chat history from this browser?')) {
                         const updatedHistory = history.filter(r => r.id !== rideId);
-                        localStorage.setItem('fit_ride_history', JSON.stringify(updatedHistory));
+                        clientStorage.setItem('fit_ride_history', JSON.stringify(updatedHistory));
                         try {
                             renderRidesCalendar();
                         } catch(e) {
@@ -11815,8 +12055,7 @@ func getDashboardTemplate() string {
             let notesHtml = '<h4 style="margin: 0 0 1rem 0; font-family: \'Outfit\'; color: var(--accent); font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">💬 Subjective Ride Notes</h4>';
             
             const notesKeys = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
+            for (const k of Object.keys(clientStorage.cache)) {
                 if (k && k.startsWith('fit_ride_notes_')) {
                     notesKeys.push(k);
                 }
@@ -11834,7 +12073,7 @@ func getDashboardTemplate() string {
                         formattedDate = new Date(timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
                     } catch(e) {}
                     
-                    const noteContent = localStorage.getItem(k) || '';
+                    const noteContent = clientStorage.getItem(k) || '';
                     const notePreview = noteContent.length > 60 ? noteContent.substring(0, 60) + '...' : noteContent;
 
                     notesHtml += '<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.15); padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">' +
@@ -11855,7 +12094,7 @@ func getDashboardTemplate() string {
                 btn.addEventListener('click', (e) => {
                     const noteKey = e.target.getAttribute('data-key');
                     if (confirm('Are you sure you want to delete these subjective ride notes?')) {
-                        localStorage.removeItem(noteKey);
+                        clientStorage.removeItem(noteKey);
                         if (rideData && rideData.summary && noteKey === 'fit_ride_notes_' + rideData.summary.start_time) {
                             const rideNotesInput = document.getElementById('coach-ride-notes');
                             if (rideNotesInput) rideNotesInput.value = '';
@@ -11872,7 +12111,7 @@ func getDashboardTemplate() string {
         savedDataClearAllBtn.addEventListener('click', () => {
             if (confirm('⚠️ WARNING: This will permanently delete ALL analyzed rides history, chat logs, training plan details, default bike settings, and API keys from this browser.\n\nAre you sure you want to delete everything?')) {
                 if (confirm('CONFIRM IRREVERSIBLE OPERATION:\nAre you absolutely sure? This cannot be undone.')) {
-                    localStorage.clear();
+                    clientStorage.clear();
                     
                     const coachKeyPanel = document.getElementById('coach-key-panel');
                     const coachAnalysisPanel = document.getElementById('coach-analysis-panel');
@@ -11908,10 +12147,9 @@ func getDashboardTemplate() string {
         // Backup Export (Exports everything in local storage)
         savedDataExportBtn.addEventListener('click', () => {
             const backup = {};
-            for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
+            for (const k of Object.keys(clientStorage.cache)) {
                 if (k) {
-                    backup[k] = localStorage.getItem(k);
+                    backup[k] = clientStorage.getItem(k);
                 }
             }
             
@@ -11948,7 +12186,7 @@ func getDashboardTemplate() string {
 
                     let count = 0;
                     Object.keys(importedData).forEach(k => {
-                        localStorage.setItem(k, importedData[k]);
+                        clientStorage.setItem(k, importedData[k]);
                         count++;
                     });
 
@@ -11959,10 +12197,10 @@ func getDashboardTemplate() string {
 
                     const planInput = document.getElementById('coach-plan-input');
                     if (planInput) {
-                        planInput.value = localStorage.getItem('fit_athlete_training_plan') || '';
+                        planInput.value = clientStorage.getItem('fit_athlete_training_plan') || '';
                     }
                     
-                    const savedKey = localStorage.getItem('gemini_api_key');
+                    const savedKey = clientStorage.getItem('gemini_api_key');
                     const coachKeyPanel = document.getElementById('coach-key-panel');
                     const coachAnalysisPanel = document.getElementById('coach-analysis-panel');
                     const coachClearKeyBtn = document.getElementById('coach-clear-key-btn');
@@ -11979,7 +12217,7 @@ func getDashboardTemplate() string {
                     const noteKey = 'fit_ride_notes_' + rideData.summary.start_time;
                     const rideNotesInput = document.getElementById('coach-ride-notes');
                     if (rideNotesInput) {
-                        rideNotesInput.value = localStorage.getItem(noteKey) || '';
+                        rideNotesInput.value = clientStorage.getItem(noteKey) || '';
                     }
                     const savedBadge = document.getElementById('coach-notes-saved-badge');
                     if (savedBadge) {
@@ -11988,7 +12226,7 @@ func getDashboardTemplate() string {
 
                     const bikeSelector = document.getElementById('bike-selector');
                     if (bikeSelector) {
-                        const initialBike = localStorage.getItem('directeur_selected_bike');
+                        const initialBike = clientStorage.getItem('directeur_selected_bike');
                         if (initialBike) {
                             bikeSelector.value = initialBike;
                             recalculateGearsClientSide(initialBike);
@@ -12004,7 +12242,7 @@ func getDashboardTemplate() string {
                     populateSavedDataModal();
                     
                     // Reload active view to display imported data
-                    const activeView = localStorage.getItem('directeur_active_view');
+                    const activeView = clientStorage.getItem('directeur_active_view');
                     if (activeView === 'calendar' && typeof showCalendarView === 'function') {
                         showCalendarView();
                     } else if (typeof showDashboardView === 'function') {
@@ -12064,7 +12302,7 @@ func getDashboardTemplate() string {
             const speed = parseFloat(document.getElementById("route-avg-speed").value);
             const dateKey = window.activeRouteDateKey;
             if (!dateKey) return;
-            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const plansByDate = JSON.parse(clientStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[dateKey];
             if (d && d.duration_mins && !isNaN(speed)) {
                 const targetDist = ((d.duration_mins / 60) * speed).toFixed(1);
@@ -12076,7 +12314,7 @@ func getDashboardTemplate() string {
             const startTime = document.getElementById("route-start-time").value;
             const dateKey = window.activeRouteDateKey;
             if (!dateKey) return;
-            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const plansByDate = JSON.parse(clientStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[dateKey];
             if (d && d.duration_mins && startTime) {
                 document.getElementById("route-finish-time").value = addMinutesToTimeString(startTime, d.duration_mins);
@@ -12084,7 +12322,7 @@ func getDashboardTemplate() string {
         };
 
         window.calculateHistoricalAvgSpeed = () => {
-            const activities = JSON.parse(localStorage.getItem("fit_activities") || "[]");
+            const activities = JSON.parse(clientStorage.getItem("fit_activities") || "[]");
             if (activities.length > 0) {
                 let totalDist = 0;
                 let totalTime = 0;
@@ -12456,7 +12694,7 @@ func getDashboardTemplate() string {
             const startLocStr = document.getElementById("route-start-location").value.trim();
             const endLocStr = document.getElementById("route-end-location").value.trim();
             const distVal = parseFloat(document.getElementById("route-target-dist").value);
-            const key = localStorage.getItem('gemini_api_key');
+            const key = clientStorage.getItem('gemini_api_key');
 
             if (!key) {
                 statusEl.style.display = "block";
@@ -12473,7 +12711,7 @@ func getDashboardTemplate() string {
                 statusEl.style.background = "rgba(231, 76, 60, 0.1)";
                 statusEl.style.borderColor = "#e74c3c";
                 statusEl.style.color = "#e74c3c";
-                statusEl.innerText = "Error: Please specify a starting location and a target distance/duration.";
+                statusEl.innerText = "Error: Please specify a starting location and a target distance.";
                 return;
             }
 
@@ -12481,33 +12719,73 @@ func getDashboardTemplate() string {
             statusEl.style.background = "rgba(155, 89, 182, 0.1)";
             statusEl.style.borderColor = "#9b59b6";
             statusEl.style.color = "#e0aaff";
-            statusEl.innerText = "🤖 Querying Gemini for route suggestions based on workout goal...";
+            statusEl.innerText = "🤖 Geocoding start location...";
 
-            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            let startCoords = window.selectedStartCoords;
+            if (!startCoords) {
+                try {
+                    const geocodeResult = await window.geocodeLocation(startLocStr);
+                    startCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
+                    window.selectedStartCoords = startCoords;
+                } catch (geocodeErr) {
+                    statusEl.style.display = "block";
+                    statusEl.style.background = "rgba(231, 76, 60, 0.1)";
+                    statusEl.style.borderColor = "#e74c3c";
+                    statusEl.style.color = "#e74c3c";
+                    statusEl.innerText = "Error geocoding start location: " + geocodeErr.message;
+                    return;
+                }
+            }
+
+            let endCoords = null;
+            if (endLocStr) {
+                endCoords = window.selectedEndCoords;
+                if (!endCoords) {
+                    try {
+                        statusEl.innerText = "🤖 Geocoding end location...";
+                        const geocodeResult = await window.geocodeLocation(endLocStr);
+                        endCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
+                        window.selectedEndCoords = endCoords;
+                    } catch (geocodeErr) {
+                        statusEl.style.display = "block";
+                        statusEl.style.background = "rgba(231, 76, 60, 0.1)";
+                        statusEl.style.borderColor = "#e74c3c";
+                        statusEl.style.color = "#e74c3c";
+                        statusEl.innerText = "Error geocoding end location: " + geocodeErr.message;
+                        return;
+                    }
+                }
+            }
+
+            const plansByDate = JSON.parse(clientStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[window.activeRouteDateKey] || {};
             const workoutDesc = d.description || "";
             const workoutTitle = d.title || d.workout_name || "Ride";
             const workoutDuration = d.duration_mins || 60;
             const workoutStructure = d.structure || "";
-            const model = localStorage.getItem('fit_calendar_model') || 'gemini-3.5-flash';
+            const model = clientStorage.getItem('fit_calendar_model') || 'gemini-3.5-flash';
 
-            let basePromptText = "You are directeurAI Coach, an expert cycling route planner. The athlete wants to plan a route starting at \"" + startLocStr + "\"" + (endLocStr ? " and ending at \"" + endLocStr + "\"" : "") + ". The workout for today is:\n" +
+            let basePromptText = "You are directeurAI Coach, an expert cycling route planner. The athlete wants to plan a route starting at \"" + startLocStr + "\" at coordinates (" + startCoords.lat + ", " + startCoords.lon + ")" + (endLocStr ? " and ending at \"" + endLocStr + "\"" + (endCoords ? " at coordinates (" + endCoords.lat + ", " + endCoords.lon + ")" : "") : "") + ". The workout for today is:\n" +
                 "- Date: " + window.activeRouteDateKey + "\n" +
                 "- Title: " + workoutTitle + "\n" +
                 "- Duration: " + workoutDuration + " mins\n" +
                 "- Target Distance: " + distVal + " km\n" +
                 "- Description / Structure: " + workoutDesc + " " + workoutStructure + "\n\n" +
-                "Please suggest a route that fits this workout's goals (e.g. if it is flat tempo, avoid massive hills; if it is climbing intervals, suggest local climbs; if it is recovery, suggest a scenic flat route; if it's long endurance, suggest a steady route).\n\n" +
+                "Please suggest a route that fits this workout's goals.\n\n" +
                 "Provide the response in the following JSON format:\n" +
                 "{\n" +
                 "  \"route_name\": \"Friendly Name of the Route (e.g. Hawk Hill Climbing Loop)\",\n" +
-                "  \"explanation\": \"Brief explanation of why this route is selected for this specific workout.\",\n" +
-                "  \"waypoints\": [\"Waypoint 1\", \"Waypoint 2\", \"Waypoint 3\"]\n" +
+                "  \"explanation\": \"Brief explanation of why this route is selected.\",\n" +
+                "  \"waypoints\": [\n" +
+                "    { \"name\": \"Waypoint 1 Name\", \"lat\": 37.1234, \"lon\": -122.1234 },\n" +
+                "    { \"name\": \"Waypoint 2 Name\", \"lat\": 37.5678, \"lon\": -122.5678 }\n" +
+                "  ]\n" +
                 "}\n\n" +
                 "Rules:\n" +
-                "1. \"waypoints\" MUST contain exactly 2 to 4 specific, geocodable names of places, intersections, peaks, or towns in order between the start and end (or back to the start if no end is specified) to shape a realistic route. Keep them local to the starting location \"" + startLocStr + "\". Do not use general regions or coordinates, use actual names that can be looked up on OpenStreetMap.\n" +
-                "2. CRITICAL: Hitting the target distance of " + distVal + " km is your top priority. If the target distance is large (e.g. >20km or >50km), the waypoints MUST NOT be clustered close to the starting location. You MUST space the waypoints far enough apart (e.g., 10km to 25km away from the start and each other) or include distant turnaround landmarks so that the cumulative path distance roughly equals " + distVal + " km. Do not suggest a short 3-10 km loop when the target is 50 km.\n" +
-                "3. Output ONLY valid, raw JSON. Do not wrap in markdown code block formatting.";
+                "1. Provide exactly 2 to 4 waypoints in order to shape the route. Keep them local to the start location.\n" +
+                "2. CRITICAL: Hitting the target distance of " + distVal + " km is your top priority. Space the waypoints so that routing from the start coordinates to the waypoints (and back to start, or to the end coordinates) totals approximately " + distVal + " km. For a target of " + distVal + " km, the furthest waypoint MUST be approximately " + (endCoords ? distVal : (distVal / 2)) + " km away from the start coordinate. Ensure your suggested waypoint coordinates (lat, lon) reflect this distance!\n" +
+                "3. Ensure the coordinates (lat, lon) are geographically accurate for the suggested waypoint names in the local region of the start coordinates.\n" +
+                "4. Output ONLY valid, raw JSON. Do not wrap in markdown code block formatting.";
  
             const callGemini = (promptText, apiVersion) => {
                 const url = 'https://generativelanguage.googleapis.com/' + apiVersion + '/models/' + model + ':generateContent?key=' + key;
@@ -12535,8 +12813,6 @@ func getDashboardTemplate() string {
             let attempts = 0;
             const maxAttempts = 3;
             let currentPrompt = basePromptText;
-            let startCoords = window.selectedStartCoords;
-            let endCoords = window.selectedEndCoords;
  
             try {
                 while (attempts < maxAttempts) {
@@ -12562,40 +12838,40 @@ func getDashboardTemplate() string {
                         const explanation = responseObj.explanation || "";
                         const waypoints = responseObj.waypoints || [];
  
-                        statusEl.innerText = "🤖 Geocoding suggested waypoints (Attempt " + attempts + ")...";
-                        
-                        if (!startCoords) {
-                            const geocodeResult = await window.geocodeLocation(startLocStr);
-                            startCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
-                            window.selectedStartCoords = startCoords;
-                        }
- 
-                        if (endLocStr && !endCoords) {
-                            const geocodeResult = await window.geocodeLocation(endLocStr);
-                            endCoords = { lat: geocodeResult.lat, lon: geocodeResult.lon };
-                            window.selectedEndCoords = endCoords;
-                        }
+                        statusEl.innerText = "🤖 Parsing suggested waypoints (Attempt " + attempts + ")...";
  
                         const waypointCoords = [];
                         const resolvedWaypointNames = [];
                         for (const wp of waypoints) {
-                            try {
-                                const coords = await window.geocodeLocation(wp + ", " + startLocStr);
-                                waypointCoords.push(coords);
-                                resolvedWaypointNames.push(wp);
-                            } catch (wpErr) {
+                            let lat = parseFloat(wp.lat);
+                            let lon = parseFloat(wp.lon);
+                            let name = wp.name || wp;
+
+                            if (!isNaN(lat) && !isNaN(lon)) {
+                                waypointCoords.push({ lat, lon });
+                                resolvedWaypointNames.push(name);
+                            } else {
+                                // Fallback to geocoding
                                 try {
-                                    const coords = await window.geocodeLocation(wp);
+                                    statusEl.innerText = "🤖 Geocoding fallback: " + name + "...";
+                                    await new Promise(resolve => setTimeout(resolve, 800)); // Rate limit pause
+                                    const coords = await window.geocodeLocation(name + ", " + startLocStr);
                                     waypointCoords.push(coords);
-                                    resolvedWaypointNames.push(wp);
-                                } catch (e2) {
-                                    console.error("Total failure geocoding waypoint " + wp);
+                                    resolvedWaypointNames.push(name);
+                                } catch (wpErr) {
+                                    try {
+                                        const coords = await window.geocodeLocation(name);
+                                        waypointCoords.push(coords);
+                                        resolvedWaypointNames.push(name);
+                                    } catch (e2) {
+                                        console.error("Total failure geocoding waypoint " + name);
+                                    }
                                 }
                             }
                         }
  
                         if (waypointCoords.length === 0) {
-                            throw new Error("None of the suggested waypoints could be geocoded.");
+                            throw new Error("None of the suggested waypoints could be geocoded or resolved.");
                         }
  
                         statusEl.innerText = "🤖 Checking route distance with BRouter (Attempt " + attempts + ")...";
@@ -12799,7 +13075,7 @@ trkpts +
             const dateKey = window.activeRouteDateKey;
             if (!dateKey) return;
 
-            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const plansByDate = JSON.parse(clientStorage.getItem("fit_training_plans_by_date") || "{}");
             if (!plansByDate[dateKey]) {
                 plansByDate[dateKey] = {
                     day: new Date(dateKey).toLocaleDateString("en-US", { weekday: "long" }),
@@ -12827,11 +13103,11 @@ trkpts +
             d.route_end_name = document.getElementById("route-end-location").value;
             d.route_towards = document.getElementById("route-towards").value;
 
-            localStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
+            clientStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
 
             const avgSpeed = parseFloat(document.getElementById("route-avg-speed").value);
             if (!isNaN(avgSpeed)) {
-                localStorage.setItem("fit_route_avg_speed", avgSpeed.toString());
+                clientStorage.setItem("fit_route_avg_speed", avgSpeed.toString());
             }
 
             if (window.currentCalendarProgram && window.currentCalendarProgram.start_date) {
@@ -12839,7 +13115,7 @@ trkpts +
                 const matchIdx = program.days.findIndex(day => day.date_key === dateKey);
                 if (matchIdx !== -1) {
                     program.days[matchIdx] = d;
-                    localStorage.setItem("fit_training_program", JSON.stringify(program));
+                    clientStorage.setItem("fit_training_program", JSON.stringify(program));
                 }
             }
 
@@ -12854,14 +13130,14 @@ trkpts +
         };
 
         window.downloadGPXForDay = (dateKey) => {
-            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const plansByDate = JSON.parse(clientStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[dateKey];
             if (d && (d.route_gpx || d.route_geojson)) {
                 let gpxData = d.route_gpx;
                 if (d.route_geojson && d.route_geojson.coordinates) {
                     gpxData = window.generateGPX(d.route_geojson.coordinates, d.route_name || "route");
                     d.route_gpx = gpxData;
-                    localStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
+                    clientStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
                 }
                 const blob = new Blob([gpxData], { type: "application/gpx+xml" });
                 const url = URL.createObjectURL(blob);
@@ -12878,7 +13154,7 @@ trkpts +
         };
 
         window.syncGPXForDay = async (dateKey) => {
-            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const plansByDate = JSON.parse(clientStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[dateKey];
             if (!d || (!d.route_gpx && !d.route_geojson)) {
                 alert("No route GPX to sync.");
@@ -12889,7 +13165,7 @@ trkpts +
             if (d.route_geojson && d.route_geojson.coordinates) {
                 gpxData = window.generateGPX(d.route_geojson.coordinates, d.route_name || "route");
                 d.route_gpx = gpxData;
-                localStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
+                clientStorage.setItem("fit_training_plans_by_date", JSON.stringify(plansByDate));
             }
 
             const cleanTitle = (d.title || d.route_name || "Planned Ride").replace(/^dsAI-\d{4}-\d{2}-\d{2}:\s*/, "");
@@ -12918,14 +13194,14 @@ trkpts +
         window.showRoutePlannerModal = (dateKey) => {
             window.activeRouteDateKey = dateKey;
             
-            const plansByDate = JSON.parse(localStorage.getItem("fit_training_plans_by_date") || "{}");
+            const plansByDate = JSON.parse(clientStorage.getItem("fit_training_plans_by_date") || "{}");
             const d = plansByDate[dateKey] || {};
 
             const dObj = parseLocalDate(dateKey);
             const formattedDate = dObj.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
             document.getElementById("route-planner-title").innerText = "🗺️ Route & Schedule Planner - " + formattedDate;
 
-            const avgSpeed = parseFloat(localStorage.getItem("fit_route_avg_speed") || window.calculateHistoricalAvgSpeed());
+            const avgSpeed = parseFloat(clientStorage.getItem("fit_route_avg_speed") || window.calculateHistoricalAvgSpeed());
             document.getElementById("route-avg-speed").value = avgSpeed;
 
             const duration = d.duration_mins || 60;
@@ -13098,9 +13374,8 @@ trkpts +
                 savedDataExportBtn.click();
             } else {
                 const backup = {};
-                for (let i = 0; i < localStorage.length; i++) {
-                    const k = localStorage.key(i);
-                    if (k) backup[k] = localStorage.getItem(k);
+                for (const k of Object.keys(clientStorage.cache)) {
+                    if (k) backup[k] = clientStorage.getItem(k);
                 }
                 const jsonString = JSON.stringify(backup, null, 2);
                 const blob = new Blob([jsonString], { type: 'application/json' });
