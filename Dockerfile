@@ -1,32 +1,34 @@
 # Build stage
 FROM golang:1.24-alpine AS builder
 
-WORKDIR /build
+WORKDIR /app
 
-# Copy dependency files and download
+# Copy go mod and sum files
 COPY go.mod go.sum ./
+
+# Download dependencies
 RUN go mod download
 
-# Copy source code and build the static Go binary
-COPY directeur.go ./
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o directeur directeur.go
+# Copy the source code
+COPY . .
 
-# Final production stage
-FROM alpine:3.19
+# Build the application
+# We use CGO_ENABLED=0 to ensure a statically linked binary
+RUN CGO_ENABLED=0 GOOS=linux go build -o directeur .
 
-# Install CA certificates for secure HTTPS API calls to Hammerhead and Google Gemini
-RUN apk --no-cache add ca-certificates
+# Final stage
+FROM alpine:latest
 
 WORKDIR /app
 
-# Copy the compiled binary and runtime assets
-COPY --from=builder /build/directeur .
-COPY ride_dashboard.html .
-COPY example.fit .
-COPY config.json.example config.json
+# Install CA certificates for HTTPS requests (e.g. Gemini API)
+RUN apk --no-cache add ca-certificates tzdata
 
-# Expose default HTTP port (Cloud Run will override the port dynamically via the PORT environment variable)
+# Copy the binary from the builder stage
+COPY --from=builder /app/directeur .
+
+# Expose the web server port
 EXPOSE 8080
 
-# Run the server. The port defaults to the PORT env variable if injected by Cloud Run.
-ENTRYPOINT ["./directeur", "-serve"]
+# Run the binary in -serve mode
+ENTRYPOINT ["/app/directeur", "-serve"]
