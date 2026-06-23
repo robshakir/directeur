@@ -3,7 +3,8 @@ use tauri_plugin_shell::ShellExt;
 
 #[tauri::command]
 fn start_local_engine(app: tauri::AppHandle) -> Result<(), String> {
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let app_data = home.join(".directeur");
     let app_cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     
     std::fs::create_dir_all(&app_data).map_err(|e| e.to_string())?;
