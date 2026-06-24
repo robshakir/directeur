@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"io"
 	"math"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,7 +18,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"mime/multipart"
 	"time"
 
 	"github.com/tormoder/fit"
@@ -397,8 +397,8 @@ func loadConfig(path string) Config {
 				RearGears:  []int{46, 38, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10},
 			},
 		},
-		FTP:        250,
-		MaxHR:      190,
+		FTP:   250,
+		MaxHR: 190,
 	}
 
 	f, err := os.Open(path)
@@ -799,8 +799,8 @@ func uploadHammerheadRoute(cfg HammerheadConfig, configPath string, name, gpxCon
 	makeRequest := func(token string) (int, error) {
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
-		
-		part, err := writer.CreateFormFile("file", name + ".gpx")
+
+		part, err := writer.CreateFormFile("file", name+".gpx")
 		if err != nil {
 			return 0, err
 		}
@@ -808,7 +808,7 @@ func uploadHammerheadRoute(cfg HammerheadConfig, configPath string, name, gpxCon
 		if err != nil {
 			return 0, err
 		}
-		
+
 		err = writer.Close()
 		if err != nil {
 			return 0, err
@@ -819,7 +819,7 @@ func uploadHammerheadRoute(cfg HammerheadConfig, configPath string, name, gpxCon
 		if err != nil {
 			return 0, err
 		}
-		req.Header.Set("Authorization", "Bearer " + token)
+		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 
 		resp, err := client.Do(req)
@@ -1215,7 +1215,7 @@ func fetchIntervalsActivities(cfg IntervalsConfig) ([]IntervalsActivity, error) 
 		if startDateStr == "" {
 			startDateStr, _ = act["start_date_local"].(string)
 		}
-		
+
 		var startTime time.Time
 		if startDateStr != "" {
 			t, parseErr := time.Parse(time.RFC3339, startDateStr)
@@ -2102,18 +2102,18 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			CurrentPage          int                  `json:"current_page"`
 			TotalPages           int                  `json:"total_pages"`
 
-			Wahoo                []WahooWorkout       `json:"wahoo"`
-			WahooConfigured      bool                 `json:"wahoo_configured"`
-			WahooLinked          bool                 `json:"wahoo_linked"`
-			WahooError           string               `json:"wahoo_error,omitempty"`
-			WahooClientID        string               `json:"wahoo_client_id,omitempty"`
-			WahooCurrentPage     int                  `json:"wahoo_current_page"`
-			WahooTotalPages      int                  `json:"wahoo_total_pages"`
+			Wahoo            []WahooWorkout `json:"wahoo"`
+			WahooConfigured  bool           `json:"wahoo_configured"`
+			WahooLinked      bool           `json:"wahoo_linked"`
+			WahooError       string         `json:"wahoo_error,omitempty"`
+			WahooClientID    string         `json:"wahoo_client_id,omitempty"`
+			WahooCurrentPage int            `json:"wahoo_current_page"`
+			WahooTotalPages  int            `json:"wahoo_total_pages"`
 
-			Intervals            []IntervalsActivity  `json:"intervals"`
-			IntervalsConfigured  bool                 `json:"intervals_configured"`
+			Intervals           []IntervalsActivity `json:"intervals"`
+			IntervalsConfigured bool                `json:"intervals_configured"`
 
-			Bikes                []BikeProfile        `json:"bikes"`
+			Bikes []BikeProfile `json:"bikes"`
 		}
 
 		var hhErrStr string
@@ -2136,18 +2136,18 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			CurrentPage:          currentPage,
 			TotalPages:           totalPages,
 
-			Wahoo:                wahooRides,
-			WahooConfigured:      cfg.WahooAPI.ClientID != "" && cfg.WahooAPI.ClientSecret != "",
-			WahooLinked:          cfg.WahooAPI.Enabled && (cfg.WahooAPI.AuthToken != "" || cfg.WahooAPI.RefreshToken != ""),
-			WahooError:           wahooErrStr,
-			WahooClientID:        cfg.WahooAPI.ClientID,
-			WahooCurrentPage:     wahooCurrentPage,
-			WahooTotalPages:      wahooTotalPages,
+			Wahoo:            wahooRides,
+			WahooConfigured:  cfg.WahooAPI.ClientID != "" && cfg.WahooAPI.ClientSecret != "",
+			WahooLinked:      cfg.WahooAPI.Enabled && (cfg.WahooAPI.AuthToken != "" || cfg.WahooAPI.RefreshToken != ""),
+			WahooError:       wahooErrStr,
+			WahooClientID:    cfg.WahooAPI.ClientID,
+			WahooCurrentPage: wahooCurrentPage,
+			WahooTotalPages:  wahooTotalPages,
 
 			Intervals:           intervalsRides,
 			IntervalsConfigured: cfg.IntervalsAPI.Enabled && cfg.IntervalsAPI.APIKey != "",
 
-			Bikes:                cfg.Bikes,
+			Bikes: cfg.Bikes,
 		}
 		json.NewEncoder(w).Encode(resp)
 	})
@@ -2158,7 +2158,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
 			return
 		}
-		
+
 		cfg := loadConfig(configPath)
 		if !cfg.HammerheadAPI.Enabled {
 			http.Error(w, `{"error": "Hammerhead integration not enabled"}`, http.StatusBadRequest)
@@ -2292,6 +2292,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		w.Header().Set("Content-Type", "application/json")
 		cfg := loadConfig(configPath)
 		source := r.URL.Query().Get("source")
+		force := r.URL.Query().Get("force")
 		var filePath string
 		var err error
 
@@ -2327,6 +2328,10 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 				http.Error(w, `{"error": "missing id parameter"}`, http.StatusBadRequest)
 				return
 			}
+			if force == "true" && cfg.HammerheadAPI.DownloadDir != "" {
+				cachedFile := filepath.Join(cfg.HammerheadAPI.DownloadDir, id+".fit")
+				os.Remove(cachedFile)
+			}
 			filePath, err = downloadHammerheadFITFile(cfg.HammerheadAPI, configPath, id)
 			if err != nil {
 				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity: %s"}`, err.Error()), http.StatusInternalServerError)
@@ -2344,6 +2349,10 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 				http.Error(w, `{"error": "invalid id parameter"}`, http.StatusBadRequest)
 				return
 			}
+			if force == "true" && cfg.WahooAPI.DownloadDir != "" {
+				cachedFile := filepath.Join(cfg.WahooAPI.DownloadDir, fmt.Sprintf("%d.fit", id))
+				os.Remove(cachedFile)
+			}
 			filePath, err = downloadWahooFITFile(cfg.WahooAPI, cdnURL, id)
 			if err != nil {
 				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity from Wahoo: %s"}`, err.Error()), http.StatusInternalServerError)
@@ -2354,6 +2363,10 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			if id == "" {
 				http.Error(w, `{"error": "missing id parameter"}`, http.StatusBadRequest)
 				return
+			}
+			if force == "true" && cfg.IntervalsAPI.DownloadDir != "" {
+				cachedFile := filepath.Join(cfg.IntervalsAPI.DownloadDir, id+".fit")
+				os.Remove(cachedFile)
 			}
 			filePath, err = downloadIntervalsFITFile(cfg.IntervalsAPI, id)
 			if err != nil {
@@ -2712,7 +2725,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 
 			indoor := false
 			wktType := "Ride"
-			
+
 			titleLower := strings.ToLower(wkt.Title)
 			descLower := strings.ToLower(wkt.Description)
 			structLower := strings.ToLower(wkt.Structure)
@@ -2828,7 +2841,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 				return
 			}
 			defer r.Body.Close()
-			
+
 			err = os.WriteFile(storagePath, body, 0644)
 			if err != nil {
 				http.Error(w, `{"error": "failed to write storage"}`, http.StatusInternalServerError)
@@ -2875,7 +2888,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		uploadFile := func(token string) (int, string, error) {
 			body := &bytes.Buffer{}
 			writer := multipart.NewWriter(body)
-			
+
 			part, err := writer.CreateFormFile("file", req.Name+".gpx")
 			if err != nil {
 				return 0, "", err
@@ -4005,6 +4018,7 @@ func getDashboardTemplate() string {
         <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; width: 100%; box-sizing: border-box;">
             <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
                 <button id="btn-select-ride" class="btn-action" style="font-weight: 600; display: flex; align-items: center; gap: 0.3rem;">📂 Select Ride</button>
+                <button id="btn-reparse-ride" class="btn-action" style="font-weight: 600; display: none; align-items: center; gap: 0.3rem;" onclick="reparseCurrentRide()">🔄 Reparse Ride</button>
                 <select id="bike-selector" class="btn-action" style="display: none;">
                     <option value="">⚙️ Default Gears</option>
                 </select>
@@ -6037,6 +6051,8 @@ func getDashboardTemplate() string {
             if (!data || !data.records || data.records.length === 0) {
                 console.log("No ride data to render");
                 document.getElementById('ride-date-sub').innerText = "No Ride Loaded";
+                const reparseBtn = document.getElementById('btn-reparse-ride');
+                if (reparseBtn) reparseBtn.style.display = 'none';
                 return;
             }
 
@@ -11401,7 +11417,7 @@ func getDashboardTemplate() string {
             }
         };
 
-        function loadRideData(source, param, param2, pushToHistory = true) {
+        function loadRideData(source, param, param2, pushToHistory = true, force = false) {
             selectRideModal.style.display = 'none';
             analysisLoadingOverlay.style.display = 'flex';
 
@@ -11418,6 +11434,10 @@ func getDashboardTemplate() string {
                 url += '&id=' + encodeURIComponent(param) + '&url=' + encodeURIComponent(param2);
             } else if (source === 'intervals') {
                 url += '&id=' + encodeURIComponent(param);
+            }
+
+            if (force) {
+                url += '&force=true';
             }
 
             const bikeSelector = document.getElementById('bike-selector');
@@ -11442,6 +11462,11 @@ func getDashboardTemplate() string {
                         const q = getRideQueryString(source, param, param2);
                         window.history.pushState({source, param, param2}, '', q);
                     }
+
+                    const reparseBtn = document.getElementById('btn-reparse-ride');
+                    if (reparseBtn) {
+                        reparseBtn.style.display = 'flex';
+                    }
                     
                     forceSetupView = true;
                     if (document.getElementById('coach-plan-input')) {
@@ -11461,6 +11486,21 @@ func getDashboardTemplate() string {
                     analysisLoadingOverlay.style.display = 'none';
                 });
         };
+
+        function reparseCurrentRide() {
+            if (!currentRideSource || !currentRideParam) {
+                alert("No ride loaded to reparse.");
+                return;
+            }
+            const confirmMsg = "Are you sure you want to force reparse this ride? " + 
+                (currentRideSource === 'local' ? 
+                 "This will perform a clean reload and reparse of the local FIT file." : 
+                 "This will delete the local cached FIT file and download it fresh from the API source.");
+            if (confirm(confirmMsg)) {
+                loadRideData(currentRideSource, currentRideParam, currentRideParam2, false, true);
+            }
+        }
+        window.reparseCurrentRide = reparseCurrentRide;
 
         const populateRideLists = (hhPage = 1, wahooPage = 1) => {
             selectRideLoading.style.display = 'flex';
