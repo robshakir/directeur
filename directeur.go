@@ -1282,7 +1282,8 @@ func downloadIntervalsFITFile(cfg IntervalsConfig, activityID string) (string, e
 		return filePath, nil
 	}
 
-	url := fmt.Sprintf("https://intervals.icu/api/v1/activity/%s/file", activityID)
+	apiID := strings.TrimPrefix(activityID, "i")
+	url := fmt.Sprintf("https://intervals.icu/api/v1/activity/%s/file", apiID)
 	client := &http.Client{Timeout: 60 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -1829,6 +1830,12 @@ func writeHTML(path string, analysis RideAnalysis, config Config, source string,
 	}
 }
 
+func writeJSONError(w http.ResponseWriter, errMsg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
+}
+
 func serveDashboard(path string, port int, config Config, configPath string) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -2299,7 +2306,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		if source == "local" {
 			file := r.URL.Query().Get("file")
 			if file == "" {
-				http.Error(w, `{"error": "missing file parameter"}`, http.StatusBadRequest)
+				writeJSONError(w, "missing file parameter", http.StatusBadRequest)
 				return
 			}
 			cleanFile := filepath.Base(file)
@@ -2325,7 +2332,7 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		} else if source == "hammerhead" {
 			id := r.URL.Query().Get("id")
 			if id == "" {
-				http.Error(w, `{"error": "missing id parameter"}`, http.StatusBadRequest)
+				writeJSONError(w, "missing id parameter", http.StatusBadRequest)
 				return
 			}
 			if force == "true" && cfg.HammerheadAPI.DownloadDir != "" {
@@ -2334,19 +2341,19 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			}
 			filePath, err = downloadHammerheadFITFile(cfg.HammerheadAPI, configPath, id)
 			if err != nil {
-				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity: %s"}`, err.Error()), http.StatusInternalServerError)
+				writeJSONError(w, fmt.Sprintf("failed to download activity: %s", err.Error()), http.StatusInternalServerError)
 				return
 			}
 		} else if source == "wahoo" {
 			idStr := r.URL.Query().Get("id")
 			cdnURL := r.URL.Query().Get("url")
 			if idStr == "" || cdnURL == "" {
-				http.Error(w, `{"error": "missing id or url parameter"}`, http.StatusBadRequest)
+				writeJSONError(w, "missing id or url parameter", http.StatusBadRequest)
 				return
 			}
 			id, parseErr := strconv.ParseInt(idStr, 10, 64)
 			if parseErr != nil {
-				http.Error(w, `{"error": "invalid id parameter"}`, http.StatusBadRequest)
+				writeJSONError(w, "invalid id parameter", http.StatusBadRequest)
 				return
 			}
 			if force == "true" && cfg.WahooAPI.DownloadDir != "" {
@@ -2355,13 +2362,13 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			}
 			filePath, err = downloadWahooFITFile(cfg.WahooAPI, cdnURL, id)
 			if err != nil {
-				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity from Wahoo: %s"}`, err.Error()), http.StatusInternalServerError)
+				writeJSONError(w, fmt.Sprintf("failed to download activity from Wahoo: %s", err.Error()), http.StatusInternalServerError)
 				return
 			}
 		} else if source == "intervals" {
 			id := r.URL.Query().Get("id")
 			if id == "" {
-				http.Error(w, `{"error": "missing id parameter"}`, http.StatusBadRequest)
+				writeJSONError(w, "missing id parameter", http.StatusBadRequest)
 				return
 			}
 			if force == "true" && cfg.IntervalsAPI.DownloadDir != "" {
@@ -2370,11 +2377,11 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 			}
 			filePath, err = downloadIntervalsFITFile(cfg.IntervalsAPI, id)
 			if err != nil {
-				http.Error(w, fmt.Sprintf(`{"error": "failed to download activity from Intervals.icu: %s"}`, err.Error()), http.StatusInternalServerError)
+				writeJSONError(w, fmt.Sprintf("failed to download activity from Intervals.icu: %s", err.Error()), http.StatusInternalServerError)
 				return
 			}
 		} else {
-			http.Error(w, `{"error": "invalid source parameter"}`, http.StatusBadRequest)
+			writeJSONError(w, "invalid source parameter", http.StatusBadRequest)
 			return
 		}
 
@@ -2390,14 +2397,14 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 				}
 			}
 			if !found {
-				http.Error(w, fmt.Sprintf(`{"error": "bike profile '%s' not found"}`, bikeName), http.StatusBadRequest)
+				writeJSONError(w, fmt.Sprintf("bike profile '%s' not found", bikeName), http.StatusBadRequest)
 				return
 			}
 		}
 
 		analysis, err := analyzeFITFile(filePath, cfg)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": "failed to analyze FIT file: %s"}`, err.Error()), http.StatusInternalServerError)
+			writeJSONError(w, fmt.Sprintf("failed to analyze FIT file: %s", err.Error()), http.StatusInternalServerError)
 			return
 		}
 
