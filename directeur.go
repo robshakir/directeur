@@ -380,6 +380,41 @@ func main() {
 	}
 }
 
+func expandHomeDir(pathStr string) string {
+	if pathStr == "" {
+		return ""
+	}
+	if pathStr == "~" {
+		home, _ := os.UserHomeDir()
+		return home
+	}
+	if strings.HasPrefix(pathStr, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, pathStr[2:])
+	}
+	return pathStr
+}
+
+func contractHomeDir(pathStr string) string {
+	if pathStr == "" {
+		return ""
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return pathStr
+	}
+	homeClean := filepath.Clean(home)
+	pathClean := filepath.Clean(pathStr)
+	if pathClean == homeClean {
+		return "~"
+	}
+	if strings.HasPrefix(pathClean, homeClean+string(filepath.Separator)) {
+		rel := strings.TrimPrefix(pathClean, homeClean+string(filepath.Separator))
+		return "~/" + filepath.ToSlash(rel)
+	}
+	return pathStr
+}
+
 func loadConfig(path string) Config {
 	// Default configuration (SRAM AXS 46/33 front, 10-36 12s rear)
 	defaultConfig := Config{
@@ -422,6 +457,12 @@ func loadConfig(path string) Config {
 	if len(config.Bikes) == 0 {
 		config.Bikes = defaultConfig.Bikes
 	}
+
+	config.LocalDirectory = expandHomeDir(config.LocalDirectory)
+	config.HammerheadAPI.DownloadDir = expandHomeDir(config.HammerheadAPI.DownloadDir)
+	config.WahooAPI.DownloadDir = expandHomeDir(config.WahooAPI.DownloadDir)
+	config.IntervalsAPI.DownloadDir = expandHomeDir(config.IntervalsAPI.DownloadDir)
+
 	dataDir := os.Getenv("DIRECTEUR_DATA_DIR")
 	if config.LocalDirectory == "" && dataDir != "" {
 		config.LocalDirectory = filepath.Join(dataDir, "rides")
@@ -447,10 +488,30 @@ func loadConfig(path string) Config {
 			config.IntervalsAPI.DownloadDir = "./intervals_downloads"
 		}
 	}
+
+	// Create directories if they do not exist
+	if config.LocalDirectory != "" {
+		_ = os.MkdirAll(config.LocalDirectory, 0755)
+	}
+	if config.HammerheadAPI.DownloadDir != "" {
+		_ = os.MkdirAll(config.HammerheadAPI.DownloadDir, 0755)
+	}
+	if config.WahooAPI.DownloadDir != "" {
+		_ = os.MkdirAll(config.WahooAPI.DownloadDir, 0755)
+	}
+	if config.IntervalsAPI.DownloadDir != "" {
+		_ = os.MkdirAll(config.IntervalsAPI.DownloadDir, 0755)
+	}
+
 	return config
 }
 
 func saveConfig(path string, config Config) error {
+	config.LocalDirectory = contractHomeDir(config.LocalDirectory)
+	config.HammerheadAPI.DownloadDir = contractHomeDir(config.HammerheadAPI.DownloadDir)
+	config.WahooAPI.DownloadDir = contractHomeDir(config.WahooAPI.DownloadDir)
+	config.IntervalsAPI.DownloadDir = contractHomeDir(config.IntervalsAPI.DownloadDir)
+
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err

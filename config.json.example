@@ -13,14 +13,14 @@
       "rear_gears": [46, 38, 32, 28, 24, 21, 19, 17, 15, 13, 12, 11, 10]
     }
   ],
-  "local_directory": "/path/to/your/downloads/or/fits",
+  "local_directory": "~/.directeur/local",
   "hammerhead_api": {
     "enabled": false,
     "client_id": "your-developer-client-id",
     "client_secret": "your-developer-client-secret",
     "auth_token": "",
     "refresh_token": "",
-    "download_dir": "/path/to/local/cache/folder"
+    "download_dir": "~/.directeur/hammerhead_cache"
   },
   "wahoo_api": {
     "enabled": false,
@@ -28,7 +28,13 @@
     "client_secret": "your-wahoo-client-secret",
     "auth_token": "",
     "refresh_token": "",
-    "download_dir": "/path/to/local/wahoo/cache/folder"
+    "download_dir": "~/.directeur/wahoo_cache"
+  },
+  "intervals_api": {
+    "enabled": false,
+    "athlete_id": "",
+    "api_key": "",
+    "download_dir": "~/.directeur/intervals_downloads"
   },
   "ftp": 250,
   "max_hr": 190

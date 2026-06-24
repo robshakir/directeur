@@ -264,6 +264,57 @@ func TestResolveConfigPath(t *testing.T) {
 	}
 }
 
+func TestPathExpansionAndContraction(t *testing.T) {
+	homeTempDir, err := os.MkdirTemp("", "directeur_test_path_home")
+	if err != nil {
+		t.Fatalf("Failed to create temp home dir: %v", err)
+	}
+	defer os.RemoveAll(homeTempDir)
+
+	oldHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", oldHome)
+	os.Setenv("HOME", homeTempDir)
+
+	t.Run("expandHomeDir", func(t *testing.T) {
+		tests := []struct {
+			input    string
+			expected string
+		}{
+			{"", ""},
+			{"~", homeTempDir},
+			{"~/local/path", filepath.Join(homeTempDir, "local/path")},
+			{"/absolute/path", "/absolute/path"},
+		}
+
+		for _, tt := range tests {
+			got := expandHomeDir(tt.input)
+			if got != tt.expected {
+				t.Errorf("expandHomeDir(%q) = %q, expected %q", tt.input, got, tt.expected)
+			}
+		}
+	})
+
+	t.Run("contractHomeDir", func(t *testing.T) {
+		tests := []struct {
+			input    string
+			expected string
+		}{
+			{"", ""},
+			{homeTempDir, "~"},
+			{filepath.Join(homeTempDir, "local/path"), "~/local/path"},
+			{"/absolute/path", "/absolute/path"},
+		}
+
+		for _, tt := range tests {
+			got := contractHomeDir(tt.input)
+			if got != tt.expected {
+				t.Errorf("contractHomeDir(%q) = %q, expected %q", tt.input, got, tt.expected)
+			}
+		}
+	})
+}
+
+
 
 
 func TestHammerheadActivityUnmarshalJSON(t *testing.T) {

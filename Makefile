@@ -29,6 +29,18 @@ fmt:
 vet:
 	go vet ./...
 
+## docker-build: Build the docker image
+docker-build:
+	docker build -t directeur .
+
+## docker-run: Run the server in a docker container mounting ~/.directeur
+docker-run:
+	docker run -d --rm -p 8080:8080 -v ~/.directeur:/root/.directeur --name directeur-server directeur
+
+## docker-stop: Stop the running docker container
+docker-stop:
+	docker stop directeur-server
+
 ## help: Show this help message
 help:
 	@echo "Usage: make [target]"
