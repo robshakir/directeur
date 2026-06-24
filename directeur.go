@@ -1282,8 +1282,7 @@ func downloadIntervalsFITFile(cfg IntervalsConfig, activityID string) (string, e
 		return filePath, nil
 	}
 
-	apiID := strings.TrimPrefix(activityID, "i")
-	url := fmt.Sprintf("https://intervals.icu/api/v1/activity/%s/file", apiID)
+	url := fmt.Sprintf("https://intervals.icu/api/v1/activity/%s/file", activityID)
 	client := &http.Client{Timeout: 60 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
