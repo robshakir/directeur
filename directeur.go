@@ -40,6 +40,7 @@ type Config struct {
 	WahooAPI       WahooConfig      `json:"wahoo_api"`
 	IntervalsAPI   IntervalsConfig  `json:"intervals_api"`
 	FTP            int              `json:"ftp"`
+	MaxHR          int              `json:"max_hr"`
 }
 
 // IntervalsConfig represents authentication and connection details for Intervals.icu API integration
@@ -397,6 +398,7 @@ func loadConfig(path string) Config {
 			},
 		},
 		FTP:        250,
+		MaxHR:      190,
 	}
 
 	f, err := os.Open(path)
@@ -413,6 +415,9 @@ func loadConfig(path string) Config {
 	}
 	if config.FTP == 0 {
 		config.FTP = 250
+	}
+	if config.MaxHR == 0 {
+		config.MaxHR = 190
 	}
 	if len(config.Bikes) == 0 {
 		config.Bikes = defaultConfig.Bikes
@@ -1797,6 +1802,7 @@ func writeHTML(path string, analysis RideAnalysis, config Config, source string,
 		Summary    RideSummary
 		GearUsage  []GearStats
 		FTP        int
+		MaxHR      int
 		Source     string
 		Param      string
 		Param2     string
@@ -1810,6 +1816,7 @@ func writeHTML(path string, analysis RideAnalysis, config Config, source string,
 		Summary:    analysis.Summary,
 		GearUsage:  analysis.GearUsage,
 		FTP:        config.FTP,
+		MaxHR:      config.MaxHR,
 		Source:     source,
 		Param:      param,
 		Param2:     param2,
@@ -4221,7 +4228,14 @@ func getDashboardTemplate() string {
                             </table>
                         </div>
                         <div>
-                            <h4 style="color: var(--accent); margin-bottom: 0.5rem; font-family: 'Outfit'; font-weight: 600;">Heart Rate Zones (Max: <span id="zones-max-hr">-</span> bpm)</h4>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                                <h4 style="color: var(--accent); margin: 0; font-family: 'Outfit'; font-weight: 600;">Heart Rate Zones <span id="zones-max-hr" style="display: none;">-</span></h4>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.25rem;">
+                                    Max HR: 
+                                    <input type="number" id="max-hr-input" value="190" style="width: 50px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: #ffffff; text-align: center; font-family: inherit; font-size: 0.82rem; padding: 0.1rem 0.2rem; outline: none; border-color: rgba(255,255,255,0.15);" />
+                                    <span>bpm</span>
+                                </div>
+                            </div>
                             <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; color: var(--text-secondary);">
                                 <thead>
                                     <tr style="border-bottom: 1px solid var(--border-color); text-align: left;">
@@ -4462,6 +4476,17 @@ func getDashboardTemplate() string {
                     <input type="number" id="settings-ftp-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;" value="250">
                 </div>
                 <button onclick="saveFTPFromSettings()" class="landing-btn landing-btn-primary" style="justify-content: center; font-size: 0.85rem; padding: 0.6rem 0; font-weight: 600; margin-top: 0.5rem; width: 100%;">💾 Save FTP</button>
+            </div>
+
+            <!-- Card 1b: Max HR Configuration -->
+            <div class="card" style="display: flex; flex-direction: column; gap: 1rem;">
+                <h4 style="font-family: 'Outfit'; font-weight: 700; font-size: 1rem; color: #ffffff; margin: 0;">Maximum Heart Rate (Max HR)</h4>
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin: 0; line-height: 1.4;">Configure your maximum heart rate (Max HR) in bpm. This value is used to dynamically construct your cardiovascular heart rate zones.</p>
+                <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem;">
+                    <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Athlete Max HR (bpm)</label>
+                    <input type="number" id="settings-max-hr-input" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: #ffffff; padding: 0.6rem; font-family: inherit; font-size: 0.85rem; outline: none;" value="190">
+                </div>
+                <button onclick="saveMaxHRFromSettings()" class="landing-btn landing-btn-primary" style="justify-content: center; font-size: 0.85rem; padding: 0.6rem 0; font-weight: 600; margin-top: 0.5rem; width: 100%;">💾 Save Max HR</button>
             </div>
 
             <!-- Card 2: Gemini API Key -->
@@ -5051,6 +5076,8 @@ func getDashboardTemplate() string {
 
         const defaultFTP = {{.FTP}} || 250;
         let athleteFTP = parseInt(clientStorage.getItem('fit_athlete_ftp')) || defaultFTP;
+        const defaultMaxHR = {{.MaxHR}} || 190;
+        let athleteMaxHR = parseInt(clientStorage.getItem('fit_athlete_max_hr')) || defaultMaxHR;
 
         // Global Chart and Map references for dynamic updating
         let powerChart, speedAltChart, hrCadenceChart, altGearsChart, powerCurveChart, chartPZones, chartHZones, routePolyline, quadrantAnalysisChart;
@@ -6729,7 +6756,7 @@ func getDashboardTemplate() string {
         // Training Zones Calculations & Charts
         // ==========================================
         const renderZones = () => {
-            const maxHR = rideData.summary.max_heart_rate || 180;
+            const maxHR = athleteMaxHR || rideData.summary.max_heart_rate || 180;
             document.getElementById('zones-max-hr').innerText = maxHR;
 
             const pZones = [
@@ -7261,6 +7288,21 @@ func getDashboardTemplate() string {
         // Expose updateFTP globally for inline onclick buttons
         window.updateFTP = updateFTP;
 
+        const updateMaxHR = (newMaxHR) => {
+            athleteMaxHR = parseInt(newMaxHR);
+            if (isNaN(athleteMaxHR) || athleteMaxHR <= 0) athleteMaxHR = 190;
+            
+            clientStorage.setItem('fit_athlete_max_hr', athleteMaxHR);
+            
+            const maxHrInput = document.getElementById('max-hr-input');
+            if (maxHrInput) {
+                maxHrInput.value = athleteMaxHR;
+            }
+
+            if (window.renderZones) window.renderZones();
+        };
+        window.updateMaxHR = updateMaxHR;
+
         const viewRideAnalysis = (rideId) => {
             if (!rideId) return;
 
@@ -7749,6 +7791,10 @@ func getDashboardTemplate() string {
             const ftpEl = document.getElementById('settings-ftp-input');
             if (ftpEl) ftpEl.value = athleteFTP;
 
+            // Max HR
+            const maxHrEl = document.getElementById('settings-max-hr-input');
+            if (maxHrEl) maxHrEl.value = athleteMaxHR;
+
             // Gemini Key
             const apiKeyEl = document.getElementById('settings-api-key-input');
             if (apiKeyEl) apiKeyEl.value = clientStorage.getItem('gemini_api_key') || '';
@@ -7788,6 +7834,17 @@ func getDashboardTemplate() string {
             }
         };
         window.saveFTPFromSettings = saveFTPFromSettings;
+
+        const saveMaxHRFromSettings = () => {
+            const val = parseInt(document.getElementById('settings-max-hr-input').value);
+            if (val && !isNaN(val) && val > 0) {
+                updateMaxHR(val);
+                alert('Max HR updated to ' + val + ' bpm');
+            } else {
+                alert('Please enter a valid Max HR number.');
+            }
+        };
+        window.saveMaxHRFromSettings = saveMaxHRFromSettings;
 
         const saveAPIKeyFromSettings = () => {
             const key = document.getElementById('settings-api-key-input').value.trim();
@@ -8680,7 +8737,8 @@ func getDashboardTemplate() string {
                 "4. Apply the training constraints to all weeks in the generated program (e.g. if Monday and Friday are rest days, apply this to each week; if Tuesday/Thursday trainer sessions are capped at 1 hour, apply this to each week) unless the constraints specify a particular date.\n" +
                 "5. Ensure continuity in training load, progression, recovery, and volume across the weeks. Start from the context of the last generated training plan if available.\n\n" +
                 "Last Generated Training Plan Context:\n" + lastPlanText + "\n\n" +
-                "Athlete FTP: " + athleteFTP + " W\n\n" +
+                "Athlete FTP: " + athleteFTP + " W\n" +
+                "Athlete Max Heart Rate (HR): " + athleteMaxHR + " bpm\n\n" +
                 "Recent Ride History:\n" + historyText + "\n\n" +
                 "Athlete's Training Goals:\n" + goals + "\n\n" +
                 "Athlete's Constraints for the Training Week:\n" + constraints + "\n\n" +
@@ -9219,6 +9277,19 @@ func getDashboardTemplate() string {
                     if (window.updateIFDisplay) window.updateIFDisplay();
                     if (window.renderZones) window.renderZones();
                     renderFtpEstimates();
+                }
+            });
+        }
+
+        const maxHrInput = document.getElementById('max-hr-input');
+        if (maxHrInput) {
+            maxHrInput.value = athleteMaxHR;
+            maxHrInput.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                if (!isNaN(val) && val > 0) {
+                    athleteMaxHR = val;
+                    clientStorage.setItem('fit_athlete_max_hr', athleteMaxHR);
+                    if (window.renderZones) window.renderZones();
                 }
             });
         }
@@ -10836,6 +10907,7 @@ func getDashboardTemplate() string {
                 '- Average Power: ' + Math.round(rideData.summary.average_power) + ' W\n' +
                 '- Normalized Power (NP): ' + rideData.summary.normalized_power + ' W\n' +
                 '- Intensity Factor (IF): ' + intensityFactor + ' (FTP ' + ftp + 'W)\n' +
+                '- Athlete Max Heart Rate: ' + athleteMaxHR + ' bpm\n' +
                 '- Training Stress Score (TSS): ' + (isNaN(tssVal) ? '0' : tssVal) + '\n' +
                 '- Max Power: ' + rideData.summary.max_power + ' W\n' +
                 '- Avg Heart Rate: ' + Math.round(rideData.summary.average_heart_rate) + ' bpm\n' +

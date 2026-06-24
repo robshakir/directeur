@@ -29,5 +29,7 @@
     "auth_token": "",
     "refresh_token": "",
     "download_dir": "/path/to/local/wahoo/cache/folder"
-  }
+  },
+  "ftp": 250,
+  "max_hr": 190
 }

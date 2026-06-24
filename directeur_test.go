@@ -177,6 +177,7 @@ func TestConfigLoadSave(t *testing.T) {
 		FrontGears:     []int{34, 50},
 		RearGears:      []int{11, 12, 13, 14, 15, 17, 19, 21, 23, 25, 28},
 		FTP:            280,
+		MaxHR:          190,
 		LocalDirectory: "/test/rides",
 		Bikes: []BikeProfile{
 			{Name: "Road Bike", FrontGears: []int{34, 50}, RearGears: []int{11, 28}},
@@ -192,6 +193,9 @@ func TestConfigLoadSave(t *testing.T) {
 	if loaded.FTP != 280 {
 		t.Errorf("loadConfig FTP = %d, expected 280", loaded.FTP)
 	}
+	if loaded.MaxHR != 190 {
+		t.Errorf("loadConfig MaxHR = %d, expected 190", loaded.MaxHR)
+	}
 	if !reflect.DeepEqual(loaded.FrontGears, mockConfig.FrontGears) {
 		t.Errorf("loadConfig FrontGears = %v, expected %v", loaded.FrontGears, mockConfig.FrontGears)
 	}
@@ -202,6 +206,9 @@ func TestConfigLoadSave(t *testing.T) {
 	fallback := loadConfig("non_existent_file_path_12345.json")
 	if fallback.FTP != 250 {
 		t.Errorf("loadConfig fallback FTP = %d, expected default 250", fallback.FTP)
+	}
+	if fallback.MaxHR != 190 {
+		t.Errorf("loadConfig fallback MaxHR = %d, expected default 190", fallback.MaxHR)
 	}
 }
 
