@@ -14,10 +14,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"context"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tormoder/fit"
@@ -3018,9 +3021,31 @@ func serveDashboard(path string, port int, config Config, configPath string) {
 		w.Write([]byte(`{"status": "success", "message": "Route uploaded to Hammerhead successfully!"}`))
 	})
 
-	err = http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
-	if err != nil {
-		fmt.Printf("Error starting HTTP server: %v\n", err)
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: nil, // Use http.DefaultServeMux
+	}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			fmt.Printf("Error starting HTTP server: %v\n", err)
+		}
+	}()
+
+	sig := <-sigChan
+	fmt.Printf("Shutdown signal received: %v. Initiating graceful shutdown...\n", sig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		fmt.Printf("Server forced to shutdown: %v\n", err)
+	} else {
+		fmt.Println("Server exiting cleanly.")
 	}
 }
 
@@ -3839,6 +3864,267 @@ func getDashboardTemplate() string {
             margin-bottom: 1.5rem;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Slick Mobile UI Layout Optimizations */
+        @media (max-width: 768px) {
+            html, body {
+                overflow-x: hidden !important;
+                max-width: 100% !important;
+                width: 100% !important;
+            }
+            body {
+                padding: 1rem !important; /* Standard iOS page margin */
+            }
+            canvas {
+                max-width: 100% !important; /* Force all charts to obey screen width limits */
+            }
+            .layout-main, .charts-container, .gear-sidebar {
+                min-width: 0 !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+                gap: 1rem !important; /* Reduce large desktop gaps on mobile */
+            }
+
+            /* Global Header responsive stacking & scrollable tabs */
+            #global-header {
+                flex-direction: column !important;
+                gap: 0.75rem !important;
+                padding-bottom: 0.75rem !important;
+                margin-bottom: 1rem !important;
+                align-items: stretch !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+            }
+            .header-logo-container {
+                justify-content: center !important;
+            }
+            .header-logo-container h1 {
+                font-size: 1.4rem !important;
+            }
+            .header-nav-tabs {
+                display: flex !important;
+                overflow-x: auto !important;
+                white-space: nowrap !important;
+                border-radius: 12px !important;
+                padding: 0.2rem !important;
+                justify-content: flex-start !important;
+                -webkit-overflow-scrolling: touch !important;
+                scrollbar-width: none !important; /* Firefox */
+                width: 100% !important;
+                min-width: 0 !important;
+                box-sizing: border-box !important;
+            }
+            .header-nav-tabs::-webkit-scrollbar {
+                display: none !important; /* Safari and Chrome */
+            }
+            #rides-calendar-grid, #landing-calendar-grid {
+                width: 100% !important;
+                min-width: 0 !important;
+                box-sizing: border-box !important;
+            }
+            .nav-tab-btn {
+                flex-shrink: 0 !important;
+                padding: 0.35rem 0.85rem !important;
+                font-size: 0.78rem !important;
+            }
+            .header-actions {
+                display: flex !important;
+                justify-content: center !important;
+                gap: 0.5rem !important;
+            }
+
+            /* Views responsive padding */
+            #landing-view, #dashboard-view, #calendar-view, #settings-view, #data-view {
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            /* Toolbars stacking */
+            .toolbar {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                gap: 0.75rem !important;
+                padding: 0.75rem !important;
+            }
+            .toolbar > div {
+                justify-content: space-between !important;
+                width: 100% !important;
+            }
+
+            /* Stats Grid - 2 columns on mobile */
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 0.75rem !important;
+                margin-bottom: 1.5rem !important;
+            }
+            .stat-card {
+                padding: 1rem 0.75rem !important;
+                border-radius: 12px !important;
+            }
+            .stat-card::after {
+                width: 3px !important;
+            }
+            .stat-label {
+                font-size: 0.72rem !important;
+            }
+            .stat-value {
+                font-size: 1.35rem !important;
+            }
+            .stat-subtext {
+                font-size: 0.72rem !important;
+            }
+
+            /* Chart heights & Maps */
+            .chart-wrapper {
+                height: 200px !important;
+            }
+            #map {
+                height: 240px !important;
+            }
+            #route-map {
+                height: 240px !important;
+            }
+
+            /* Shifting layout stack */
+            .shifting-stats {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 0.75rem !important;
+            }
+            .shift-stat-box {
+                padding: 0.75rem !important;
+            }
+            .shift-stat-value {
+                font-size: 1.3rem !important;
+            }
+
+            /* Advanced shifting layout row-to-column stack */
+            div[style*="display: flex; gap: 1.5rem; flex-wrap: wrap; padding: 1rem 0;"] {
+                flex-direction: column !important;
+                gap: 1rem !important;
+            }
+            div[style*="flex: 1.5; min-width: 320px; height: 380px;"] {
+                height: 280px !important;
+                min-width: 100% !important;
+                flex: none !important;
+            }
+
+            /* Training zones charts stack */
+            div[style*="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; padding: 1rem 0;"] {
+                grid-template-columns: 1fr !important;
+                gap: 1rem !important;
+            }
+            #container-chart-power-zones {
+                height: 220px !important;
+            }
+            div[style*="height: 260px;"] {
+                height: 220px !important;
+            }
+
+            /* FTP history panel wrap */
+            div[style*="display: flex; gap: 1.5rem; flex-wrap: wrap;"] {
+                flex-direction: column !important;
+                gap: 1rem !important;
+            }
+
+            /* Landing calendar grid horizontal scrollable slider */
+            #landing-calendar-grid {
+                display: flex !important;
+                overflow-x: auto !important;
+                gap: 0.75rem !important;
+                padding-bottom: 0.5rem !important;
+                scroll-snap-type: x mandatory !important;
+                -webkit-overflow-scrolling: touch !important;
+                scrollbar-width: none !important;
+            }
+            #landing-calendar-grid::-webkit-scrollbar {
+                display: none !important;
+            }
+            #landing-calendar-grid > div {
+                flex: 0 0 135px !important;
+                scroll-snap-align: start !important;
+            }
+
+            /* Calendar view stacking */
+            div[style*="display: flex; gap: 2rem; flex-wrap: wrap;"] {
+                flex-direction: column !important;
+                gap: 1rem !important;
+            }
+            div[style*="flex: 1 1 320px; max-width: 340px;"] {
+                max-width: 100% !important;
+                width: 100% !important;
+                flex: none !important;
+            }
+            div[style*="flex: 3 1 600px;"] {
+                flex: none !important;
+                width: 100% !important;
+            }
+
+            /* Modals mobile sizing */
+            div[id$="-modal"] {
+                padding: 0.5rem !important;
+            }
+            div[id$="-modal"] > div {
+                width: 100% !important;
+                max-width: 100% !important;
+                height: 95% !important;
+                max-height: 95vh !important;
+                border-radius: 12px !important;
+                padding: 1rem !important;
+                margin: 0 !important;
+            }
+
+            /* Coach setup view columns stack */
+            #coach-generate-view {
+                flex-direction: column !important;
+                overflow-y: auto !important;
+                gap: 1rem !important;
+                padding: 0.5rem 0 !important;
+            }
+            #coach-generate-view > div {
+                flex: none !important;
+                width: 100% !important;
+            }
+            #coach-chat-input-container {
+                padding: 0.5rem !important;
+                gap: 0.5rem !important;
+            }
+            #coach-chat-input {
+                padding: 0.6rem !important;
+                font-size: 0.8rem !important;
+            }
+            #coach-chat-input::placeholder {
+                color: transparent !important; /* Hide long placeholder */
+            }
+
+            /* Route Planner grid stack */
+            #route-planner-modal div[style*="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;"] {
+                grid-template-columns: 1fr !important;
+                gap: 1rem !important;
+            }
+            #route-planner-modal div[style*="display: flex; flex-direction: column; gap: 0.75rem;"] {
+                order: -1 !important; /* Place map on top */
+            }
+
+            /* Select ride tab buttons spacing */
+            div[style*="display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 0.5rem;"] {
+                justify-content: stretch !important;
+            }
+            div[style*="display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 0.5rem;"] button {
+                flex: 1 !important;
+                padding: 0.5rem 0.25rem !important;
+                font-size: 0.8rem !important;
+                text-align: center !important;
+            }
+
+            /* General Cards padding */
+            .card {
+                padding: 1rem !important;
+                border-radius: 14px !important;
+            }
+        }
     </style>
 </head>
 <body>
